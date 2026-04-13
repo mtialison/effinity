@@ -1,23 +1,25 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.2
+// @version      4.0
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.2';
+  const SCRIPT_VERSION = '4.0';
 
   const STYLE_ID = 'tm-effinity-style';
+  const PRELOAD_STYLE_ID = 'tm-effinity-preload-style';
+
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
 
@@ -42,8 +44,40 @@
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
-  const MAX_SIDEBAR_ATTEMPTS = 10;
+  const MAX_SIDEBAR_ATTEMPTS = 12;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+
+  // ---------------------------------------------------------------------------
+  // MODO BOOT / ANTI-FLICKER
+  // ---------------------------------------------------------------------------
+  function markBooting() {
+    document.documentElement.setAttribute('data-tm-booting', 'true');
+  }
+
+  function releaseBooting() {
+    document.documentElement.removeAttribute('data-tm-booting');
+  }
+
+  const preloadCss = `
+    html[data-tm-booting="true"] header.glass.sticky.top-0.z-50 {
+      display: none !important;
+    }
+
+    /* evita o flash da barra lateral antes do recolhimento */
+    html[data-tm-booting="true"] aside,
+    html[data-tm-booting="true"] nav {
+      transition: none !important;
+    }
+
+    /* esconde temporariamente blocos que costumam "piscar" com conteúdo original */
+    html[data-tm-booting="true"] div.p-2.border.rounded.cursor-pointer,
+    html[data-tm-booting="true"] div.rounded-xl.bg-card.border.border-border,
+    html[data-tm-booting="true"] div.rounded-lg.bg-card.border.border-border,
+    html[data-tm-booting="true"] div.px-4.py-3.flex.items-center.justify-between.gap-4,
+    html[data-tm-booting="true"] div.px-4.py-2.border-t.border-border.bg-muted\\/30 {
+      visibility: hidden !important;
+    }
+  `;
 
   const css = `
     .h-\\[calc\\(100vh-100px\\)\\] {
@@ -196,10 +230,6 @@
       flex-shrink: 0 !important;
     }
 
-    /* ==========================================================================
-       Dados do Atendimento - clique para copiar
-       ========================================================================== */
-
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
@@ -245,10 +275,6 @@
       user-select: none !important;
     }
 
-    /* ==========================================================================
-       Tags de fila nos cards
-       ========================================================================== */
-
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -275,42 +301,38 @@
       color: #b91c1c !important;
       border-color: #fca5a5 !important;
     }
+
+    /* barra lateral escondida visualmente enquanto o site finaliza a montagem */
+    html[data-tm-booting="true"] button[aria-label="Fechar menu"],
+    html[data-tm-booting="true"] button[aria-label="Abrir menu"] {
+      visibility: hidden !important;
+    }
   `;
 
-  function log(...args) {
-    console.log(`[${SCRIPT_NAME}]`, ...args);
+  function ensureStyle(id, content) {
+    const root = document.head || document.documentElement;
+    let style = document.getElementById(id);
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      root.appendChild(style);
+    }
+
+    if (style.textContent !== content) {
+      style.textContent = content;
+    }
+
+    return style;
+  }
+
+  function applyEarlyStyles() {
+    ensureStyle(PRELOAD_STYLE_ID, preloadCss);
+    ensureStyle(STYLE_ID, css);
   }
 
   function normalizeText(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function applyCSS() {
-    let style = document.getElementById(STYLE_ID);
-
-    if (!style) {
-      style = document.createElement('style');
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
-    }
-
-    if (style.textContent !== css) {
-      style.textContent = css;
-    }
-  }
-
-  let debounceTimer = null;
-  function debounce(fn, delay) {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fn, delay);
-  }
-
-  function getCurrentDateFormatted() {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
-    return `${day}/${month}/${year}`;
   }
 
   function hideElement(el) {
@@ -337,7 +359,7 @@
     try {
       await navigator.clipboard.writeText(text);
       return true;
-    } catch (error) {
+    } catch (_error) {
       try {
         const textarea = document.createElement('textarea');
         textarea.value = text;
@@ -401,7 +423,13 @@
 
   function applyDateToMessages() {
     const spans = document.querySelectorAll('span');
-    const currentDate = getCurrentDateFormatted();
+    const currentDate = (() => {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      return `${day}/${month}/${year}`;
+    })();
 
     for (const span of spans) {
       if (span.getAttribute(DATE_APPLIED_ATTR) === 'true') continue;
@@ -540,14 +568,14 @@
 
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
-    if (!agentContainer) return;
+    if (!agentContainer) return false;
 
     agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
 
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
 
-    if (!topRow || !bottomRow) return;
+    if (!topRow || !bottomRow) return false;
 
     topRow.setAttribute(AGENT_TOP_ATTR, 'true');
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
@@ -578,6 +606,8 @@
 
     const separators = topRow.querySelectorAll('.w-px');
     separators.forEach(el => el.classList.add('tm-agent-hidden'));
+
+    return true;
   }
 
   function findTicketHeaderTopRows() {
@@ -644,6 +674,7 @@
   }
 
   function moveCreatedDateToHeader() {
+    let changed = false;
     const topRows = findTicketHeaderTopRows();
 
     for (const topRow of topRows) {
@@ -662,6 +693,7 @@
       if (createdSpan.parentElement !== host) {
         createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
+        changed = true;
       }
 
       hideElement(infoRow);
@@ -674,6 +706,8 @@
         ticketContainer.setAttribute(TICKET_HEADER_ATTR, 'true');
       }
     }
+
+    return changed;
   }
 
   function isTicketListCard(card) {
@@ -998,10 +1032,39 @@
         badge.style.backgroundColor = '';
         badge.style.color = '';
         badge.style.borderColor = '';
+        badge.style.backgroundImage = 'none';
       }
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // SIDEBAR
+  // ---------------------------------------------------------------------------
+  let sidebarAttempts = 0;
+
+  function collapseSidebar() {
+    const closeBtn = document.querySelector('button[aria-label="Fechar menu"]');
+    if (closeBtn) {
+      closeBtn.click();
+      return true;
+    }
+
+    const openBtn = document.querySelector('button[aria-label="Abrir menu"]');
+    if (openBtn) {
+      return true;
+    }
+
+    sidebarAttempts += 1;
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
+      setTimeout(collapseSidebar, 120);
+    }
+
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // APLICAÇÃO GERAL
+  // ---------------------------------------------------------------------------
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
@@ -1016,39 +1079,45 @@
   }
 
   function reapplyAll() {
-    applyCSS();
+    applyEarlyStyles();
     applyDynamicAdjustments();
   }
 
+  // ---------------------------------------------------------------------------
+  // CICLOS CONTROLADOS
+  // ---------------------------------------------------------------------------
   let scheduledPasses = [];
 
-  function scheduleReapplyPasses() {
+  function clearScheduledPasses() {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
+  }
 
-    const delays = [150, 400, 800, 1500, 2500, 4000];
+  function scheduleReapplyPasses() {
+    clearScheduledPasses();
+
+    const delays = [0, 40, 120, 260, 500, 900, 1500, 2500];
     for (const delay of delays) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
   }
 
-  let sidebarAttempts = 0;
+  function scheduleBootRelease() {
+    const delays = [350, 700, 1200, 1800];
 
-  function collapseSidebar() {
-    const btn = document.querySelector('button[aria-label="Fechar menu"]');
-
-    if (btn) {
-      btn.click();
-      log('sidebar recolhida');
-      return;
-    }
-
-    sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
-      setTimeout(collapseSidebar, 300);
-    }
+    delays.forEach((delay, index) => {
+      setTimeout(() => {
+        reapplyAll();
+        if (index === delays.length - 1) {
+          releaseBooting();
+        }
+      }, delay);
+    });
   }
 
+  // ---------------------------------------------------------------------------
+  // OBSERVER
+  // ---------------------------------------------------------------------------
   let observer = null;
 
   function startObserver() {
@@ -1062,7 +1131,9 @@
     if (observer) observer.disconnect();
 
     observer = new MutationObserver(() => {
-      debounce(reapplyAll, 200);
+      debounce(() => {
+        reapplyAll();
+      }, 120);
     });
 
     observer.observe(target, {
@@ -1071,17 +1142,25 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // INIT
+  // ---------------------------------------------------------------------------
   function init() {
+    applyEarlyStyles();
     reapplyAll();
+    collapseSidebar();
     scheduleReapplyPasses();
-    log(`iniciado v${SCRIPT_VERSION}`);
+    scheduleBootRelease();
+    console.log(`[${SCRIPT_NAME}] iniciado v${SCRIPT_VERSION}`);
   }
 
   function boot() {
     init();
     startObserver();
-    setTimeout(collapseSidebar, 800);
   }
+
+  markBooting();
+  applyEarlyStyles();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });
@@ -1089,6 +1168,19 @@
     boot();
   }
 
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', () => {
+    reapplyAll();
+    collapseSidebar();
+    scheduleReapplyPasses();
+    setTimeout(releaseBooting, 800);
+  });
+
+  window.addEventListener('pageshow', () => {
+    markBooting();
+    applyEarlyStyles();
+    reapplyAll();
+    collapseSidebar();
+    scheduleReapplyPasses();
+    setTimeout(releaseBooting, 800);
+  });
 })();

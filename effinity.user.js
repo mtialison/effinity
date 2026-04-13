@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -40,6 +40,16 @@
 
     /* Ocultar botão "Meta" */
     button:has(.lucide-database) {
+      display: none !important;
+    }
+
+    /* Ocultar card "Informações do Cliente" */
+    .rounded-xl.bg-card:has(.lucide-user) {
+      display: none !important;
+    }
+
+    /* Ocultar card "Resumo do Ticket" */
+    .rounded-xl.bg-card:has(.lucide-message-square) {
       display: none !important;
     }
   `;
@@ -84,8 +94,40 @@
     applyCSS();
     setTimeout(applyCSS, 500);
     setTimeout(applyCSS, 1500);
-    console.log('[TM effinity] iniciado v1.5');
+    console.log('[TM effinity] iniciado v1.6');
   }
 
   // ─── Observer restrito ao container da app, sem subtree ──────────────────────
-  let obse
+  let observer = null;
+  function startObserver() {
+    const target =
+      document.getElementById('app') ||
+      document.querySelector('[data-v-app]') ||
+      document.body;
+
+    if (observer) observer.disconnect();
+
+    observer = new MutationObserver(debouncedApply);
+    observer.observe(target, {
+      childList: true,
+      subtree: false
+    });
+  }
+
+  // ─── Entrada ─────────────────────────────────────────────────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      init();
+      startObserver();
+      setTimeout(collapseSidebar, 800);
+    });
+  } else {
+    init();
+    startObserver();
+    setTimeout(collapseSidebar, 800);
+  }
+
+  window.addEventListener('load', init);
+  window.addEventListener('pageshow', init);
+
+})();

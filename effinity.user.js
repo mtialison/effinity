@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,11 +15,15 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.0';
+  const SCRIPT_VERSION = '2.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
+  const AGENT_AREA_ATTR = 'data-tm-agent-area';
+  const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
+  const AGENT_BOTTOM_ATTR = 'data-tm-agent-bottom-row';
+  const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
   // ============================================================================
@@ -52,6 +56,77 @@
     }
 
     [${HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    /* ==========================================================================
+       Área do Agente - reorganização
+       ========================================================================== */
+
+    [${AGENT_AREA_ATTR}="true"] {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 0 !important;
+    }
+
+    /* Remove visualmente a linha superior original */
+    [${AGENT_TOP_ATTR}="true"] {
+      display: none !important;
+    }
+
+    /* Linha inferior principal */
+    [${AGENT_BOTTOM_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: nowrap !important;
+      gap: 24px !important;
+      min-height: 40px !important;
+      margin: 0 !important;
+    }
+
+    /* Grupo da esquerda: Filas */
+    [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
+      display: flex !important;
+      align-items: center !important;
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
+
+    /* Grupo da direita: Offline + Enviar HSM */
+    [${AGENT_ACTIONS_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 16px !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+    }
+
+    /* Mantém os botões alinhados verticalmente */
+    [${AGENT_ACTIONS_ATTR}="true"] button,
+    [${AGENT_ACTIONS_ATTR}="true"] > div,
+    [${AGENT_ACTIONS_ATTR}="true"] > span {
+      flex-shrink: 0 !important;
+    }
+
+    /* Ajuste fino para aproximar do mock */
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      flex-wrap: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
+      margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    /* Oculta sobra visual antiga se reaproveitada */
+    .tm-agent-hidden {
       display: none !important;
     }
   `;
@@ -143,18 +218,11 @@
     if (!el) return false;
 
     const text = normalizeText(el.textContent);
-
-    // Normalmente esse rodapé tem hora e status de envio
-    return (
-      text.length <= 40 &&
-      /\d{2}:\d{2}/.test(text)
-    );
+    return text.length <= 40 && /\d{2}:\d{2}/.test(text);
   }
 
   function applyDateToMessages() {
     const spans = document.querySelectorAll('span');
-
-    let updated = 0;
     const currentDate = getCurrentDateFormatted();
 
     for (const span of spans) {
@@ -166,7 +234,6 @@
       const parent = span.parentElement;
       if (!looksLikeMessageMetaContainer(parent)) continue;
 
-      // evita alterar spans soltos fora do chat
       const nearbyMessageBubble =
         span.closest('.rounded-2xl') ||
         span.closest('.rounded-xl') ||
@@ -177,12 +244,167 @@
 
       span.textContent = `${currentDate} ${text}`;
       span.setAttribute(DATE_APPLIED_ATTR, 'true');
-      updated += 1;
+    }
+  }
+
+  // ============================================================================
+  // ÁREA DO AGENTE
+  // ============================================================================
+  function findAgentAreaContainer() {
+    const spans = document.querySelectorAll('span');
+
+    for (const span of spans) {
+      if (normalizeText(span.textContent) !== 'Área do Agente') continue;
+
+      const container = span.closest('.bg-card.border.border-border.rounded-lg');
+      if (container) return container;
     }
 
-    if (updated > 0) {
-      log(`datas aplicadas em ${updated} mensagem(ns)`);
+    return null;
+  }
+
+  function findTopRow(agentContainer) {
+    if (!agentContainer) return null;
+
+    const directChildren = Array.from(agentContainer.children);
+    for (const child of directChildren) {
+      if (!child.matches || !child.matches('div')) continue;
+
+      const text = normalizeText(child.textContent);
+      if (
+        text.includes('Área do Agente') &&
+        text.includes('Offline') &&
+        text.includes('Enviar HSM')
+      ) {
+        return child;
+      }
     }
+
+    return null;
+  }
+
+  function findBottomRow(agentContainer, topRow) {
+    if (!agentContainer) return null;
+
+    const directChildren = Array.from(agentContainer.children);
+    for (const child of directChildren) {
+      if (child === topRow) continue;
+      if (!child.matches || !child.matches('div')) continue;
+
+      const text = normalizeText(child.textContent);
+      if (text.includes('Filas:')) {
+        return child;
+      }
+    }
+
+    return null;
+  }
+
+  function findOfflineControl(topRow) {
+    if (!topRow) return null;
+
+    const buttons = topRow.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = normalizeText(btn.textContent);
+      if (/^(Offline|Online|Pausa|Ausente)/i.test(text) || text.includes('Offline')) {
+        const wrapper = btn.closest('.relative.inline-block.text-left');
+        return wrapper || btn;
+      }
+    }
+
+    return null;
+  }
+
+  function findSendHsmButton(topRow) {
+    if (!topRow) return null;
+
+    const buttons = topRow.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = normalizeText(btn.textContent);
+      if (text.includes('Enviar HSM')) {
+        return btn;
+      }
+    }
+
+    return null;
+  }
+
+  function ensureAgentActionsWrapper(bottomRow) {
+    let wrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
+    if (wrapper) return wrapper;
+
+    wrapper = document.createElement('div');
+    wrapper.setAttribute(AGENT_ACTIONS_ATTR, 'true');
+    bottomRow.appendChild(wrapper);
+
+    return wrapper;
+  }
+
+  function ensureAgentLeftWrapper(bottomRow) {
+    let left = bottomRow.querySelector(':scope > .tm-agent-left');
+    if (left) return left;
+
+    left = document.createElement('div');
+    left.className = 'tm-agent-left';
+
+    const currentChildren = Array.from(bottomRow.childNodes);
+    for (const node of currentChildren) {
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        node.getAttribute &&
+        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
+      ) {
+        continue;
+      }
+      left.appendChild(node);
+    }
+
+    bottomRow.insertBefore(left, bottomRow.firstChild);
+    return left;
+  }
+
+  function reorganizeAgentArea() {
+    const agentContainer = findAgentAreaContainer();
+    if (!agentContainer) return;
+
+    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+
+    const topRow = findTopRow(agentContainer);
+    const bottomRow = findBottomRow(agentContainer, topRow);
+
+    if (!topRow || !bottomRow) return;
+
+    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
+    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+
+    const offlineControl = findOfflineControl(topRow);
+    const sendHsmButton = findSendHsmButton(topRow);
+
+    const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
+    ensureAgentLeftWrapper(bottomRow);
+
+    // Ordem exata: 1 Filas | 2 Offline | 3 Enviar HSM
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(offlineControl);
+    }
+
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(sendHsmButton);
+    }
+
+    // Oculta itens superiores antigos que não serão usados mais
+    const buttons = topRow.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = normalizeText(btn.textContent);
+
+      if (text.includes('Enviar HSM')) continue;
+      if (text.includes('Offline') || text.includes('Online')) continue;
+
+      btn.classList.add('tm-agent-hidden');
+    }
+
+    const separators = topRow.querySelectorAll('.w-px');
+    separators.forEach(el => el.classList.add('tm-agent-hidden'));
   }
 
   // ============================================================================
@@ -192,6 +414,7 @@
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
     applyDateToMessages();
+    reorganizeAgentArea();
   }
 
   function reapplyAll() {

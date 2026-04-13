@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.4
+// @version      2.5
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.4';
+  const SCRIPT_VERSION = '2.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -516,6 +516,12 @@
     return topRow.querySelector('div.min-w-0.flex-1');
   }
 
+  function findTicketAvatar(topRow) {
+    if (!topRow) return null;
+
+    return topRow.querySelector('div.w-10.h-10.flex-shrink-0.rounded-full');
+  }
+
   function ensureCreatedHost(targetBlock) {
     let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
     if (host) return host;
@@ -551,6 +557,12 @@
 
       if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
         infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+      }
+
+      const avatar = findTicketAvatar(topRow);
+      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
+        avatar.setAttribute(HIDDEN_ATTR, 'true');
+        log('avatar do cabeçalho do ticket ocultado');
       }
 
       const ticketContainer = topRow.parentElement;

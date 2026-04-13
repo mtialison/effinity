@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.9
+// @version      3.0
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.9';
+  const SCRIPT_VERSION = '3.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -32,6 +32,7 @@
   const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
   const TICKET_CONTACT_BLOCK_ATTR = 'data-tm-ticket-contact-block';
   const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
+  const PHONE_NORMALIZED_ATTR = 'data-tm-phone-normalized';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
@@ -233,6 +234,14 @@
   function markUppercase(el) {
     if (!el || !(el instanceof HTMLElement)) return;
     el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
+  }
+
+  function removeCountryCode55(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('55') && digits.length > 11) {
+      return digits.slice(2);
+    }
+    return digits || String(value || '');
   }
 
   function findCardContainerFromTitle(titleEl) {
@@ -685,6 +694,47 @@
     uppercaseTicketListCardNames();
   }
 
+  function normalizeAttendanceDataPhones() {
+    const cards = document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border');
+
+    for (const card of cards) {
+      const title = card.querySelector('h3');
+      if (!title) continue;
+
+      const titleText = normalizeText(title.textContent);
+      if (titleText !== 'Dados do Atendimento') continue;
+
+      const labels = card.querySelectorAll('span');
+      let phoneLabelFound = false;
+
+      for (const span of labels) {
+        const text = normalizeText(span.textContent);
+
+        if (text === 'Telefone') {
+          phoneLabelFound = true;
+          continue;
+        }
+
+        if (!phoneLabelFound) continue;
+
+        if (
+          span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') &&
+          /^\d{12,14}$/.test(normalizeText(span.textContent))
+        ) {
+          const original = normalizeText(span.textContent);
+          const normalized = removeCountryCode55(original);
+
+          if (original !== normalized) {
+            span.textContent = normalized;
+          }
+
+          span.setAttribute(PHONE_NORMALIZED_ATTR, 'true');
+          break;
+        }
+      }
+    }
+  }
+
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
@@ -693,6 +743,7 @@
     moveCreatedDateToHeader();
     cleanTicketListCards();
     applyUppercaseToCustomerNames();
+    normalizeAttendanceDataPhones();
   }
 
   function reapplyAll() {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -32,6 +32,11 @@
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
+
+    /* Ocultar cabeçalho "Gestão de Tickets / Tempo Real" */
+    .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
+      display: none !important;
+    }
   `;
 
   // ─── Injeta/atualiza o bloco de estilo ───────────────────────────────────────
@@ -55,8 +60,6 @@
   }
 
   // ─── Recolher sidebar automaticamente ao carregar ────────────────────────────
-  // Clica no botão "Fechar menu" (aria-label) se a sidebar estiver expandida.
-  // Tenta até 10x com intervalo de 300ms — para no primeiro sucesso.
   let sidebarAttempts = 0;
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
@@ -76,7 +79,7 @@
     applyCSS();
     setTimeout(applyCSS, 500);
     setTimeout(applyCSS, 1500);
-    console.log('[TM effinity] iniciado v1.3');
+    console.log('[TM effinity] iniciado v1.4');
   }
 
   // ─── Observer restrito ao container da app, sem subtree ──────────────────────
@@ -101,7 +104,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       init();
       startObserver();
-      setTimeout(collapseSidebar, 800); // aguarda SPA renderizar
+      setTimeout(collapseSidebar, 800);
     });
   } else {
     init();

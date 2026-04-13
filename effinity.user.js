@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.4
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.3';
+  const SCRIPT_VERSION = '2.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -30,6 +30,7 @@
   const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
   const TICKET_CREATED_HOST_ATTR = 'data-tm-ticket-created-host';
   const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
+  const TICKET_CONTACT_BLOCK_ATTR = 'data-tm-ticket-contact-block';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
@@ -67,7 +68,7 @@
     }
 
     /* ==========================================================================
-       Área do Agente - reorganização
+       Área do Agente
        ========================================================================== */
 
     [${AGENT_AREA_ATTR}="true"] {
@@ -131,23 +132,47 @@
     }
 
     /* ==========================================================================
-       Cabeçalho do ticket - mover "Criado há..."
+       Cabeçalho do ticket
        ========================================================================== */
 
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
 
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: center !important;
+      gap: 2px !important;
+      min-width: 0 !important;
+    }
+
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
+      margin: 0 !important;
+    }
+
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
     [${TICKET_CREATED_HOST_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
       gap: 4px !important;
-      margin-top: 2px !important;
+      margin-top: 0 !important;
       min-height: 14px !important;
       color: hsl(var(--muted-foreground)) !important;
       font-size: 11px !important;
       line-height: 1.2 !important;
       width: fit-content !important;
+      max-width: 100% !important;
     }
 
     [${TICKET_CREATED_MOVED_ATTR}="true"] {
@@ -158,6 +183,7 @@
       color: inherit !important;
       font-size: inherit !important;
       line-height: inherit !important;
+      white-space: nowrap !important;
     }
 
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
@@ -252,7 +278,6 @@
 
   function looksLikeMessageMetaContainer(el) {
     if (!el) return false;
-
     const text = normalizeText(el.textContent);
     return text.length <= 40 && /\d{2}:\d{2}/.test(text);
   }
@@ -442,7 +467,7 @@
   }
 
   // ============================================================================
-  // CABEÇALHO DO TICKET - COM HTML EXATO
+  // CABEÇALHO DO TICKET
   // ============================================================================
   function findTicketHeaderTopRows() {
     return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
@@ -488,7 +513,6 @@
 
   function findTicketInfoTarget(topRow) {
     if (!topRow) return null;
-
     return topRow.querySelector('div.min-w-0.flex-1');
   }
 
@@ -511,6 +535,8 @@
       const targetBlock = findTicketInfoTarget(topRow);
 
       if (!infoRow || !targetBlock) continue;
+
+      targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
 
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;

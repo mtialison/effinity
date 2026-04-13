@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.5
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -40,16 +40,6 @@
 
     /* Ocultar botão "Meta" */
     button:has(.lucide-database) {
-      display: none !important;
-    }
-
-    /* Ocultar card "Informações do Cliente" */
-    .rounded-xl.bg-card:has(.lucide-user) {
-      display: none !important;
-    }
-
-    /* Ocultar card "Resumo do Ticket" */
-    .rounded-xl.bg-card:has(.lucide-message-square) {
       display: none !important;
     }
   `;
@@ -94,7 +84,7 @@
     applyCSS();
     setTimeout(applyCSS, 500);
     setTimeout(applyCSS, 1500);
-    console.log('[TM effinity] iniciado v1.6');
+    console.log('[TM effinity] iniciado v1.5');
   }
 
   // ─── Observer restrito ao container da app, sem subtree ──────────────────────

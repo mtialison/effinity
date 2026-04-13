@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.3
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,15 +15,22 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.1';
+  const SCRIPT_VERSION = '2.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
+
   const AGENT_AREA_ATTR = 'data-tm-agent-area';
   const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
   const AGENT_BOTTOM_ATTR = 'data-tm-agent-bottom-row';
   const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
+
+  const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
+  const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
+  const TICKET_CREATED_HOST_ATTR = 'data-tm-ticket-created-host';
+  const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
+
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
   // ============================================================================
@@ -69,12 +76,10 @@
       gap: 0 !important;
     }
 
-    /* Remove visualmente a linha superior original */
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
     }
 
-    /* Linha inferior principal */
     [${AGENT_BOTTOM_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -85,7 +90,6 @@
       margin: 0 !important;
     }
 
-    /* Grupo da esquerda: Filas */
     [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
       display: flex !important;
       align-items: center !important;
@@ -93,7 +97,6 @@
       min-width: 0 !important;
     }
 
-    /* Grupo da direita: Offline + Enviar HSM */
     [${AGENT_ACTIONS_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -104,14 +107,12 @@
       white-space: nowrap !important;
     }
 
-    /* Mantém os botões alinhados verticalmente */
     [${AGENT_ACTIONS_ATTR}="true"] button,
     [${AGENT_ACTIONS_ATTR}="true"] > div,
     [${AGENT_ACTIONS_ATTR}="true"] > span {
       flex-shrink: 0 !important;
     }
 
-    /* Ajuste fino para aproximar do mock */
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
       display: flex !important;
       align-items: center !important;
@@ -125,9 +126,44 @@
       flex-shrink: 0 !important;
     }
 
-    /* Oculta sobra visual antiga se reaproveitada */
     .tm-agent-hidden {
       display: none !important;
+    }
+
+    /* ==========================================================================
+       Cabeçalho do ticket - mover "Criado há..."
+       ========================================================================== */
+
+    [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin-top: 2px !important;
+      min-height: 14px !important;
+      color: hsl(var(--muted-foreground)) !important;
+      font-size: 11px !important;
+      line-height: 1.2 !important;
+      width: fit-content !important;
+    }
+
+    [${TICKET_CREATED_MOVED_ATTR}="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin: 0 !important;
+      color: inherit !important;
+      font-size: inherit !important;
+      line-height: inherit !important;
+    }
+
+    [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
+      width: 12px !important;
+      height: 12px !important;
+      flex-shrink: 0 !important;
     }
   `;
 
@@ -383,7 +419,6 @@
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
     ensureAgentLeftWrapper(bottomRow);
 
-    // Ordem exata: 1 Filas | 2 Offline | 3 Enviar HSM
     if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
       actionsWrapper.appendChild(offlineControl);
     }
@@ -392,7 +427,6 @@
       actionsWrapper.appendChild(sendHsmButton);
     }
 
-    // Oculta itens superiores antigos que não serão usados mais
     const buttons = topRow.querySelectorAll('button');
     for (const btn of buttons) {
       const text = normalizeText(btn.textContent);
@@ -408,6 +442,99 @@
   }
 
   // ============================================================================
+  // CABEÇALHO DO TICKET - COM HTML EXATO
+  // ============================================================================
+  function findTicketHeaderTopRows() {
+    return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
+  }
+
+  function findTicketInfoRowFromTopRow(topRow) {
+    if (!topRow || !topRow.parentElement) return null;
+
+    const siblings = Array.from(topRow.parentElement.children);
+    const topIndex = siblings.indexOf(topRow);
+
+    for (let i = topIndex + 1; i < siblings.length; i += 1) {
+      const el = siblings[i];
+      if (!(el instanceof HTMLElement)) continue;
+
+      if (
+        el.classList.contains('px-4') &&
+        el.classList.contains('py-2') &&
+        el.classList.contains('border-t') &&
+        el.classList.contains('border-border') &&
+        el.classList.contains('bg-muted/30')
+      ) {
+        return el;
+      }
+    }
+
+    return null;
+  }
+
+  function findCreatedSpan(infoRow) {
+    if (!infoRow) return null;
+
+    const spans = infoRow.querySelectorAll('span.flex.items-center.gap-1');
+    for (const span of spans) {
+      const text = normalizeText(span.textContent);
+      if (text.includes('Criado há')) {
+        return span;
+      }
+    }
+
+    return null;
+  }
+
+  function findTicketInfoTarget(topRow) {
+    if (!topRow) return null;
+
+    return topRow.querySelector('div.min-w-0.flex-1');
+  }
+
+  function ensureCreatedHost(targetBlock) {
+    let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
+    if (host) return host;
+
+    host = document.createElement('div');
+    host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
+    targetBlock.appendChild(host);
+
+    return host;
+  }
+
+  function moveCreatedDateToHeader() {
+    const topRows = findTicketHeaderTopRows();
+
+    for (const topRow of topRows) {
+      const infoRow = findTicketInfoRowFromTopRow(topRow);
+      const targetBlock = findTicketInfoTarget(topRow);
+
+      if (!infoRow || !targetBlock) continue;
+
+      const createdSpan = findCreatedSpan(infoRow);
+      if (!createdSpan) continue;
+
+      const host = ensureCreatedHost(targetBlock);
+
+      if (createdSpan.parentElement !== host) {
+        createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
+        host.appendChild(createdSpan);
+        log('campo "Criado há..." movido para baixo do telefone');
+      }
+
+      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
+        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+      }
+
+      const ticketContainer = topRow.parentElement;
+      if (ticketContainer) {
+        ticketContainer.setAttribute(TICKET_HEADER_ATTR, 'true');
+      }
+    }
+  }
+
+  // ============================================================================
   // APLICAÇÃO GERAL
   // ============================================================================
   function applyDynamicAdjustments() {
@@ -415,6 +542,7 @@
     hideCardByExactTitle('Resumo do Ticket');
     applyDateToMessages();
     reorganizeAgentArea();
+    moveCreatedDateToHeader();
   }
 
   function reapplyAll() {

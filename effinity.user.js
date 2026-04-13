@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.7
+// @version      2.8
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,11 +15,12 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.7';
+  const SCRIPT_VERSION = '2.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
+  const UPPERCASE_APPLIED_ATTR = 'data-tm-uppercase-applied';
 
   const AGENT_AREA_ATTR = 'data-tm-agent-area';
   const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
@@ -237,6 +238,17 @@
     if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
       el.setAttribute(HIDDEN_ATTR, 'true');
     }
+  }
+
+  function toUppercaseElementText(el) {
+    if (!el || !(el instanceof HTMLElement)) return;
+    if (el.getAttribute(UPPERCASE_APPLIED_ATTR) === 'true') return;
+
+    const text = el.textContent;
+    if (!text || !text.trim()) return;
+
+    el.textContent = text.toLocaleUpperCase('pt-BR');
+    el.setAttribute(UPPERCASE_APPLIED_ATTR, 'true');
   }
 
   // ============================================================================
@@ -591,7 +603,6 @@
 
   function getAllTicketListCards() {
     const candidates = document.querySelectorAll('div.p-2.border.rounded.cursor-pointer');
-
     return Array.from(candidates).filter(isTicketListCard);
   }
 
@@ -677,6 +688,38 @@
   }
 
   // ============================================================================
+  // MAIÚSCULAS NOS NOMES
+  // ============================================================================
+  function uppercaseTicketHeaderNames() {
+    const headerNames = document.querySelectorAll(
+      'div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate'
+    );
+
+    for (const nameEl of headerNames) {
+      toUppercaseElementText(nameEl);
+    }
+  }
+
+  function uppercaseTicketListCardNames() {
+    const cards = getAllTicketListCards();
+
+    for (const card of cards) {
+      const nameEls = card.querySelectorAll(
+        'span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium'
+      );
+
+      for (const nameEl of nameEls) {
+        toUppercaseElementText(nameEl);
+      }
+    }
+  }
+
+  function applyUppercaseToCustomerNames() {
+    uppercaseTicketHeaderNames();
+    uppercaseTicketListCardNames();
+  }
+
+  // ============================================================================
   // APLICAÇÃO GERAL
   // ============================================================================
   function applyDynamicAdjustments() {
@@ -686,6 +729,7 @@
     reorganizeAgentArea();
     moveCreatedDateToHeader();
     cleanTicketListCards();
+    applyUppercaseToCustomerNames();
   }
 
   function reapplyAll() {

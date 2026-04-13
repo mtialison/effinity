@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,12 +15,15 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '1.6';
+  const SCRIPT_VERSION = '1.7';
+
+  const STYLE_ID = 'tm-effinity-style';
+  const HIDDEN_ATTR = 'data-tm-effinity-hidden';
+  const MAX_SIDEBAR_ATTEMPTS = 10;
 
   // ============================================================================
   // CSS PRINCIPAL
   // ============================================================================
-  // Regras fixas e leves. Tudo que puder ser resolvido por CSS deve ficar aqui.
   const css = `
     /* ==========================================================================
        Layout geral
@@ -56,6 +59,11 @@
     button:has(.lucide-database) {
       display: none !important;
     }
+
+    /* Cards ocultados via JS */
+    [${HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
   `;
 
   // ============================================================================
@@ -71,11 +79,11 @@
   }
 
   function applyCSS() {
-    let style = document.getElementById('tm-effinity-style');
+    let style = document.getElementById(STYLE_ID);
 
     if (!style) {
       style = document.createElement('style');
-      style.id = 'tm-effinity-style';
+      style.id = STYLE_ID;
       document.head.appendChild(style);
     }
 
@@ -84,7 +92,6 @@
     }
   }
 
-  // Debounce simples para evitar várias execuções em sequência
   let debounceTimer = null;
   function debounce(fn, delay) {
     clearTimeout(debounceTimer);
@@ -92,29 +99,106 @@
   }
 
   // ============================================================================
-  // AÇÕES VISUAIS POR JS
+  // LOCALIZAÇÃO SEGURA DE CARD POR TÍTULO
   // ============================================================================
-  // Usado apenas quando CSS não consegue identificar com segurança pelo texto.
 
-  function hideCardByTitle(titleText) {
+  function findCardContainerFromTitle(titleEl) {
+    if (!titleEl) return null;
+
+    // Tentativa 1: sobe até um card com estrutura típica
+    let node = titleEl;
+    while (node && node !== document.body) {
+      if (
+        node.nodeType === 1 &&
+        node.classList &&
+        node.classList.contains('rounded-xl') &&
+        node.classList.contains('bg-card')
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+
+    // Tentativa 2: fallback para qualquer ancestral visualmente compatível
+    node = titleEl.parentElement;
+    while (node && node !== document.body) {
+      const className = typeof node.className === 'string' ? node.className : '';
+      if (
+        className.includes('rounded-xl') &&
+        className.includes('border') &&
+        className.includes('shadow')
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+
+    return null;
+  }
+
+  function hideCardByExactTitle(titleText) {
     const titles = document.querySelectorAll('h3');
+    let hiddenCount = 0;
 
     for (const title of titles) {
       const text = normalizeText(title.textContent);
 
-      if (text === titleText) {
-        const card = title.closest('.rounded-xl');
-        if (card && card.style.display !== 'none') {
-          card.style.display = 'none';
-          log(`card ocultado: "${titleText}"`);
-        }
+      if (text !== titleText) continue;
+
+      const card = findCardContainerFromTitle(title);
+      if (!card) continue;
+
+      if (card.getAttribute(HIDDEN_ATTR) !== 'true') {
+        card.setAttribute(HIDDEN_ATTR, 'true');
+        hiddenCount += 1;
       }
     }
+
+    if (hiddenCount > 0) {
+      log(`card ocultado com sucesso: "${titleText}" (${hiddenCount})`);
+    }
+
+    return hiddenCount;
   }
 
+  // ============================================================================
+  // AJUSTES DINÂMICOS
+  // ============================================================================
+
   function applyDynamicAdjustments() {
-    // Oculta o card "Informações do Cliente"
-    hideCardByTitle('Informações do Cliente');
+    hideCardByExactTitle('Informações do Cliente');
+  }
+
+  function reapplyAll() {
+    applyCSS();
+    applyDynamicAdjustments();
+  }
+
+  // ============================================================================
+  // REFORÇO CONTROLADO PARA SPA
+  // ============================================================================
+  // Evita loop infinito. Faz varreduras curtas após iniciar / navegar.
+
+  let scheduledPasses = [];
+  function clearScheduledPasses() {
+    for (const timer of scheduledPasses) {
+      clearTimeout(timer);
+    }
+    scheduledPasses = [];
+  }
+
+  function scheduleReapplyPasses() {
+    clearScheduledPasses();
+
+    const delays = [150, 400, 800, 1500, 2500, 4000];
+
+    for (const delay of delays) {
+      const timer = setTimeout(() => {
+        reapplyAll();
+      }, delay);
+
+      scheduledPasses.push(timer);
+    }
   }
 
   // ============================================================================
@@ -122,7 +206,6 @@
   // ============================================================================
 
   let sidebarAttempts = 0;
-  const MAX_SIDEBAR_ATTEMPTS = 10;
 
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
@@ -141,16 +224,12 @@
   }
 
   // ============================================================================
-  // REAPLICAÇÃO CONTROLADA
+  // OBSERVER CONTROLADO
   // ============================================================================
-  // Observer continua restrito e leve, apenas como apoio para mudanças da app.
+  // Continua leve, mas com subtree true para pegar renderização interna da SPA.
+  // O custo é reduzido pelo debounce e pela lógica curta de reaplicação.
 
   let observer = null;
-
-  function reapplyAll() {
-    applyCSS();
-    applyDynamicAdjustments();
-  }
 
   function startObserver() {
     const target =
@@ -165,13 +244,34 @@
     }
 
     observer = new MutationObserver(() => {
-      debounce(reapplyAll, 200);
+      debounce(() => {
+        reapplyAll();
+      }, 200);
     });
 
     observer.observe(target, {
       childList: true,
-      subtree: false
+      subtree: true
     });
+  }
+
+  // ============================================================================
+  // DETECÇÃO DE NAVEGAÇÃO INTERNA
+  // ============================================================================
+
+  let lastUrl = location.href;
+
+  function startUrlWatcher() {
+    setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        log('mudança interna de rota detectada');
+        reapplyAll();
+        scheduleReapplyPasses();
+        sidebarAttempts = 0;
+        setTimeout(collapseSidebar, 500);
+      }
+    }, 1000);
   }
 
   // ============================================================================
@@ -180,17 +280,14 @@
 
   function init() {
     reapplyAll();
-
-    // Reforços controlados para telas SPA / render tardio
-    setTimeout(reapplyAll, 500);
-    setTimeout(reapplyAll, 1500);
-
+    scheduleReapplyPasses();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
   function boot() {
     init();
     startObserver();
+    startUrlWatcher();
     setTimeout(collapseSidebar, 800);
   }
 
@@ -200,6 +297,13 @@
     boot();
   }
 
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', () => {
+    reapplyAll();
+    scheduleReapplyPasses();
+  });
+
+  window.addEventListener('pageshow', () => {
+    reapplyAll();
+    scheduleReapplyPasses();
+  });
 })();

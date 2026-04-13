@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  envenenado
-// @author       alison
+// @version      1.3
+// @description  veneno
+// @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -32,16 +32,11 @@
       min-height: 0 !important;
       overflow: hidden !important;
     }
-
-    header.glass.sticky.top-0.z-50.shadow-sm.px-6.py-4 {
-      display: none !important;
-    }
   `;
 
   /*
    * =========================================================
    * 2) SEÇÃO PARA OCULTAR ELEMENTOS POR CSS
-   *    Adicione aqui os seletores que quiser esconder.
    * =========================================================
    */
   const hiddenCssSelectors = [
@@ -58,8 +53,7 @@
    */
   const hiddenCardsByTitle = [
     'Informações do Cliente',
-    'Resumo do Ticket',
-    'Área do Agente'
+    'Resumo do Ticket'
   ];
 
   const hiddenButtonsByText = [
@@ -80,11 +74,15 @@
     'Gestão de Tickets'
   ];
 
+  function norm(text) {
+    return (text || '').replace(/\s+/g, ' ').trim();
+  }
+
   function buildHiddenCss() {
     if (!hiddenCssSelectors.length) return '';
 
     return hiddenCssSelectors
-      .map(selector => `${selector} { display: none !important; }`)
+      .map((selector) => `${selector} { display: none !important; }`)
       .join('\n');
   }
 
@@ -103,14 +101,10 @@
     }
   }
 
-  function norm(text) {
-    return (text || '').replace(/\s+/g, ' ').trim();
-  }
-
   function hideElementsByText() {
-    // 🔴 remover cards inteiros pelo título
+    // remover cards inteiros pelo título
     if (hiddenCardsByTitle.length) {
-      document.querySelectorAll('h1, h2, h3, h4').forEach(el => {
+      document.querySelectorAll('h1, h2, h3, h4').forEach((el) => {
         const text = norm(el.textContent);
 
         if (hiddenCardsByTitle.includes(text)) {
@@ -122,9 +116,9 @@
       });
     }
 
-    // 🔴 botões
+    // botões
     if (hiddenButtonsByText.length) {
-      document.querySelectorAll('button').forEach(el => {
+      document.querySelectorAll('button').forEach((el) => {
         const text = norm(el.textContent);
         if (hiddenButtonsByText.includes(text)) {
           el.style.display = 'none';
@@ -132,9 +126,9 @@
       });
     }
 
-    // 🔴 links
+    // links
     if (hiddenLinksByText.length) {
-      document.querySelectorAll('a').forEach(el => {
+      document.querySelectorAll('a').forEach((el) => {
         const text = norm(el.textContent);
         if (hiddenLinksByText.includes(text)) {
           el.style.display = 'none';
@@ -142,9 +136,9 @@
       });
     }
 
-    // 🔴 genéricos
+    // genéricos
     if (hiddenGenericText.length) {
-      document.querySelectorAll('div, span, p, strong').forEach(el => {
+      document.querySelectorAll('div, span, p, strong').forEach((el) => {
         const text = norm(el.textContent);
         if (hiddenGenericText.includes(text)) {
           el.style.display = 'none';
@@ -156,29 +150,111 @@
   function hidePartialElements() {
     if (!hiddenPartialTitles.length) return;
 
-    document.querySelectorAll('h1, h2, h3, h4').forEach(el => {
+    document.querySelectorAll('h1, h2, h3, h4').forEach((el) => {
       const text = norm(el.textContent);
 
-      if (hiddenPartialTitles.some(t => text.includes(t))) {
+      if (hiddenPartialTitles.some((t) => text.includes(t))) {
         // remove apenas o texto solto do título
-        el.childNodes.forEach(node => {
+        el.childNodes.forEach((node) => {
           if (node.nodeType === Node.TEXT_NODE) {
             node.textContent = '';
           }
         });
 
         // remove badges/divs internas como "⚡ Tempo Real"
-        el.querySelectorAll('div').forEach(div => {
+        el.querySelectorAll('div').forEach((div) => {
           div.style.display = 'none';
         });
       }
     });
   }
 
+  function rearrangeAgentHeader() {
+    const rows = document.querySelectorAll('.bg-card.border.border-border.rounded-lg.px-3.py-2.shadow-sm.flex-shrink-0 > div');
+    if (!rows || rows.length < 2) return;
+
+    const topRow = rows[0];
+    const bottomRow = rows[1];
+    if (!topRow || !bottomRow) return;
+
+    const rightGroup = topRow.querySelector('.ml-auto.flex.items-center.gap-4');
+    if (!rightGroup) return;
+
+    const buttons = [...rightGroup.querySelectorAll('button')];
+    const onlineBtn = buttons.find((btn) => norm(btn.textContent).includes('Online'));
+    const hsmBtn = buttons.find((btn) => norm(btn.textContent).includes('Enviar HSM'));
+    const atenderProximoBtn = buttons.find((btn) => norm(btn.textContent).includes('Atender próximo'));
+
+    [...rightGroup.children].forEach((child) => {
+      const text = norm(child.textContent);
+
+      const isOnlineContainer = onlineBtn && child === onlineBtn.closest('.relative.inline-block.text-left');
+      const isHsm = hsmBtn && child === hsmBtn;
+      const isAtender = atenderProximoBtn && child === atenderProximoBtn;
+
+      const isAguardando = text.includes('Aguardando');
+      const isDistribuidos = text.includes('Distribuídos');
+      const isAtendendo = text.includes('Atendendo') && !text.includes('Atender próximo');
+      const isDivider = child.classList.contains('w-px');
+      const isRefresh = !!(child.querySelector && child.querySelector('.lucide-refresh-cw'));
+
+      if (isAguardando || isDistribuidos || isAtendendo || isAtender || isDivider || isRefresh) {
+        child.style.display = 'none';
+      }
+
+      // garante que Online e HSM não sejam ocultados
+      if (isOnlineContainer || isHsm) {
+        child.style.display = '';
+      }
+    });
+
+    let actionWrap = bottomRow.querySelector('.tm-agent-actions');
+    if (!actionWrap) {
+      actionWrap = document.createElement('div');
+      actionWrap.className = 'tm-agent-actions';
+      actionWrap.style.display = 'flex';
+      actionWrap.style.alignItems = 'center';
+      actionWrap.style.gap = '8px';
+      actionWrap.style.marginLeft = 'auto';
+      actionWrap.style.flexShrink = '0';
+      actionWrap.style.flexWrap = 'wrap';
+      bottomRow.appendChild(actionWrap);
+    }
+
+    const onlineContainer = onlineBtn ? onlineBtn.closest('.relative.inline-block.text-left') : null;
+
+    if (onlineContainer && !actionWrap.contains(onlineContainer)) {
+      actionWrap.appendChild(onlineContainer);
+    }
+
+    if (hsmBtn && !actionWrap.contains(hsmBtn)) {
+      actionWrap.appendChild(hsmBtn);
+    }
+
+    // remove o bloco esquerdo "Área do Agente"
+    const leftTitle = topRow.querySelector('.flex.items-center.gap-2');
+    if (leftTitle) {
+      leftTitle.style.display = 'none';
+    }
+
+    // colapsa a primeira linha se ela ficar vazia
+    const hasVisibleChildren = [...rightGroup.children].some((child) => getComputedStyle(child).display !== 'none');
+    if (!hasVisibleChildren && leftTitle) {
+      topRow.style.display = 'none';
+    }
+
+    // ajusta a segunda linha para receber os botões
+    bottomRow.style.display = 'flex';
+    bottomRow.style.alignItems = 'center';
+    bottomRow.style.gap = '12px';
+    bottomRow.style.flexWrap = 'wrap';
+  }
+
   function applyAll() {
     applyCSS();
     hideElementsByText();
     hidePartialElements();
+    rearrangeAgentHeader();
   }
 
   function init() {

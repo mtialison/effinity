@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      2.0
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,10 +15,11 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '1.9';
+  const SCRIPT_VERSION = '2.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
+  const DATE_APPLIED_ATTR = 'data-tm-date-applied';
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
   // ============================================================================
@@ -55,6 +56,9 @@
     }
   `;
 
+  // ============================================================================
+  // UTILITÁRIOS
+  // ============================================================================
   function log(...args) {
     console.log(`[${SCRIPT_NAME}]`, ...args);
   }
@@ -83,10 +87,17 @@
     debounceTimer = setTimeout(fn, delay);
   }
 
+  function getCurrentDateFormatted() {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
   // ============================================================================
   // OCULTAÇÃO DE CARDS
   // ============================================================================
-
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
 
@@ -109,7 +120,6 @@
 
     for (const title of titles) {
       const text = normalizeText(title.textContent);
-
       if (text !== titleText) continue;
 
       const card = findCardContainerFromTitle(title);
@@ -125,45 +135,62 @@
   // ============================================================================
   // DATA NAS MENSAGENS
   // ============================================================================
+  function isTimeText(text) {
+    return /^\d{2}:\d{2}$/.test(text);
+  }
 
-  function getCurrentDateFormatted() {
-    const now = new Date();
+  function looksLikeMessageMetaContainer(el) {
+    if (!el) return false;
 
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
+    const text = normalizeText(el.textContent);
 
-    return `${day}/${month}/${year}`;
+    // Normalmente esse rodapé tem hora e status de envio
+    return (
+      text.length <= 40 &&
+      /\d{2}:\d{2}/.test(text)
+    );
   }
 
   function applyDateToMessages() {
-    const timeSpans = document.querySelectorAll(
-      '.flex.items-center.gap-1\\.5.mt-1\\.5.justify-end span.text-\\[10px\\].opacity-60'
-    );
+    const spans = document.querySelectorAll('span');
 
-    const date = getCurrentDateFormatted();
+    let updated = 0;
+    const currentDate = getCurrentDateFormatted();
 
-    for (const span of timeSpans) {
-      const text = span.textContent.trim();
+    for (const span of spans) {
+      if (span.getAttribute(DATE_APPLIED_ATTR) === 'true') continue;
 
-      // evita duplicar
-      if (text.includes('/')) continue;
+      const text = normalizeText(span.textContent);
+      if (!isTimeText(text)) continue;
 
-      // valida formato de hora simples
-      if (/^\\d{2}:\\d{2}$/.test(text)) {
-        span.textContent = `${date} ${text}`;
-      }
+      const parent = span.parentElement;
+      if (!looksLikeMessageMetaContainer(parent)) continue;
+
+      // evita alterar spans soltos fora do chat
+      const nearbyMessageBubble =
+        span.closest('.rounded-2xl') ||
+        span.closest('.rounded-xl') ||
+        span.closest('[class*="max-w-"]') ||
+        span.closest('[class*="break-words"]');
+
+      if (!nearbyMessageBubble) continue;
+
+      span.textContent = `${currentDate} ${text}`;
+      span.setAttribute(DATE_APPLIED_ATTR, 'true');
+      updated += 1;
+    }
+
+    if (updated > 0) {
+      log(`datas aplicadas em ${updated} mensagem(ns)`);
     }
   }
 
   // ============================================================================
   // APLICAÇÃO GERAL
   // ============================================================================
-
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
-
     applyDateToMessages();
   }
 
@@ -175,21 +202,21 @@
   // ============================================================================
   // REFORÇOS SPA
   // ============================================================================
-
   let scheduledPasses = [];
+
   function scheduleReapplyPasses() {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
 
-    [150, 400, 800, 1500, 2500].forEach(delay => {
+    const delays = [150, 400, 800, 1500, 2500, 4000];
+    for (const delay of delays) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
-    });
+    }
   }
 
   // ============================================================================
   // SIDEBAR
   // ============================================================================
-
   let sidebarAttempts = 0;
 
   function collapseSidebar() {
@@ -201,7 +228,8 @@
       return;
     }
 
-    if (++sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
+    sidebarAttempts += 1;
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
       setTimeout(collapseSidebar, 300);
     }
   }
@@ -209,7 +237,6 @@
   // ============================================================================
   // OBSERVER
   // ============================================================================
-
   let observer = null;
 
   function startObserver() {
@@ -235,7 +262,6 @@
   // ============================================================================
   // INIT
   // ============================================================================
-
   function init() {
     reapplyAll();
     scheduleReapplyPasses();
@@ -256,5 +282,4 @@
 
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
-
 })();

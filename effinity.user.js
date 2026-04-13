@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.2
+// @version      3.3
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.2';
+  const SCRIPT_VERSION = '3.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -442,15 +442,17 @@
     if (!agentContainer) return null;
 
     const directChildren = Array.from(agentContainer.children);
+
     for (const child of directChildren) {
-      if (!child.matches || !child.matches('div')) continue;
+      if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
 
       const text = normalizeText(child.textContent);
-      if (
-        text.includes('Área do Agente') &&
-        text.includes('Offline') &&
-        text.includes('Enviar HSM')
-      ) {
+
+      const hasTitle = text.includes('Área do Agente');
+      const hasStatusControl = text.includes('Offline') || text.includes('Online');
+      const hasHsmButton = text.includes('Enviar HSM');
+
+      if (hasTitle && hasStatusControl && hasHsmButton) {
         return child;
       }
     }
@@ -479,9 +481,16 @@
     if (!topRow) return null;
 
     const buttons = topRow.querySelectorAll('button');
+
     for (const btn of buttons) {
       const text = normalizeText(btn.textContent);
-      if (/^(Offline|Online|Pausa|Ausente)/i.test(text) || text.includes('Offline')) {
+
+      if (
+        text.includes('Offline') ||
+        text.includes('Online') ||
+        text.includes('Pausa') ||
+        text.includes('Ausente')
+      ) {
         const wrapper = btn.closest('.relative.inline-block.text-left');
         return wrapper || btn;
       }
@@ -664,10 +673,14 @@
         host.appendChild(createdSpan);
       }
 
-      hideElement(infoRow);
+      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
+        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+      }
 
       const avatar = findTicketAvatar(topRow);
-      hideElement(avatar);
+      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
+        avatar.setAttribute(HIDDEN_ATTR, 'true');
+      }
 
       const ticketContainer = topRow.parentElement;
       if (ticketContainer) {
@@ -998,6 +1011,7 @@
         badge.style.backgroundColor = '';
         badge.style.color = '';
         badge.style.borderColor = '';
+        badge.style.backgroundImage = 'none';
       }
     }
   }
@@ -1040,6 +1054,10 @@
     if (btn) {
       btn.click();
       log('sidebar recolhida');
+      return;
+    }
+
+    if (document.querySelector('button[aria-label="Abrir menu"]')) {
       return;
     }
 

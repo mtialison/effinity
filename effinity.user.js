@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -35,6 +35,11 @@
 
     /* Ocultar cabeçalho "Gestão de Tickets / Tempo Real" */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
+      display: none !important;
+    }
+
+    /* Ocultar botão "Meta" */
+    button:has(.lucide-database) {
       display: none !important;
     }
   `;
@@ -79,40 +84,8 @@
     applyCSS();
     setTimeout(applyCSS, 500);
     setTimeout(applyCSS, 1500);
-    console.log('[TM effinity] iniciado v1.4');
+    console.log('[TM effinity] iniciado v1.5');
   }
 
   // ─── Observer restrito ao container da app, sem subtree ──────────────────────
-  let observer = null;
-  function startObserver() {
-    const target =
-      document.getElementById('app') ||
-      document.querySelector('[data-v-app]') ||
-      document.body;
-
-    if (observer) observer.disconnect();
-
-    observer = new MutationObserver(debouncedApply);
-    observer.observe(target, {
-      childList: true,
-      subtree: false
-    });
-  }
-
-  // ─── Entrada ─────────────────────────────────────────────────────────────────
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      init();
-      startObserver();
-      setTimeout(collapseSidebar, 800);
-    });
-  } else {
-    init();
-    startObserver();
-    setTimeout(collapseSidebar, 800);
-  }
-
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
-
-})();
+  let obse

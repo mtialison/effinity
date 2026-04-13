@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  coisa ruim
-// @author       raik
+// @version      1.5
+// @description  Ajustes visuais e ocultação de elementos no Pulse Effinity
+// @author       Alison
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -48,8 +48,7 @@
    */
   const hiddenCardsByTitle = [
     'Informações do Cliente',
-    'Resumo do Ticket',
-    'Área do Agente'
+    'Resumo do Ticket'
   ];
 
   const hiddenButtonsByText = [
@@ -158,25 +157,32 @@
     if (!card) return;
 
     const rows = card.querySelectorAll(':scope > div');
-    if (!rows || rows.length < 2) return;
+    if (rows.length < 2) return;
 
     const topRow = rows[0];
     const bottomRow = rows[1];
-    if (!topRow || !bottomRow) return;
 
-    // ocultar totalmente o header "Área do Agente"
+    // 1) some com a linha de cima inteira
     topRow.style.display = 'none';
 
+    // 2) encontrar os botões que estavam na linha de cima
     const rightGroup = topRow.querySelector('.ml-auto.flex.items-center.gap-4');
     if (!rightGroup) return;
 
     const buttons = [...rightGroup.querySelectorAll('button')];
-    const onlineBtn = buttons.find((btn) => norm(btn.textContent).includes('Online'));
-    const hsmBtn = buttons.find((btn) => norm(btn.textContent).includes('Enviar HSM'));
+    const onlineBtn = buttons.find(btn => norm(btn.textContent).includes('Online'));
+    const hsmBtn = buttons.find(btn => norm(btn.textContent).includes('Enviar HSM'));
 
-    const onlineContainer = onlineBtn ? onlineBtn.closest('.relative.inline-block.text-left') : null;
+    const onlineWrapper = onlineBtn ? onlineBtn.closest('.relative.inline-block.text-left') : null;
 
-    // container fixo dos botões ao final da linha
+    // 3) ajustar a linha das filas para ficar tudo à esquerda
+    bottomRow.style.display = 'flex';
+    bottomRow.style.alignItems = 'center';
+    bottomRow.style.justifyContent = 'flex-start';
+    bottomRow.style.gap = '12px';
+    bottomRow.style.flexWrap = 'wrap';
+
+    // 4) criar container dos botões móveis sem jogar para a direita
     let actionWrap = bottomRow.querySelector('.tm-agent-actions');
     if (!actionWrap) {
       actionWrap = document.createElement('div');
@@ -184,36 +190,46 @@
       actionWrap.style.display = 'flex';
       actionWrap.style.alignItems = 'center';
       actionWrap.style.gap = '12px';
-      actionWrap.style.marginLeft = 'auto';
       actionWrap.style.flexShrink = '0';
       bottomRow.appendChild(actionWrap);
     }
 
-    // remove qualquer conteúdo anterior para evitar ordem errada
+    // evita duplicação
     actionWrap.innerHTML = '';
 
-    // garante layout da linha de filas
-    bottomRow.style.display = 'flex';
-    bottomRow.style.alignItems = 'center';
-    bottomRow.style.gap = '12px';
-    bottomRow.style.flexWrap = 'nowrap';
-    bottomRow.style.justifyContent = 'flex-start';
-
-    // move primeiro Online
-    if (onlineContainer) {
-      actionWrap.appendChild(onlineContainer);
+    // 5) manter ordem desejada: filas -> toggles -> online -> enviar hsm
+    if (onlineWrapper) {
+      onlineWrapper.style.display = '';
+      actionWrap.appendChild(onlineWrapper);
     }
 
-    // depois Enviar HSM
     if (hsmBtn) {
+      hsmBtn.style.display = '';
       actionWrap.appendChild(hsmBtn);
     }
+
+    // 6) garante que a área das filas fique antes dos botões
+    const filasLabel = [...bottomRow.children].find(el => norm(el.textContent) === 'Filas:');
+    if (filasLabel && actionWrap.previousElementSibling !== bottomRow.lastElementChild) {
+      bottomRow.appendChild(actionWrap);
+    }
+  }
+
+  function hideTopPageHeader() {
+    const headers = document.querySelectorAll('header');
+    headers.forEach((header) => {
+      const text = norm(header.textContent);
+      if (text.includes('Área do Agente') && text.includes('Fila de atendimento e conversas ativas')) {
+        header.style.display = 'none';
+      }
+    });
   }
 
   function applyAll() {
     applyCSS();
     hideElementsByText();
     hidePartialElements();
+    hideTopPageHeader();
     rearrangeAgentHeader();
   }
 

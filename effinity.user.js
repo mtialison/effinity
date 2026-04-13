@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.1
+// @version      3.2
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.1';
+  const SCRIPT_VERSION = '3.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -38,6 +38,9 @@
   const COPY_VALUE_ATTR = 'data-tm-copy-value';
   const COPY_TOAST_ATTR = 'data-tm-copy-toast';
   const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
+
+  const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
+  const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
@@ -240,6 +243,37 @@
       object-fit: contain !important;
       pointer-events: none !important;
       user-select: none !important;
+    }
+
+    /* ==========================================================================
+       Tags de fila nos cards
+       ========================================================================== */
+
+    [${QUEUE_TAG_ATTR}="true"] {
+      background-image: none !important;
+      box-shadow: none !important;
+      border-width: 1px !important;
+      border-style: solid !important;
+      font-weight: 600 !important;
+      line-height: 1.1 !important;
+    }
+
+    [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
+      background-color: #dbeafe !important;
+      color: #1d4ed8 !important;
+      border-color: #93c5fd !important;
+    }
+
+    [${QUEUE_TAG_TYPE_ATTR}="samec"] {
+      background-color: #fef3c7 !important;
+      color: #b45309 !important;
+      border-color: #fcd34d !important;
+    }
+
+    [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
+      background-color: #fee2e2 !important;
+      color: #b91c1c !important;
+      border-color: #fca5a5 !important;
     }
   `;
 
@@ -926,6 +960,48 @@
     }
   }
 
+  function getQueueType(labelText) {
+    const text = normalizeText(labelText).toLowerCase();
+
+    if (text === 'clínica do sono' || text === 'clinica do sono') {
+      return 'clinica_do_sono';
+    }
+
+    if (text === 'samec') {
+      return 'samec';
+    }
+
+    if (text === 'confirmação' || text === 'confirmacao') {
+      return 'confirmacao';
+    }
+
+    return '';
+  }
+
+  function styleQueueTagsInTicketCards() {
+    const cards = getAllTicketListCards();
+
+    for (const card of cards) {
+      const badges = card.querySelectorAll('div.inline-flex.items-center.rounded-full');
+
+      for (const badge of badges) {
+        if (!(badge instanceof HTMLElement)) continue;
+
+        const text = normalizeText(badge.textContent);
+        const queueType = getQueueType(text);
+
+        if (!queueType) continue;
+
+        badge.setAttribute(QUEUE_TAG_ATTR, 'true');
+        badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
+
+        badge.style.backgroundColor = '';
+        badge.style.color = '';
+        badge.style.borderColor = '';
+      }
+    }
+  }
+
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
@@ -936,6 +1012,7 @@
     applyUppercaseToCustomerNames();
     normalizeAttendanceDataPhones();
     enableCopyOnAttendanceData();
+    styleQueueTagsInTicketCards();
   }
 
   function reapplyAll() {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Ajustes visuais e ocultação de elementos no Pulse Effinity
 // @author       Alison
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -27,6 +27,14 @@
       min-height: 0 !important;
       overflow: hidden !important;
     }
+
+    .tm-agent-actions {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      margin-left: 0 !important;
+      flex-shrink: 0 !important;
+    }
   `;
 
   const hiddenCssSelectors = [];
@@ -41,7 +49,6 @@
   ];
 
   const hiddenLinksByText = [];
-
   const hiddenGenericText = [];
 
   const hiddenPartialTitles = [
@@ -54,7 +61,7 @@
 
   function buildHiddenCss() {
     return hiddenCssSelectors
-      .map((selector) => `${selector} { display: none !important; }`)
+      .map(selector => `${selector} { display: none !important; }`)
       .join('\n');
   }
 
@@ -75,7 +82,7 @@
 
   function hideElementsByText() {
     if (hiddenCardsByTitle.length) {
-      document.querySelectorAll('h1, h2, h3, h4').forEach((el) => {
+      document.querySelectorAll('h1, h2, h3, h4').forEach(el => {
         const text = norm(el.textContent);
         if (!hiddenCardsByTitle.includes(text)) return;
 
@@ -87,7 +94,7 @@
     }
 
     if (hiddenButtonsByText.length) {
-      document.querySelectorAll('button').forEach((el) => {
+      document.querySelectorAll('button').forEach(el => {
         const text = norm(el.textContent);
         if (hiddenButtonsByText.includes(text)) {
           el.style.display = 'none';
@@ -96,7 +103,7 @@
     }
 
     if (hiddenLinksByText.length) {
-      document.querySelectorAll('a').forEach((el) => {
+      document.querySelectorAll('a').forEach(el => {
         const text = norm(el.textContent);
         if (hiddenLinksByText.includes(text)) {
           el.style.display = 'none';
@@ -105,7 +112,7 @@
     }
 
     if (hiddenGenericText.length) {
-      document.querySelectorAll('div, span, p, strong').forEach((el) => {
+      document.querySelectorAll('div, span, p, strong').forEach(el => {
         const text = norm(el.textContent);
         if (hiddenGenericText.includes(text)) {
           el.style.display = 'none';
@@ -117,27 +124,27 @@
   function hidePartialElements() {
     if (!hiddenPartialTitles.length) return;
 
-    document.querySelectorAll('h1, h2, h3, h4').forEach((el) => {
+    document.querySelectorAll('h1, h2, h3, h4').forEach(el => {
       const text = norm(el.textContent);
-      if (!hiddenPartialTitles.some((t) => text.includes(t))) return;
+      if (!hiddenPartialTitles.some(t => text.includes(t))) return;
 
       if (el.dataset.tmPartialDone === '1') return;
       el.dataset.tmPartialDone = '1';
 
-      el.childNodes.forEach((node) => {
+      el.childNodes.forEach(node => {
         if (node.nodeType === Node.TEXT_NODE) {
           node.textContent = '';
         }
       });
 
-      el.querySelectorAll('div').forEach((div) => {
+      el.querySelectorAll('div').forEach(div => {
         div.style.display = 'none';
       });
     });
   }
 
   function hideTopPageHeader() {
-    document.querySelectorAll('header').forEach((header) => {
+    document.querySelectorAll('header').forEach(header => {
       const text = norm(header.textContent);
       if (text.includes('Área do Agente') && text.includes('Fila de atendimento e conversas ativas')) {
         header.style.display = 'none';
@@ -161,34 +168,42 @@
     if (!rightGroup) return;
 
     const buttons = [...rightGroup.querySelectorAll('button')];
-    const onlineBtn = buttons.find((btn) => norm(btn.textContent).includes('Online'));
-    const hsmBtn = buttons.find((btn) => norm(btn.textContent).includes('Enviar HSM'));
+    const onlineBtn = buttons.find(btn => norm(btn.textContent).includes('Online'));
+    const hsmBtn = buttons.find(btn => norm(btn.textContent).includes('Enviar HSM'));
     const onlineWrapper = onlineBtn ? onlineBtn.closest('.relative.inline-block.text-left') : null;
 
-    if (!bottomRow.querySelector('.tm-agent-actions')) {
-      const actionWrap = document.createElement('div');
+    bottomRow.style.display = 'flex';
+    bottomRow.style.alignItems = 'center';
+    bottomRow.style.justifyContent = 'flex-start';
+    bottomRow.style.gap = '12px';
+    bottomRow.style.flexWrap = 'nowrap';
+
+    let actionWrap = bottomRow.querySelector('.tm-agent-actions');
+    if (!actionWrap) {
+      actionWrap = document.createElement('div');
       actionWrap.className = 'tm-agent-actions';
-      actionWrap.style.display = 'flex';
-      actionWrap.style.alignItems = 'center';
-      actionWrap.style.gap = '12px';
-      actionWrap.style.flexShrink = '0';
-
-      bottomRow.style.display = 'flex';
-      bottomRow.style.alignItems = 'center';
-      bottomRow.style.justifyContent = 'flex-start';
-      bottomRow.style.gap = '12px';
-      bottomRow.style.flexWrap = 'wrap';
-
-      if (onlineWrapper) {
-        actionWrap.appendChild(onlineWrapper);
-      }
-
-      if (hsmBtn) {
-        actionWrap.appendChild(hsmBtn);
-      }
-
-      bottomRow.appendChild(actionWrap);
     }
+
+    // garante ordem correta sempre
+    actionWrap.innerHTML = '';
+
+    if (onlineWrapper) {
+      onlineWrapper.style.display = '';
+      actionWrap.appendChild(onlineWrapper);
+    }
+
+    if (hsmBtn) {
+      hsmBtn.style.display = '';
+      actionWrap.appendChild(hsmBtn);
+    }
+
+    // remove actionWrap da posição atual para reinserir no fim
+    if (actionWrap.parentElement) {
+      actionWrap.parentElement.removeChild(actionWrap);
+    }
+
+    // adiciona NO FINAL da linha, depois dos toggles
+    bottomRow.appendChild(actionWrap);
   }
 
   function applyAll() {
@@ -199,45 +214,20 @@
     rearrangeAgentHeader();
   }
 
-  function init() {
+  function boot() {
     applyAll();
     setTimeout(applyAll, 300);
-    setTimeout(applyAll, 1000);
+    setTimeout(applyAll, 800);
+    setTimeout(applyAll, 1500);
     console.log('[TM effinity] ajustes aplicados');
   }
 
-  let scheduled = false;
-  function scheduleApply() {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      applyAll();
-    });
-  }
-
-  const observer = new MutationObserver(() => {
-    scheduleApply();
-  });
-
-  function startObserver() {
-    if (!document.body) return;
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      init();
-      startObserver();
-    }, { once: true });
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {
-    init();
-    startObserver();
+    boot();
   }
 
-  window.addEventListener('load', init, { once: true });
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', boot, { once: true });
+  window.addEventListener('pageshow', boot);
 })();

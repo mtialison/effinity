@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.5';
+  const SCRIPT_VERSION = '2.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -232,8 +232,15 @@
     return `${day}/${month}/${year}`;
   }
 
+  function hideElement(el) {
+    if (!el) return;
+    if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
+      el.setAttribute(HIDDEN_ATTR, 'true');
+    }
+  }
+
   // ============================================================================
-  // OCULTAÇÃO DE CARDS
+  // OCULTAÇÃO DE CARDS GERAIS
   // ============================================================================
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
@@ -262,10 +269,7 @@
       const card = findCardContainerFromTitle(title);
       if (!card) continue;
 
-      if (card.getAttribute(HIDDEN_ATTR) !== 'true') {
-        card.setAttribute(HIDDEN_ATTR, 'true');
-        log(`card ocultado: "${titleText}"`);
-      }
+      hideElement(card);
     }
   }
 
@@ -518,7 +522,6 @@
 
   function findTicketAvatar(topRow) {
     if (!topRow) return null;
-
     return topRow.querySelector('div.w-10.h-10.flex-shrink-0.rounded-full');
   }
 
@@ -552,23 +555,139 @@
       if (createdSpan.parentElement !== host) {
         createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
-        log('campo "Criado há..." movido para baixo do telefone');
       }
 
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
-        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
-      }
+      hideElement(infoRow);
 
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
-        avatar.setAttribute(HIDDEN_ATTR, 'true');
-        log('avatar do cabeçalho do ticket ocultado');
-      }
+      hideElement(avatar);
 
       const ticketContainer = topRow.parentElement;
       if (ticketContainer) {
         ticketContainer.setAttribute(TICKET_HEADER_ATTR, 'true');
       }
+    }
+  }
+
+  // ============================================================================
+  // LISTA DE TICKETS
+  // ============================================================================
+  function isTicketListCard(card) {
+    if (!card) return false;
+
+    const text = normalizeText(card.textContent);
+
+    return (
+      text.includes('Última atividade:') &&
+      (
+        text.includes('Não lida') ||
+        text.includes('Contato') ||
+        /\bNormal\b/.test(text)
+      )
+    );
+  }
+
+  function findProtocolRow(card) {
+    if (!card) return null;
+
+    const rows = card.querySelectorAll('div.flex.items-center.gap-1');
+    for (const row of rows) {
+      const text = normalizeText(row.textContent);
+
+      if (/^(✅|☑️|✔️)?\s*[A-Z]{2,}\d{6,}/.test(text) || /C[SN]\d{6,}/.test(text)) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
+  function hideProtocolAndPriority(card) {
+    const protocolRow = findProtocolRow(card);
+    if (!protocolRow) return;
+
+    const children = Array.from(protocolRow.children);
+
+    for (const child of children) {
+      if (!(child instanceof HTMLElement)) continue;
+
+      const text = normalizeText(child.textContent);
+
+      // ícone/emoji do protocolo
+      if (child.matches('span.text-xs') && /^(✅|☑️|✔️)$/.test(text)) {
+        hideElement(child);
+        continue;
+      }
+
+      // protocolo
+      if (child.matches('span.font-medium.text-sm.truncate') || /^[A-Z]{2,}\d{6,}$/.test(text)) {
+        hideElement(child);
+        continue;
+      }
+
+      // tag "Normal"
+      if (text === 'Normal' || text.includes('Normal')) {
+        hideElement(child);
+      }
+    }
+
+    // se a linha ficar vazia visualmente, oculta a linha toda
+    const visibleChildren = children.filter(el => {
+      if (!(el instanceof HTMLElement)) return false;
+      return el.getAttribute(HIDDEN_ATTR) !== 'true';
+    });
+
+    if (visibleChildren.length === 0) {
+      hideElement(protocolRow);
+    }
+  }
+
+  function hidePhoneInCard(card) {
+    if (!card) return;
+
+    const spans = card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-muted-foreground');
+    for (const span of spans) {
+      const text = normalizeText(span.textContent);
+      if (/^\d{10,}$/.test(text) || /\d{10,}/.test(text)) {
+        hideElement(span);
+      }
+    }
+  }
+
+  function hideTagContato(card) {
+    if (!card) return;
+
+    const spans = card.querySelectorAll('span.inline-flex.items-center.gap-1');
+    for (const span of spans) {
+      const text = normalizeText(span.textContent);
+      if (text === 'Contato' || text.includes('Contato')) {
+        hideElement(span);
+      }
+    }
+  }
+
+  function hideTagEmAtendimento(card) {
+    if (!card) return;
+
+    const divs = card.querySelectorAll('div.inline-flex.items-center.rounded-full');
+    for (const div of divs) {
+      const text = normalizeText(div.textContent);
+      if (text === 'Em Atendimento' || text.includes('Em Atendimento')) {
+        hideElement(div);
+      }
+    }
+  }
+
+  function cleanTicketListCards() {
+    const cards = document.querySelectorAll('div.p-2.border.rounded.cursor-pointer.transition-all.duration-200');
+
+    for (const card of cards) {
+      if (!isTicketListCard(card)) continue;
+
+      hideProtocolAndPriority(card);
+      hidePhoneInCard(card);
+      hideTagContato(card);
+      hideTagEmAtendimento(card);
     }
   }
 
@@ -581,6 +700,7 @@
     applyDateToMessages();
     reorganizeAgentArea();
     moveCreatedDateToHeader();
+    cleanTicketListCards();
   }
 
   function reapplyAll() {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,14 +15,14 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '1.8';
+  const SCRIPT_VERSION = '1.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
   // ============================================================================
-  // CSS PRINCIPAL
+  // CSS
   // ============================================================================
   const css = `
     .h-\\[calc\\(100vh-100px\\)\\] {
@@ -83,6 +83,10 @@
     debounceTimer = setTimeout(fn, delay);
   }
 
+  // ============================================================================
+  // OCULTAÇÃO DE CARDS
+  // ============================================================================
+
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
 
@@ -118,18 +122,59 @@
     }
   }
 
-  function applyDynamicAdjustments() {
-    // Já existente
-    hideCardByExactTitle('Informações do Cliente');
+  // ============================================================================
+  // DATA NAS MENSAGENS
+  // ============================================================================
 
-    // NOVO
+  function getCurrentDateFormatted() {
+    const now = new Date();
+
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+
+    return `${day}/${month}/${year}`;
+  }
+
+  function applyDateToMessages() {
+    const timeSpans = document.querySelectorAll(
+      '.flex.items-center.gap-1\\.5.mt-1\\.5.justify-end span.text-\\[10px\\].opacity-60'
+    );
+
+    const date = getCurrentDateFormatted();
+
+    for (const span of timeSpans) {
+      const text = span.textContent.trim();
+
+      // evita duplicar
+      if (text.includes('/')) continue;
+
+      // valida formato de hora simples
+      if (/^\\d{2}:\\d{2}$/.test(text)) {
+        span.textContent = `${date} ${text}`;
+      }
+    }
+  }
+
+  // ============================================================================
+  // APLICAÇÃO GERAL
+  // ============================================================================
+
+  function applyDynamicAdjustments() {
+    hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
+
+    applyDateToMessages();
   }
 
   function reapplyAll() {
     applyCSS();
     applyDynamicAdjustments();
   }
+
+  // ============================================================================
+  // REFORÇOS SPA
+  // ============================================================================
 
   let scheduledPasses = [];
   function scheduleReapplyPasses() {
@@ -140,6 +185,10 @@
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     });
   }
+
+  // ============================================================================
+  // SIDEBAR
+  // ============================================================================
 
   let sidebarAttempts = 0;
 
@@ -156,6 +205,10 @@
       setTimeout(collapseSidebar, 300);
     }
   }
+
+  // ============================================================================
+  // OBSERVER
+  // ============================================================================
 
   let observer = null;
 
@@ -178,6 +231,10 @@
       subtree: true
     });
   }
+
+  // ============================================================================
+  // INIT
+  // ============================================================================
 
   function init() {
     reapplyAll();

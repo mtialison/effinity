@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.9
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,12 +15,11 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '2.8';
+  const SCRIPT_VERSION = '2.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
-  const UPPERCASE_APPLIED_ATTR = 'data-tm-uppercase-applied';
 
   const AGENT_AREA_ATTR = 'data-tm-agent-area';
   const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
@@ -32,12 +31,10 @@
   const TICKET_CREATED_HOST_ATTR = 'data-tm-ticket-created-host';
   const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
   const TICKET_CONTACT_BLOCK_ATTR = 'data-tm-ticket-contact-block';
+  const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
 
-  // ============================================================================
-  // CSS
-  // ============================================================================
   const css = `
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -68,9 +65,9 @@
       display: none !important;
     }
 
-    /* ==========================================================================
-       Área do Agente
-       ========================================================================== */
+    [${UPPERCASE_NAME_ATTR}="true"] {
+      text-transform: uppercase !important;
+    }
 
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
@@ -132,10 +129,6 @@
       display: none !important;
     }
 
-    /* ==========================================================================
-       Cabeçalho do ticket
-       ========================================================================== */
-
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -194,9 +187,6 @@
     }
   `;
 
-  // ============================================================================
-  // UTILITÁRIOS
-  // ============================================================================
   function log(...args) {
     console.log(`[${SCRIPT_NAME}]`, ...args);
   }
@@ -240,20 +230,11 @@
     }
   }
 
-  function toUppercaseElementText(el) {
+  function markUppercase(el) {
     if (!el || !(el instanceof HTMLElement)) return;
-    if (el.getAttribute(UPPERCASE_APPLIED_ATTR) === 'true') return;
-
-    const text = el.textContent;
-    if (!text || !text.trim()) return;
-
-    el.textContent = text.toLocaleUpperCase('pt-BR');
-    el.setAttribute(UPPERCASE_APPLIED_ATTR, 'true');
+    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
   }
 
-  // ============================================================================
-  // OCULTAÇÃO DE CARDS GERAIS
-  // ============================================================================
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
 
@@ -285,9 +266,6 @@
     }
   }
 
-  // ============================================================================
-  // DATA NAS MENSAGENS
-  // ============================================================================
   function isTimeText(text) {
     return /^\d{2}:\d{2}$/.test(text);
   }
@@ -324,9 +302,6 @@
     }
   }
 
-  // ============================================================================
-  // ÁREA DO AGENTE
-  // ============================================================================
   function findAgentAreaContainer() {
     const spans = document.querySelectorAll('span');
 
@@ -482,9 +457,6 @@
     separators.forEach(el => el.classList.add('tm-agent-hidden'));
   }
 
-  // ============================================================================
-  // CABEÇALHO DO TICKET
-  // ============================================================================
   function findTicketHeaderTopRows() {
     return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
   }
@@ -581,9 +553,6 @@
     }
   }
 
-  // ============================================================================
-  // LISTA DE TICKETS
-  // ============================================================================
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
 
@@ -687,16 +656,13 @@
     }
   }
 
-  // ============================================================================
-  // MAIÚSCULAS NOS NOMES
-  // ============================================================================
   function uppercaseTicketHeaderNames() {
     const headerNames = document.querySelectorAll(
       'div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate'
     );
 
     for (const nameEl of headerNames) {
-      toUppercaseElementText(nameEl);
+      markUppercase(nameEl);
     }
   }
 
@@ -709,7 +675,7 @@
       );
 
       for (const nameEl of nameEls) {
-        toUppercaseElementText(nameEl);
+        markUppercase(nameEl);
       }
     }
   }
@@ -719,9 +685,6 @@
     uppercaseTicketListCardNames();
   }
 
-  // ============================================================================
-  // APLICAÇÃO GERAL
-  // ============================================================================
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
@@ -737,9 +700,6 @@
     applyDynamicAdjustments();
   }
 
-  // ============================================================================
-  // REFORÇOS SPA
-  // ============================================================================
   let scheduledPasses = [];
 
   function scheduleReapplyPasses() {
@@ -752,9 +712,6 @@
     }
   }
 
-  // ============================================================================
-  // SIDEBAR
-  // ============================================================================
   let sidebarAttempts = 0;
 
   function collapseSidebar() {
@@ -772,9 +729,6 @@
     }
   }
 
-  // ============================================================================
-  // OBSERVER
-  // ============================================================================
   let observer = null;
 
   function startObserver() {
@@ -797,9 +751,6 @@
     });
   }
 
-  // ============================================================================
-  // INIT
-  // ============================================================================
   function init() {
     reapplyAll();
     scheduleReapplyPasses();

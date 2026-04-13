@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -54,12 +54,29 @@
     debounceTimer = setTimeout(applyCSS, 200);
   }
 
-  // ─── Inicialização: CSS + 2 timeouts para cobrir hidratação do SPA ───────────
+  // ─── Recolher sidebar automaticamente ao carregar ────────────────────────────
+  // Clica no botão "Fechar menu" (aria-label) se a sidebar estiver expandida.
+  // Tenta até 10x com intervalo de 300ms — para no primeiro sucesso.
+  let sidebarAttempts = 0;
+  function collapseSidebar() {
+    const btn = document.querySelector('button[aria-label="Fechar menu"]');
+    if (btn) {
+      btn.click();
+      console.log('[TM effinity] sidebar recolhida');
+      return;
+    }
+    sidebarAttempts++;
+    if (sidebarAttempts < 10) {
+      setTimeout(collapseSidebar, 300);
+    }
+  }
+
+  // ─── Inicialização ───────────────────────────────────────────────────────────
   function init() {
     applyCSS();
     setTimeout(applyCSS, 500);
     setTimeout(applyCSS, 1500);
-    console.log('[TM effinity] iniciado v1.2');
+    console.log('[TM effinity] iniciado v1.3');
   }
 
   // ─── Observer restrito ao container da app, sem subtree ──────────────────────
@@ -84,10 +101,12 @@
     document.addEventListener('DOMContentLoaded', () => {
       init();
       startObserver();
+      setTimeout(collapseSidebar, 800); // aguarda SPA renderizar
     });
   } else {
     init();
     startObserver();
+    setTimeout(collapseSidebar, 800);
   }
 
   window.addEventListener('load', init);

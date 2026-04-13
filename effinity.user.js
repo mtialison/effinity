@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.3
+// @version      3.4
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.3';
+  const SCRIPT_VERSION = '3.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -692,18 +692,24 @@
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
 
-    const text = normalizeText(card.textContent);
+    const hasUser = !!card.querySelector('.lucide-user');
+    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full'))
+      .find(el => {
+        const text = normalizeText(el.textContent).toLowerCase();
+        return (
+          text === 'clínica do sono' ||
+          text === 'clinica do sono' ||
+          text === 'samec' ||
+          text === 'confirmação' ||
+          text === 'confirmacao'
+        );
+      });
 
-    return (
-      text.includes('Última atividade:') &&
-      card.querySelector('.lucide-user') &&
-      (
-        card.querySelector('.lucide-phone') ||
-        card.querySelector('.lucide-minus') ||
-        card.querySelector('.lucide-arrow-down-left') ||
-        card.querySelector('.lucide-arrow-up-right')
-      )
-    );
+    const hasTimeInfo =
+      normalizeText(card.textContent).includes('Última atividade:') ||
+      !!card.querySelector('.lucide-clock');
+
+    return hasUser && hasQueueTag && hasTimeInfo;
   }
 
   function getAllTicketListCards() {
@@ -722,7 +728,7 @@
 
       const text = normalizeText(child.textContent);
 
-      if (child.matches('span.text-xs') && /^(✅|☑️|✔️)$/.test(text)) {
+      if (child.matches('span.text-xs') && /^(✅|☑️|✔️|🔵)$/.test(text)) {
         hideElement(child);
         continue;
       }

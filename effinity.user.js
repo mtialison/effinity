@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      3.1
 // @description  Customizações visuais e ajustes de interface no Effinity
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.0';
+  const SCRIPT_VERSION = '3.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -34,7 +34,13 @@
   const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
   const PHONE_NORMALIZED_ATTR = 'data-tm-phone-normalized';
 
+  const COPY_CARD_ATTR = 'data-tm-copy-card';
+  const COPY_VALUE_ATTR = 'data-tm-copy-value';
+  const COPY_TOAST_ATTR = 'data-tm-copy-toast';
+  const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
+
   const MAX_SIDEBAR_ATTEMPTS = 10;
+  const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
   const css = `
     .h-\\[calc\\(100vh-100px\\)\\] {
@@ -186,6 +192,55 @@
       height: 12px !important;
       flex-shrink: 0 !important;
     }
+
+    /* ==========================================================================
+       Dados do Atendimento - clique para copiar
+       ========================================================================== */
+
+    [${COPY_CARD_ATTR}="true"] {
+      position: relative !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"] {
+      cursor: pointer !important;
+      user-select: none !important;
+      transition: opacity 0.18s ease, transform 0.18s ease !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"]:hover {
+      opacity: 0.88 !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"]:active {
+      transform: scale(0.985) !important;
+    }
+
+    [${COPY_TOAST_ATTR}="true"] {
+      position: absolute !important;
+      top: 12px !important;
+      right: 12px !important;
+      width: 40px !important;
+      height: 40px !important;
+      opacity: 0 !important;
+      transform: scale(0.96) !important;
+      transition: opacity 0.18s ease, transform 0.18s ease !important;
+      pointer-events: none !important;
+      z-index: 30 !important;
+    }
+
+    [${COPY_TOAST_VISIBLE_ATTR}="true"] {
+      opacity: 1 !important;
+      transform: scale(1) !important;
+    }
+
+    [${COPY_TOAST_ATTR}="true"] img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      pointer-events: none !important;
+      user-select: none !important;
+    }
   `;
 
   function log(...args) {
@@ -242,6 +297,31 @@
       return digits.slice(2);
     }
     return digits || String(value || '');
+  }
+
+  async function copyTextToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return copied;
+      } catch (fallbackError) {
+        console.error(`[${SCRIPT_NAME}] falha ao copiar`, fallbackError);
+        return false;
+      }
+    }
   }
 
   function findCardContainerFromTitle(titleEl) {
@@ -735,6 +815,117 @@
     }
   }
 
+  function findAttendanceDataCards() {
+    const cards = document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border');
+    const result = [];
+
+    for (const card of cards) {
+      const title = card.querySelector('h3');
+      if (!title) continue;
+
+      if (normalizeText(title.textContent) === 'Dados do Atendimento') {
+        result.push(card);
+      }
+    }
+
+    return result;
+  }
+
+  function ensureCopyToast(card) {
+    let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
+    if (toast) return toast;
+
+    toast = document.createElement('div');
+    toast.setAttribute(COPY_TOAST_ATTR, 'true');
+
+    const img = document.createElement('img');
+    img.src = COPY_ICON_URL;
+    img.alt = 'Copiado';
+    img.draggable = false;
+
+    toast.appendChild(img);
+    card.appendChild(toast);
+
+    return toast;
+  }
+
+  function showCopyToast(card) {
+    const toast = ensureCopyToast(card);
+
+    if (toast._tmHideTimer) {
+      clearTimeout(toast._tmHideTimer);
+    }
+
+    toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
+
+    toast._tmHideTimer = setTimeout(() => {
+      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
+    }, 1300);
+  }
+
+  function findValueSpanByLabel(card, labelText) {
+    const labelSpans = card.querySelectorAll('span');
+
+    for (const label of labelSpans) {
+      if (normalizeText(label.textContent) !== labelText) continue;
+
+      let row = label.parentElement;
+      while (row && row !== card) {
+        const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
+        if (valueSpan) {
+          return valueSpan;
+        }
+        row = row.parentElement;
+      }
+    }
+
+    return null;
+  }
+
+  function bindCopyOnClick(valueEl, card, fieldName) {
+    if (!valueEl || !(valueEl instanceof HTMLElement)) return;
+    if (valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
+
+    valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
+    valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
+
+    valueEl.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const textToCopy = normalizeText(valueEl.textContent);
+      if (!textToCopy) return;
+
+      const copied = await copyTextToClipboard(textToCopy);
+      if (copied) {
+        showCopyToast(card);
+      }
+    });
+  }
+
+  function enableCopyOnAttendanceData() {
+    const cards = findAttendanceDataCards();
+
+    for (const card of cards) {
+      card.setAttribute(COPY_CARD_ATTR, 'true');
+      ensureCopyToast(card);
+
+      const targets = [
+        ['Nome', 'nome'],
+        ['Nascimento', 'nascimento'],
+        ['CPF', 'cpf'],
+        ['Telefone', 'telefone']
+      ];
+
+      for (const [labelText, fieldName] of targets) {
+        const valueEl = findValueSpanByLabel(card, labelText);
+        if (!valueEl) continue;
+
+        bindCopyOnClick(valueEl, card, fieldName);
+      }
+    }
+  }
+
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
     hideCardByExactTitle('Resumo do Ticket');
@@ -744,6 +935,7 @@
     cleanTicketListCards();
     applyUppercaseToCustomerNames();
     normalizeAttendanceDataPhones();
+    enableCopyOnAttendanceData();
   }
 
   function reapplyAll() {

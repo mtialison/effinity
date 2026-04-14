@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.4
+// @version      4.5
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*

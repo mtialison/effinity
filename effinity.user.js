@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6-clean
+// @version      3.6-clean-sidebar-init-collapsed
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6-clean';
+  const SCRIPT_VERSION = '3.6-clean-sidebar-init-collapsed';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -39,6 +39,10 @@
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+
+  const SIDEBAR_BOOT_STYLE_ID = 'tm-effinity-sidebar-boot-style';
+  const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-booting';
+  const SIDEBAR_COLLAPSED_READY_ATTR = 'data-tm-sidebar-collapsed-ready';
 
   /* ========================================================================
    * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
@@ -268,6 +272,60 @@
     }
   `;
 
+
+
+  /* ========================================================================
+   * SEÇÃO: SIDEBAR INICIANDO RECOLHIDA
+   * Objetivo: a sidebar nasce visualmente recolhida sem remover o modo expandido.
+   * ====================================================================== */
+  const sidebarBootCSS = `
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) {
+      width: 4rem !important;
+      min-width: 4rem !important;
+      max-width: 4rem !important;
+      overflow: hidden !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child {
+      justify-content: center !important;
+      padding-left: 0.75rem !important;
+      padding-right: 0.75rem !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > div {
+      display: none !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > button {
+      margin: 0 auto !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav h3,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav span,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .lucide-chevron-right,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button:not([aria-label]),
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a > span,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button > span {
+      display: none !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button {
+      justify-content: center !important;
+      padding-left: 0.625rem !important;
+      padding-right: 0.625rem !important;
+      min-height: 2.5rem !important;
+    }
+
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-3,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-1,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mb-8,
+    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mt-8 {
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+    }
+  `;
+
   /* ========================================================================
    * SEÇÃO: UTILITÁRIOS
    * ====================================================================== */
@@ -280,16 +338,89 @@
   }
 
   function applyCSS() {
-    let style = document.getElementById(STYLE_ID);
+    ensureStyleTag(STYLE_ID, css);
+  }
+
+
+
+  function ensureStyleTag(id, cssText) {
+    const parent = document.head || document.documentElement;
+    if (!parent) return null;
+
+    let style = document.getElementById(id);
     if (!style) {
       style = document.createElement('style');
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
+      style.id = id;
+      parent.appendChild(style);
     }
 
-    if (style.textContent !== css) {
-      style.textContent = css;
+    if (style.textContent !== cssText) {
+      style.textContent = cssText;
     }
+
+    return style;
+  }
+
+  function startSidebarBootMask() {
+    document.documentElement.setAttribute(SIDEBAR_BOOT_ATTR, 'true');
+    ensureStyleTag(SIDEBAR_BOOT_STYLE_ID, sidebarBootCSS);
+  }
+
+  function stopSidebarBootMask() {
+    document.documentElement.removeAttribute(SIDEBAR_BOOT_ATTR);
+    document.documentElement.setAttribute(SIDEBAR_COLLAPSED_READY_ATTR, 'true');
+    document.getElementById(SIDEBAR_BOOT_STYLE_ID)?.remove();
+  }
+
+  function getSidebarElement() {
+    return document.querySelector('aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg');
+  }
+
+  function isSidebarCollapsed(sidebar) {
+    if (!sidebar) return false;
+    const openButton = sidebar.querySelector('button[aria-label="Abrir menu"]');
+    return sidebar.classList.contains('w-16') || !!openButton;
+  }
+
+  function isSidebarExpanded(sidebar) {
+    if (!sidebar) return false;
+    const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
+    return sidebar.classList.contains('w-64') || !!closeButton;
+  }
+
+  let sidebarBootDone = false;
+  let sidebarBootFrame = 0;
+  function ensureSidebarStartsCollapsed() {
+    if (sidebarBootDone) return;
+
+    const sidebar = getSidebarElement();
+    if (!sidebar) {
+      sidebarBootFrame = window.requestAnimationFrame(ensureSidebarStartsCollapsed);
+      return;
+    }
+
+    if (isSidebarCollapsed(sidebar)) {
+      sidebarBootDone = true;
+      stopSidebarBootMask();
+      return;
+    }
+
+    if (isSidebarExpanded(sidebar)) {
+      const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
+      if (closeButton) {
+        closeButton.click();
+      }
+    }
+
+    sidebarBootFrame = window.requestAnimationFrame(() => {
+      const currentSidebar = getSidebarElement();
+      if (isSidebarCollapsed(currentSidebar)) {
+        sidebarBootDone = true;
+        stopSidebarBootMask();
+        return;
+      }
+      ensureSidebarStartsCollapsed();
+    });
   }
 
   let debounceTimer = null;
@@ -781,6 +912,7 @@
 
   function init() {
     reapplyAll();
+    ensureSidebarStartsCollapsed();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
@@ -788,6 +920,8 @@
     init();
     startObserver();
   }
+
+  startSidebarBootMask();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

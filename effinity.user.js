@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.8
+// @version      3.9
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.8';
+  const SCRIPT_VERSION = '3.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -387,6 +387,21 @@
   `;
 
   const agentBootCSS = `
+    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-users),
+    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-headphones),
+    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-send),
+    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-message-square) {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      max-height: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      margin: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border: 0 !important;
+      pointer-events: none !important;
+    }
   `;
 
 
@@ -454,6 +469,15 @@
   function stopAgentBootMask() {
     document.documentElement.removeAttribute(AGENT_BOOT_ATTR);
     document.getElementById(AGENT_BOOT_STYLE_ID)?.remove();
+  }
+
+
+  function scheduleAgentBootFailsafe() {
+    window.setTimeout(() => {
+      if (!agentBootDone) {
+        stopAgentBootMask();
+      }
+    }, 4000);
   }
 
   function getSidebarElement() {
@@ -1040,6 +1064,7 @@
   startCardBootMask();
   startSidebarBootMask();
   startAgentBootMask();
+  scheduleAgentBootFailsafe();
   applyCSS();
 
   if (document.readyState === 'loading') {

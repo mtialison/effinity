@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.4
-// @description  Customizações visuais e ajustes de interface no Effinity
+// @version      3.5
+// @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -399,31 +399,110 @@
     return text.length <= 40 && /\d{2}:\d{2}/.test(text);
   }
 
-  function applyDateToMessages() {
-    const spans = document.querySelectorAll('span');
-    const currentDate = getCurrentDateFormatted();
+function applyDateToMessages() {
+  const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
+  if (!chatContainer) return;
 
-    for (const span of spans) {
-      if (span.getAttribute(DATE_APPLIED_ATTR) === 'true') continue;
+  const currentYear = new Date().getFullYear();
 
-      const text = normalizeText(span.textContent);
-      if (!isTimeText(text)) continue;
+  const monthMap = {
+    janeiro: 0,
+    fevereiro: 1,
+    março: 2,
+    marco: 2,
+    abril: 3,
+    maio: 4,
+    junho: 5,
+    julho: 6,
+    agosto: 7,
+    setembro: 8,
+    outubro: 9,
+    novembro: 10,
+    dezembro: 11
+  };
 
-      const parent = span.parentElement;
-      if (!looksLikeMessageMetaContainer(parent)) continue;
+  function parseDaySeparator(text) {
+    const normalized = normalizeText(text).toLowerCase();
+    const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
+    if (!match) return null;
 
-      const nearbyMessageBubble =
-        span.closest('.rounded-2xl') ||
-        span.closest('.rounded-xl') ||
-        span.closest('[class*="max-w-"]') ||
-        span.closest('[class*="break-words"]');
+    const day = Number(match[1]);
+    const monthName = match[2];
+    const monthIndex = monthMap[monthName];
 
-      if (!nearbyMessageBubble) continue;
+    if (Number.isNaN(day) || monthIndex === undefined) return null;
 
-      span.textContent = `${currentDate} ${text}`;
-      span.setAttribute(DATE_APPLIED_ATTR, 'true');
-    }
+    return new Date(currentYear, monthIndex, day);
   }
+
+  function formatDate(date) {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  function timeToMinutes(timeText) {
+    const match = timeText.match(/^(\d{2}):(\d{2})$/);
+    if (!match) return null;
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+
+    return (hours * 60) + minutes;
+  }
+
+  let activeDate = null;
+  let lastMinutes = null;
+
+  const children = Array.from(chatContainer.children);
+
+  for (const child of children) {
+    if (!(child instanceof HTMLElement)) continue;
+
+    // Detecta separador de dia
+    const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
+    if (daySeparator) {
+      const parsedDate = parseDaySeparator(daySeparator.textContent);
+      if (parsedDate) {
+        activeDate = parsedDate;
+        lastMinutes = null;
+      }
+      continue;
+    }
+
+    // Processa mensagem
+    const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
+    if (!timeSpan) continue;
+
+    const rawText = normalizeText(timeSpan.textContent);
+
+    // Se já foi alterado antes, tenta extrair só o horário final
+    const timeMatch = rawText.match(/(\d{2}:\d{2})$/);
+    if (!timeMatch) continue;
+
+    const timeText = timeMatch[1];
+    const minutes = timeToMinutes(timeText);
+    if (minutes === null) continue;
+
+    if (!activeDate) {
+      // fallback seguro: usa hoje apenas se não existir separador
+      activeDate = new Date();
+      activeDate.setHours(0, 0, 0, 0);
+    }
+
+    // Detecta virada de dia quando a hora "volta"
+    if (lastMinutes !== null && minutes < lastMinutes) {
+      activeDate = new Date(activeDate);
+      activeDate.setDate(activeDate.getDate() + 1);
+    }
+
+    timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
+    timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+
+    lastMinutes = minutes;
+  }
+}
 
   function findAgentAreaContainer() {
     const spans = document.querySelectorAll('span');

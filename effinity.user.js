@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.2
-// @description  effinity otimizado e estável
+// @version      4.1.1
+// @description  effinity recovery estável
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.2';
+  const SCRIPT_VERSION = '4.1.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -46,39 +46,32 @@
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
-  const QUICK_REAPPLY_DELAYS = [0, 40, 140, 320, 700];
-  const NORMAL_REAPPLY_DELAYS = [120, 320, 700, 1400, 2400];
-
   const css = `
-    /* ── Layout geral ─────────────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
       display: flex !important;
       flex-direction: column !important;
       overflow: hidden !important;
     }
+
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
       flex: 1 !important;
       min-height: 0 !important;
       overflow: hidden !important;
     }
 
-    /* ── Ocultar header ───────────────────────────────────────────────────── */
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
 
-    /* ── Ocultar cabeçalho "Gestão de Tickets / Tempo Real" ──────────────── */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
       display: none !important;
     }
 
-    /* ── Ocultar botão "Meta" ─────────────────────────────────────────────── */
     button:has(.lucide-database) {
       display: none !important;
     }
 
-    /* ── ANTI-FLICKER: Cards da fila — ocultação via CSS sempre que possível ─ */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > span.text-xs:first-child {
@@ -126,7 +119,6 @@
       display: none !important;
     }
 
-    /* ── Elementos marcados via JS ────────────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -135,7 +127,6 @@
       text-transform: uppercase !important;
     }
 
-    /* ── Área do Agente ───────────────────────────────────────────────────── */
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -196,7 +187,6 @@
       display: none !important;
     }
 
-    /* ── Ticket header ────────────────────────────────────────────────────── */
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -254,7 +244,6 @@
       flex-shrink: 0 !important;
     }
 
-    /* ── Copiar ao clicar ─────────────────────────────────────────────────── */
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
@@ -300,7 +289,6 @@
       user-select: none !important;
     }
 
-    /* ── Tags de fila ─────────────────────────────────────────────────────── */
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -523,11 +511,7 @@
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       const text = normalizeText(child.textContent);
-      if (
-        text.includes('Área do Agente') &&
-        (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) &&
-        text.includes('Enviar HSM')
-      ) {
+      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
         return child;
       }
     }
@@ -619,13 +603,7 @@
 
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-      if (
-        text.includes('Enviar HSM') ||
-        text.includes('Offline') ||
-        text.includes('Online') ||
-        text.includes('Pausa') ||
-        text.includes('Ausente')
-      ) continue;
+      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
       btn.classList.add('tm-agent-hidden');
     }
 
@@ -678,7 +656,6 @@
   function ensureCreatedHost(targetBlock) {
     let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
     if (host) return host;
-
     host = document.createElement('div');
     host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
     targetBlock.appendChild(host);
@@ -746,12 +723,7 @@
       if (!(child instanceof HTMLElement)) continue;
       const text = normalizeText(child.textContent);
 
-      if (
-        child.matches('span.text-xs') ||
-        child.matches('span.font-medium.text-sm.truncate') ||
-        text === 'Normal' ||
-        text.includes('Normal')
-      ) {
+      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
         hideElement(child);
       } else {
         allHidden = false;
@@ -964,24 +936,13 @@
   }
 
   let scheduledPasses = [];
-  function scheduleReapplyPasses(delays = NORMAL_REAPPLY_DELAYS) {
+  function scheduleReapplyPasses(delays = [150, 400, 800, 1500, 2500]) {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
 
     for (const delay of delays) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
-  }
-
-  let frameQueued = false;
-  function scheduleFrameReapply() {
-    if (frameQueued) return;
-    frameQueued = true;
-
-    requestAnimationFrame(() => {
-      frameQueued = false;
-      reapplyAll();
-    });
   }
 
   let sidebarAttempts = 0;
@@ -1001,22 +962,6 @@
     }
   }
 
-  function isRelevantTabText(text) {
-    return (
-      text.includes('atribuído') ||
-      text.includes('atribuido') ||
-      text.includes('atribuídos') ||
-      text.includes('atribuidos') ||
-      text.includes('atendimento') ||
-      text.includes('todos')
-    );
-  }
-
-  function triggerFastReapply() {
-    scheduleFrameReapply();
-    scheduleReapplyPasses(QUICK_REAPPLY_DELAYS);
-  }
-
   function hookTabButtons() {
     const possibleTabs = Array.from(document.querySelectorAll('button, [role="tab"]'));
 
@@ -1025,20 +970,25 @@
       if (el.dataset.tmEffinityTabHook === 'true') continue;
 
       const text = normalizeText(el.textContent).toLowerCase();
-      const aria = normalizeText(el.getAttribute('aria-label') || '').toLowerCase();
-      const combined = `${text} ${aria}`.trim();
+      if (!text) continue;
 
-      if (!combined || !isRelevantTabText(combined)) continue;
+      if (
+        text.includes('atribuído') ||
+        text.includes('atribuido') ||
+        text.includes('atribuídos') ||
+        text.includes('atribuidos') ||
+        text.includes('atendimento')
+      ) {
+        el.dataset.tmEffinityTabHook = 'true';
 
-      el.dataset.tmEffinityTabHook = 'true';
+        const trigger = () => {
+          reapplyAll();
+          scheduleReapplyPasses([50, 180, 400, 800]);
+        };
 
-      const trigger = () => {
-        triggerFastReapply();
-      };
-
-      el.addEventListener('pointerdown', trigger, true);
-      el.addEventListener('mousedown', trigger, true);
-      el.addEventListener('click', trigger, true);
+        el.addEventListener('pointerdown', trigger, true);
+        el.addEventListener('click', trigger, true);
+      }
     }
   }
 
@@ -1051,48 +1001,20 @@
 
     observer = new MutationObserver((mutations) => {
       let shouldReapply = false;
-      let tabLikeMutation = false;
 
       for (const mutation of mutations) {
-        if (mutation.type !== 'childList') continue;
-
-        if (mutation.addedNodes.length || mutation.removedNodes.length) {
+        if (mutation.type === 'childList' && (mutation.addedNodes.length || mutation.removedNodes.length)) {
           shouldReapply = true;
+          break;
         }
-
-        for (const node of mutation.addedNodes) {
-          if (!(node instanceof HTMLElement)) continue;
-
-          const text = normalizeText(node.textContent).toLowerCase();
-          if (isRelevantTabText(text)) {
-            tabLikeMutation = true;
-            break;
-          }
-
-          if (
-            node.matches?.('button, [role="tab"]') ||
-            node.querySelector?.('button, [role="tab"]')
-          ) {
-            tabLikeMutation = true;
-            break;
-          }
-        }
-
-        if (tabLikeMutation) break;
       }
 
       if (!shouldReapply) return;
 
       hookTabButtons();
-
-      if (tabLikeMutation) {
-        triggerFastReapply();
-        return;
-      }
-
       debounce(() => {
         reapplyAll();
-      }, 60);
+      }, 80);
     });
 
     observer.observe(target, {
@@ -1105,7 +1027,7 @@
   function init() {
     reapplyAll();
     hookTabButtons();
-    scheduleReapplyPasses(NORMAL_REAPPLY_DELAYS);
+    scheduleReapplyPasses();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
@@ -1127,9 +1049,5 @@
 
   window.addEventListener('pageshow', () => {
     init();
-  });
-
-  window.addEventListener('focus', () => {
-    scheduleReapplyPasses([0, 150, 400]);
   });
 })();

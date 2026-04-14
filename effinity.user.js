@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.0
-// @description  effinity otimizado anti-flicker SPA
+// @version      4.1
+// @description  effinity otimizado anti-flicker
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js

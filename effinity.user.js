@@ -1,23 +1,24 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6
-// @description  envenenado
+// @version      4.0
+// @description  effinity otimizado anti-flicker SPA
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6';
+  const SCRIPT_VERSION = '4.0';
 
   const STYLE_ID = 'tm-effinity-style';
+
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
 
@@ -42,10 +43,42 @@
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
-  const MAX_SIDEBAR_ATTEMPTS = 10;
+  const ROOT_READY_ATTR = 'data-tm-effinity-ready';
+  const CARD_SCANNED_ATTR = 'data-tm-card-scanned';
+  const ATTENDANCE_CARD_SCANNED_ATTR = 'data-tm-attendance-card-scanned';
+  const COPY_BOUND_ATTR = 'data-tm-copy-bound';
+  const TAB_HOOK_ATTR = 'data-tm-tab-hook';
+  const IGNORE_OBSERVER_ATTR = 'data-tm-ignore-observer';
+
+  const MAX_SIDEBAR_ATTEMPTS = 12;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
+  const PASS_DELAYS_FAST = [0, 40, 140, 320, 700];
+  const PASS_DELAYS_BOOT = [0, 80, 220, 500, 1000, 1800];
+  const PASS_DELAYS_SETTLE = [0, 150, 450];
+  const TAB_LABELS = new Set(['atribuído', 'atribuidos', 'atribuídos', 'atendimento', 'todos']);
+
+  const state = {
+    observer: null,
+    mutationTargets: new Set(),
+    mutationTimer: 0,
+    frameRequested: false,
+    fullPassTimers: [],
+    sidebarAttempts: 0,
+    booted: false,
+    routeUrl: location.href,
+    lastFullPassAt: 0,
+  };
+
   const css = `
+    html[${ROOT_READY_ATTR}="true"] body {
+      opacity: 1 !important;
+    }
+
+    body {
+      opacity: 1;
+    }
+
     /* ── Layout geral ─────────────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -53,85 +86,54 @@
       flex-direction: column !important;
       overflow: hidden !important;
     }
+
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
       flex: 1 !important;
       min-height: 0 !important;
       overflow: hidden !important;
     }
 
-    /* ── Ocultar header ───────────────────────────────────────────────────── */
+    /* ── Ocultações globais fixas ─────────────────────────────────────────── */
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
 
-    /* ── Ocultar cabeçalho "Gestão de Tickets / Tempo Real" ──────────────── */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
       display: none !important;
     }
 
-    /* ── Ocultar botão "Meta" ─────────────────────────────────────────────── */
     button:has(.lucide-database) {
       display: none !important;
     }
 
-    /* ── ANTI-FLICKER: Cards da fila — elementos sempre ocultos via CSS ───── */
-
-    /* Emoji de status (✅ 🔵) — primeiro span.text-xs dentro da linha de protocolo */
+    /* ── Anti-flicker preventivo nos cards de fila ───────────────────────── */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
-      > span.text-xs:first-child {
-      display: none !important;
-    }
-
-    /* Protocolo CS001... */
+      > span.text-xs:first-child,
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
-      > span.font-medium.text-sm.truncate {
-      display: none !important;
-    }
-
-    /* Badge "Normal" (contém lucide-minus) */
+      > span.font-medium.text-sm.truncate,
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
-      > div.inline-flex:has(.lucide-minus) {
-      display: none !important;
-    }
-
-    /* Badge "Novo" (pequeno, h-4) */
+      > div.inline-flex:has(.lucide-minus),
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
-      > div.inline-flex.h-4 {
-      display: none !important;
-    }
-
-    /* Telefone (contém lucide-phone) */
+      > div.inline-flex.h-4,
     div.p-2.border.rounded.cursor-pointer
-      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
-      display: none !important;
-    }
-
-    /* Badge "Em Atendimento" */
+      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone),
     div.p-2.border.rounded.cursor-pointer
       div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1.mb-1
-      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]) {
-      display: none !important;
-    }
-
-    /* Badge "No prazo" (contém lucide-check-circle2) */
+      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]),
     div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
-      display: none !important;
-    }
-
-    /* Badge "Contato" — tag azul no rodapé do card */
+      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2),
     div.p-2.border.rounded.cursor-pointer
       span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
       display: none !important;
     }
 
-    /* ── Elementos marcados via JS (fallback para casos dinâmicos) ───────── */
+    /* ── Fallback ocultação via data-* ───────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -140,15 +142,21 @@
       text-transform: uppercase !important;
     }
 
+    [${IGNORE_OBSERVER_ATTR}="true"] {
+      contain: layout style !important;
+    }
+
     /* ── Área do Agente ───────────────────────────────────────────────────── */
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
       gap: 0 !important;
     }
+
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -158,12 +166,14 @@
       min-height: 40px !important;
       margin: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
       display: flex !important;
       align-items: center !important;
       flex: 1 1 auto !important;
       min-width: 0 !important;
     }
+
     [${AGENT_ACTIONS_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -173,11 +183,13 @@
       margin-left: auto !important;
       white-space: nowrap !important;
     }
+
     [${AGENT_ACTIONS_ATTR}="true"] button,
     [${AGENT_ACTIONS_ATTR}="true"] > div,
     [${AGENT_ACTIONS_ATTR}="true"] > span {
       flex-shrink: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
       display: flex !important;
       align-items: center !important;
@@ -185,10 +197,12 @@
       flex-wrap: nowrap !important;
       min-width: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
       margin-right: 4px !important;
       flex-shrink: 0 !important;
     }
+
     .tm-agent-hidden {
       display: none !important;
     }
@@ -197,6 +211,7 @@
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -205,11 +220,13 @@
       gap: 2px !important;
       min-width: 0 !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
       margin: 0 !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
       display: inline-flex !important;
       align-items: center !important;
@@ -217,6 +234,7 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
+
     [${TICKET_CREATED_HOST_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -229,6 +247,7 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
+
     [${TICKET_CREATED_MOVED_ATTR}="true"] {
       display: inline-flex !important;
       align-items: center !important;
@@ -239,6 +258,7 @@
       line-height: inherit !important;
       white-space: nowrap !important;
     }
+
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
       width: 12px !important;
       height: 12px !important;
@@ -249,17 +269,21 @@
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
+
     [${COPY_VALUE_ATTR}="true"] {
       cursor: pointer !important;
       user-select: none !important;
       transition: opacity 0.18s ease, transform 0.18s ease !important;
     }
+
     [${COPY_VALUE_ATTR}="true"]:hover {
       opacity: 0.88 !important;
     }
+
     [${COPY_VALUE_ATTR}="true"]:active {
       transform: scale(0.985) !important;
     }
+
     [${COPY_TOAST_ATTR}="true"] {
       position: absolute !important;
       top: 12px !important;
@@ -272,10 +296,12 @@
       pointer-events: none !important;
       z-index: 30 !important;
     }
+
     [${COPY_TOAST_VISIBLE_ATTR}="true"] {
       opacity: 1 !important;
       transform: scale(1) !important;
     }
+
     [${COPY_TOAST_ATTR}="true"] img {
       display: block !important;
       width: 100% !important;
@@ -294,16 +320,19 @@
       font-weight: 600 !important;
       line-height: 1.1 !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
       background-color: #dbeafe !important;
       color: #1d4ed8 !important;
       border-color: #93c5fd !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="samec"] {
       background-color: #fef3c7 !important;
       color: #b45309 !important;
       border-color: #fcd34d !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
       background-color: #fee2e2 !important;
       color: #b91c1c !important;
@@ -316,45 +345,46 @@
   }
 
   function normalizeText(text) {
-    return (text || '').replace(/\s+/g, ' ').trim();
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeTextLower(text) {
+    return normalizeText(text).toLowerCase();
+  }
+
+  function safeSetAttr(el, name, value) {
+    if (!el || !(el instanceof HTMLElement)) return;
+    if (el.getAttribute(name) !== value) {
+      el.setAttribute(name, value);
+    }
+  }
+
+  function hideElement(el) {
+    safeSetAttr(el, HIDDEN_ATTR, 'true');
+  }
+
+  function markUppercase(el) {
+    safeSetAttr(el, UPPERCASE_NAME_ATTR, 'true');
+  }
+
+  function markReady() {
+    document.documentElement.setAttribute(ROOT_READY_ATTR, 'true');
   }
 
   function applyCSS() {
     let style = document.getElementById(STYLE_ID);
+
     if (!style) {
       style = document.createElement('style');
       style.id = STYLE_ID;
-      document.head.appendChild(style);
+      (document.head || document.documentElement).appendChild(style);
     }
+
     if (style.textContent !== css) {
       style.textContent = css;
     }
-  }
 
-  let debounceTimer = null;
-  function debounce(fn, delay) {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fn, delay);
-  }
-
-  function getCurrentDateFormatted() {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
-
-  function hideElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
-      el.setAttribute(HIDDEN_ATTR, 'true');
-    }
-  }
-
-  function markUppercase(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
+    markReady();
   }
 
   function removeCountryCode55(value) {
@@ -369,7 +399,7 @@
     try {
       await navigator.clipboard.writeText(text);
       return true;
-    } catch (error) {
+    } catch (_) {
       try {
         const textarea = document.createElement('textarea');
         textarea.value = text;
@@ -381,7 +411,7 @@
         textarea.select();
         textarea.setSelectionRange(0, textarea.value.length);
         const copied = document.execCommand('copy');
-        document.body.removeChild(textarea);
+        textarea.remove();
         return copied;
       } catch (fallbackError) {
         console.error(`[${SCRIPT_NAME}] falha ao copiar`, fallbackError);
@@ -390,8 +420,92 @@
     }
   }
 
+  function clearTimers(list) {
+    while (list.length) {
+      clearTimeout(list.pop());
+    }
+  }
+
+  function queueFullPass(reason = 'generic', delays = PASS_DELAYS_FAST) {
+    clearTimers(state.fullPassTimers);
+
+    for (const delay of delays) {
+      const timer = setTimeout(() => {
+        runFullPass(reason);
+      }, delay);
+
+      state.fullPassTimers.push(timer);
+    }
+  }
+
+  function scheduleFrameFullPass(reason = 'frame') {
+    if (state.frameRequested) return;
+    state.frameRequested = true;
+
+    requestAnimationFrame(() => {
+      state.frameRequested = false;
+      runFullPass(reason);
+    });
+  }
+
+  function getAppRoot() {
+    return document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
+  }
+
+  function closestUsefulScope(node) {
+    if (!(node instanceof HTMLElement)) return null;
+
+    return (
+      node.closest('div.p-2.border.rounded.cursor-pointer') ||
+      node.closest('div.rounded-xl.bg-card.border.border-border') ||
+      node.closest('div.rounded-lg.bg-card.border.border-border') ||
+      node.closest('div.px-4.py-3.flex.items-center.justify-between.gap-4') ||
+      node.closest('.bg-card.border.border-border.rounded-lg') ||
+      node.closest('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0') ||
+      node
+    );
+  }
+
+  function collectScope(scopeSet, scope) {
+    if (!scope || !(scope instanceof HTMLElement)) return;
+
+    for (const existing of Array.from(scopeSet)) {
+      if (existing === scope) return;
+      if (existing.contains(scope)) return;
+      if (scope.contains(existing)) scopeSet.delete(existing);
+    }
+
+    scopeSet.add(scope);
+  }
+
+  function flushMutationBatch() {
+    state.mutationTimer = 0;
+
+    if (!state.mutationTargets.size) return;
+
+    const scopes = new Set();
+
+    for (const target of state.mutationTargets) {
+      collectScope(scopes, closestUsefulScope(target));
+    }
+
+    state.mutationTargets.clear();
+
+    for (const scope of scopes) {
+      applyDynamicAdjustments(scope);
+    }
+
+    setTimeout(() => runFullPass('mutation-settle'), 120);
+  }
+
+  function scheduleMutationProcessing() {
+    if (state.mutationTimer) return;
+    state.mutationTimer = setTimeout(flushMutationBatch, 32);
+  }
+
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
+
     while (node && node !== document.body) {
       if (
         node.classList &&
@@ -400,24 +514,30 @@
       ) {
         return node;
       }
+
       node = node.parentElement;
     }
+
     return null;
   }
 
-  function hideCardByExactTitle(titleText) {
-    const titles = document.querySelectorAll('h3');
+  function hideCardByExactTitle(titleText, root = document) {
+    const titles = root.querySelectorAll ? root.querySelectorAll('h3') : [];
+
     for (const title of titles) {
       const text = normalizeText(title.textContent);
       if (text !== titleText) continue;
+
       const card = findCardContainerFromTitle(title);
-      if (!card) continue;
-      hideElement(card);
+      if (card) hideElement(card);
     }
   }
 
-  function applyDateToMessages() {
-    const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
+  function applyDateToMessages(root = document) {
+    const chatContainer = root.matches?.('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0')
+      ? root
+      : root.querySelector?.('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
+
     if (!chatContainer) return;
 
     const currentYear = new Date().getFullYear();
@@ -428,11 +548,13 @@
     };
 
     function parseDaySeparator(text) {
-      const normalized = normalizeText(text).toLowerCase();
+      const normalized = normalizeTextLower(text);
       const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
       if (!match) return null;
+
       const day = Number(match[1]);
       const monthIndex = monthMap[match[2]];
+
       if (Number.isNaN(day) || monthIndex === undefined) return null;
       return new Date(currentYear, monthIndex, day);
     }
@@ -458,14 +580,18 @@
       const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
       if (daySeparator) {
         const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
+        if (parsedDate) {
+          activeDate = parsedDate;
+          lastMinutes = null;
+        }
         continue;
       }
 
       const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
       if (!timeSpan) continue;
 
-      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
+      const rawText = normalizeText(timeSpan.textContent);
+      const timeMatch = rawText.match(/(\d{2}:\d{2})$/);
       if (!timeMatch) continue;
 
       const timeText = timeMatch[1];
@@ -482,14 +608,19 @@
         activeDate.setDate(activeDate.getDate() + 1);
       }
 
-      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
-      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+      const formatted = `${formatDate(activeDate)} ${timeText}`;
+      if (timeSpan.textContent !== formatted) {
+        timeSpan.textContent = formatted;
+        timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+      }
+
       lastMinutes = minutes;
     }
   }
 
-  function findAgentAreaContainer() {
-    for (const span of document.querySelectorAll('span')) {
+  function findAgentAreaContainer(root = document) {
+    const spans = root.querySelectorAll ? root.querySelectorAll('span') : [];
+    for (const span of spans) {
       if (normalizeText(span.textContent) !== 'Área do Agente') continue;
       const container = span.closest('.bg-card.border.border-border.rounded-lg');
       if (container) return container;
@@ -499,50 +630,64 @@
 
   function findTopRow(agentContainer) {
     if (!agentContainer) return null;
+
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
+
       const text = normalizeText(child.textContent);
-      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
+      if (
+        text.includes('Área do Agente') &&
+        (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) &&
+        text.includes('Enviar HSM')
+      ) {
         return child;
       }
     }
+
     return null;
   }
 
   function findBottomRow(agentContainer, topRow) {
     if (!agentContainer) return null;
+
     for (const child of Array.from(agentContainer.children)) {
-      if (child === topRow) continue;
-      if (!child.matches('div')) continue;
+      if (!(child instanceof HTMLElement) || child === topRow || child.tagName !== 'DIV') continue;
       if (normalizeText(child.textContent).includes('Filas:')) return child;
     }
+
     return null;
   }
 
   function findOfflineControl(topRow) {
     if (!topRow) return null;
+
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
       if (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) {
         return btn.closest('.relative.inline-block.text-left') || btn;
       }
     }
+
     return null;
   }
 
   function findSendHsmButton(topRow) {
     if (!topRow) return null;
+
     for (const btn of topRow.querySelectorAll('button')) {
       if (normalizeText(btn.textContent).includes('Enviar HSM')) return btn;
     }
+
     return null;
   }
 
   function ensureAgentActionsWrapper(bottomRow) {
     let wrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
     if (wrapper) return wrapper;
+
     wrapper = document.createElement('div');
     wrapper.setAttribute(AGENT_ACTIONS_ATTR, 'true');
+    wrapper.setAttribute(IGNORE_OBSERVER_ATTR, 'true');
     bottomRow.appendChild(wrapper);
     return wrapper;
   }
@@ -550,63 +695,122 @@
   function ensureAgentLeftWrapper(bottomRow) {
     let left = bottomRow.querySelector(':scope > .tm-agent-left');
     if (left) return left;
+
     left = document.createElement('div');
     left.className = 'tm-agent-left';
+    left.setAttribute(IGNORE_OBSERVER_ATTR, 'true');
+
     const currentChildren = Array.from(bottomRow.childNodes);
     for (const node of currentChildren) {
-      if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        node.getAttribute &&
+        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
+      ) {
+        continue;
+      }
+
       left.appendChild(node);
     }
+
     bottomRow.insertBefore(left, bottomRow.firstChild);
     return left;
   }
 
-  function reorganizeAgentArea() {
-    const agentContainer = findAgentAreaContainer();
+  function reorganizeAgentArea(root = document) {
+    const agentContainer = root.matches?.('.bg-card.border.border-border.rounded-lg')
+      ? root
+      : findAgentAreaContainer(root);
+
     if (!agentContainer) return;
-    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+
+    safeSetAttr(agentContainer, AGENT_AREA_ATTR, 'true');
+
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
+
     if (!topRow || !bottomRow) return;
-    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
-    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+
+    safeSetAttr(topRow, AGENT_TOP_ATTR, 'true');
+    safeSetAttr(bottomRow, AGENT_BOTTOM_ATTR, 'true');
+
     const offlineControl = findOfflineControl(topRow);
     const sendHsmButton = findSendHsmButton(topRow);
+
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
     ensureAgentLeftWrapper(bottomRow);
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) actionsWrapper.appendChild(offlineControl);
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) actionsWrapper.appendChild(sendHsmButton);
+
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(offlineControl);
+    }
+
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(sendHsmButton);
+    }
+
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
+      if (
+        text.includes('Enviar HSM') ||
+        text.includes('Offline') ||
+        text.includes('Online') ||
+        text.includes('Pausa') ||
+        text.includes('Ausente')
+      ) {
+        continue;
+      }
+
       btn.classList.add('tm-agent-hidden');
     }
-    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
+
+    for (const divider of topRow.querySelectorAll('.w-px')) {
+      divider.classList.add('tm-agent-hidden');
+    }
   }
 
-  function findTicketHeaderTopRows() {
-    return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
+  function findTicketHeaderTopRows(root = document) {
+    if (root.matches?.('div.px-4.py-3.flex.items-center.justify-between.gap-4')) {
+      return [root];
+    }
+
+    return Array.from(
+      root.querySelectorAll
+        ? root.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4')
+        : []
+    );
   }
 
   function findTicketInfoRowFromTopRow(topRow) {
     if (!topRow || !topRow.parentElement) return null;
+
     const siblings = Array.from(topRow.parentElement.children);
     const topIndex = siblings.indexOf(topRow);
-    for (let i = topIndex + 1; i < siblings.length; i++) {
+
+    for (let i = topIndex + 1; i < siblings.length; i += 1) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
+
+      if (
+        el.classList.contains('px-4') &&
+        el.classList.contains('py-2') &&
+        el.classList.contains('border-t') &&
+        el.classList.contains('border-border') &&
+        (el.classList.contains('bg-muted/30') || el.className.includes('bg-muted/30'))
+      ) {
         return el;
       }
     }
+
     return null;
   }
 
   function findCreatedSpan(infoRow) {
     if (!infoRow) return null;
+
     for (const span of infoRow.querySelectorAll('span.flex.items-center.gap-1')) {
       if (normalizeText(span.textContent).includes('Criado há')) return span;
     }
+
     return null;
   }
 
@@ -621,61 +825,97 @@
   function ensureCreatedHost(targetBlock) {
     let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
     if (host) return host;
+
     host = document.createElement('div');
     host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
+    host.setAttribute(IGNORE_OBSERVER_ATTR, 'true');
     targetBlock.appendChild(host);
     return host;
   }
 
-  function moveCreatedDateToHeader() {
-    for (const topRow of findTicketHeaderTopRows()) {
+  function moveCreatedDateToHeader(root = document) {
+    for (const topRow of findTicketHeaderTopRows(root)) {
       const infoRow = findTicketInfoRowFromTopRow(topRow);
       const targetBlock = findTicketInfoTarget(topRow);
+
       if (!infoRow || !targetBlock) continue;
-      targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
+
+      safeSetAttr(targetBlock, TICKET_CONTACT_BLOCK_ATTR, 'true');
+
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;
+
       const host = ensureCreatedHost(targetBlock);
+
       if (createdSpan.parentElement !== host) {
-        createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
+        safeSetAttr(createdSpan, TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
       }
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+
+      safeSetAttr(infoRow, TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') avatar.setAttribute(HIDDEN_ATTR, 'true');
-      if (topRow.parentElement) topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
+      if (avatar) hideElement(avatar);
+
+      if (topRow.parentElement) {
+        safeSetAttr(topRow.parentElement, TICKET_HEADER_ATTR, 'true');
+      }
     }
   }
 
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
+
     const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
-      const text = normalizeText(el.textContent).toLowerCase();
-      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
+    const hasQueueTag = !!Array.from(
+      card.querySelectorAll('div.inline-flex.items-center.rounded-full')
+    ).find((el) => {
+      const text = normalizeTextLower(el.textContent);
+      return (
+        text === 'clínica do sono' ||
+        text === 'clinica do sono' ||
+        text === 'samec' ||
+        text === 'confirmação' ||
+        text === 'confirmacao'
+      );
     });
-    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
+
+    const text = normalizeText(card.textContent);
+    const hasTimeInfo = text.includes('Última atividade:') || !!card.querySelector('.lucide-clock');
+
     return hasUser && hasQueueTag && hasTimeInfo;
   }
 
-  function getAllTicketListCards() {
-    return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
+  function getAllTicketListCards(root = document) {
+    const candidates = root.matches?.('div.p-2.border.rounded.cursor-pointer')
+      ? [root]
+      : Array.from(root.querySelectorAll ? root.querySelectorAll('div.p-2.border.rounded.cursor-pointer') : []);
+
+    return candidates.filter(isTicketListCard);
   }
 
-  // JS mantido apenas como fallback para casos que o CSS não cobrir
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
+
     let allHidden = true;
+
     for (const child of Array.from(protocolRow.children)) {
       if (!(child instanceof HTMLElement)) continue;
+
       const text = normalizeText(child.textContent);
-      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
+      if (
+        child.matches('span.text-xs') ||
+        child.matches('span.font-medium.text-sm.truncate') ||
+        text === 'Normal' ||
+        text.includes('Normal')
+      ) {
         hideElement(child);
       } else {
         allHidden = false;
       }
     }
+
     if (allHidden) hideElement(protocolRow);
   }
 
@@ -690,89 +930,130 @@
     for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
       if (!(badge instanceof HTMLElement)) continue;
       const text = normalizeText(badge.textContent);
-      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
+
+      if (
+        text === 'Contato' ||
+        text === 'Em Atendimento' ||
+        text === 'Normal' ||
+        text === 'Novo' ||
+        text === 'No prazo'
+      ) {
+        hideElement(badge);
+      }
     }
   }
 
-  function cleanTicketListCards() {
-    for (const card of getAllTicketListCards()) {
+  function cleanTicketListCards(root = document) {
+    for (const card of getAllTicketListCards(root)) {
       hideProtocolAndPriority(card);
       hidePhoneInCard(card);
       hideStatusTags(card);
+      safeSetAttr(card, CARD_SCANNED_ATTR, 'true');
     }
   }
 
-  function uppercaseTicketHeaderNames() {
-    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
+  function uppercaseTicketHeaderNames(root = document) {
+    const names = root.matches?.('h2.font-semibold.text-card-foreground.truncate')
+      ? [root]
+      : Array.from(
+          root.querySelectorAll
+            ? root.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')
+            : []
+        );
+
+    for (const nameEl of names) {
       markUppercase(nameEl);
     }
   }
 
-  function uppercaseTicketListCardNames() {
-    for (const card of getAllTicketListCards()) {
+  function uppercaseTicketListCardNames(root = document) {
+    for (const card of getAllTicketListCards(root)) {
       for (const nameEl of card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium')) {
         markUppercase(nameEl);
       }
     }
   }
 
-  function applyUppercaseToCustomerNames() {
-    uppercaseTicketHeaderNames();
-    uppercaseTicketListCardNames();
+  function applyUppercaseToCustomerNames(root = document) {
+    uppercaseTicketHeaderNames(root);
+    uppercaseTicketListCardNames(root);
   }
 
-  function normalizeAttendanceDataPhones() {
-    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
+  function findAttendanceDataCards(root = document) {
+    const candidates = root.matches?.('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')
+      ? [root]
+      : Array.from(
+          root.querySelectorAll
+            ? root.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')
+            : []
+        );
+
+    return candidates.filter((card) => {
       const title = card.querySelector('h3');
-      if (!title || normalizeText(title.textContent) !== 'Dados do Atendimento') continue;
+      return title && normalizeText(title.textContent) === 'Dados do Atendimento';
+    });
+  }
+
+  function normalizeAttendanceDataPhones(root = document) {
+    for (const card of findAttendanceDataCards(root)) {
       let phoneLabelFound = false;
+
       for (const span of card.querySelectorAll('span')) {
         const text = normalizeText(span.textContent);
-        if (text === 'Telefone') { phoneLabelFound = true; continue; }
+
+        if (text === 'Telefone') {
+          phoneLabelFound = true;
+          continue;
+        }
+
         if (!phoneLabelFound) continue;
+
         if (span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') && /^\d{12,14}$/.test(text)) {
           const normalized = removeCountryCode55(text);
           if (text !== normalized) span.textContent = normalized;
-          span.setAttribute(PHONE_NORMALIZED_ATTR, 'true');
+          safeSetAttr(span, PHONE_NORMALIZED_ATTR, 'true');
           break;
         }
       }
     }
   }
 
-  function findAttendanceDataCards() {
-    const result = [];
-    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
-      const title = card.querySelector('h3');
-      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') result.push(card);
-    }
-    return result;
-  }
-
   function ensureCopyToast(card) {
     let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
     if (toast) return toast;
+
     toast = document.createElement('div');
     toast.setAttribute(COPY_TOAST_ATTR, 'true');
+    toast.setAttribute(IGNORE_OBSERVER_ATTR, 'true');
+
     const img = document.createElement('img');
     img.src = COPY_ICON_URL;
     img.alt = 'Copiado';
     img.draggable = false;
+
     toast.appendChild(img);
     card.appendChild(toast);
+
     return toast;
   }
 
   function showCopyToast(card) {
     const toast = ensureCopyToast(card);
-    if (toast._tmHideTimer) clearTimeout(toast._tmHideTimer);
+
+    if (toast._tmHideTimer) {
+      clearTimeout(toast._tmHideTimer);
+    }
+
     toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
-    toast._tmHideTimer = setTimeout(() => toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR), 1300);
+    toast._tmHideTimer = setTimeout(() => {
+      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
+    }, 1300);
   }
 
   function findValueSpanByLabel(card, labelText) {
     for (const label of card.querySelectorAll('span')) {
       if (normalizeText(label.textContent) !== labelText) continue;
+
       let row = label.parentElement;
       while (row && row !== card) {
         const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
@@ -780,47 +1061,67 @@
         row = row.parentElement;
       }
     }
+
     return null;
   }
 
   function bindCopyOnClick(valueEl, card, fieldName) {
-    if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
+    if (!valueEl || valueEl.getAttribute(COPY_BOUND_ATTR) === 'true') return;
+
+    valueEl.setAttribute(COPY_BOUND_ATTR, 'true');
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
+
     valueEl.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
+
       const text = normalizeText(valueEl.textContent);
       if (!text) return;
-      if (await copyTextToClipboard(text)) showCopyToast(card);
+
+      if (await copyTextToClipboard(text)) {
+        showCopyToast(card);
+      }
     });
   }
 
-  function enableCopyOnAttendanceData() {
-    for (const card of findAttendanceDataCards()) {
-      card.setAttribute(COPY_CARD_ATTR, 'true');
+  function enableCopyOnAttendanceData(root = document) {
+    for (const card of findAttendanceDataCards(root)) {
+      safeSetAttr(card, COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
-      for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
+
+      for (const [labelText, fieldName] of [
+        ['Nome', 'nome'],
+        ['Nascimento', 'nascimento'],
+        ['CPF', 'cpf'],
+        ['Telefone', 'telefone'],
+      ]) {
         const valueEl = findValueSpanByLabel(card, labelText);
         if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
       }
+
+      safeSetAttr(card, ATTENDANCE_CARD_SCANNED_ATTR, 'true');
     }
   }
 
   function getQueueType(labelText) {
-    const text = normalizeText(labelText).toLowerCase();
+    const text = normalizeTextLower(labelText);
+
     if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
     if (text === 'samec') return 'samec';
     if (text === 'confirmação' || text === 'confirmacao') return 'confirmacao';
+
     return '';
   }
 
-  function styleQueueTagsInTicketCards() {
-    for (const card of getAllTicketListCards()) {
+  function styleQueueTagsInTicketCards(root = document) {
+    for (const card of getAllTicketListCards(root)) {
       for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
         if (!(badge instanceof HTMLElement)) continue;
-        const queueType = getQueueType(normalizeText(badge.textContent));
+
+        const queueType = getQueueType(badge.textContent);
         if (!queueType) continue;
+
         badge.setAttribute(QUEUE_TAG_ATTR, 'true');
         badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
         badge.style.backgroundColor = '';
@@ -831,62 +1132,216 @@
     }
   }
 
-  function applyDynamicAdjustments() {
-    hideCardByExactTitle('Informações do Cliente');
-    hideCardByExactTitle('Resumo do Ticket');
-    applyDateToMessages();
-    reorganizeAgentArea();
-    moveCreatedDateToHeader();
-    cleanTicketListCards();
-    applyUppercaseToCustomerNames();
-    normalizeAttendanceDataPhones();
-    enableCopyOnAttendanceData();
-    styleQueueTagsInTicketCards();
+  function applyDynamicAdjustments(root = document) {
+    hideCardByExactTitle('Informações do Cliente', root);
+    hideCardByExactTitle('Resumo do Ticket', root);
+    applyDateToMessages(root);
+    reorganizeAgentArea(root);
+    moveCreatedDateToHeader(root);
+    cleanTicketListCards(root);
+    applyUppercaseToCustomerNames(root);
+    normalizeAttendanceDataPhones(root);
+    enableCopyOnAttendanceData(root);
+    styleQueueTagsInTicketCards(root);
   }
 
-  function reapplyAll() {
+  function runFullPass(reason = 'full') {
+    state.lastFullPassAt = Date.now();
     applyCSS();
-    applyDynamicAdjustments();
+    applyDynamicAdjustments(document);
   }
 
-  let scheduledPasses = [];
-  function scheduleReapplyPasses() {
-    scheduledPasses.forEach(clearTimeout);
-    scheduledPasses = [];
-    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
-      scheduledPasses.push(setTimeout(reapplyAll, delay));
+  function collapseSidebar() {
+    const btnClose = document.querySelector('button[aria-label="Fechar menu"]');
+    if (btnClose) {
+      btnClose.click();
+      log('sidebar recolhida');
+      return;
+    }
+
+    if (document.querySelector('button[aria-label="Abrir menu"]')) return;
+
+    state.sidebarAttempts += 1;
+    if (state.sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
+      setTimeout(collapseSidebar, 300);
     }
   }
 
-  let sidebarAttempts = 0;
-  function collapseSidebar() {
-    const btn = document.querySelector('button[aria-label="Fechar menu"]');
-    if (btn) { btn.click(); log('sidebar recolhida'); return; }
-    if (document.querySelector('button[aria-label="Abrir menu"]')) return;
-    sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
+  function isRelevantMutation(mutation) {
+    if (mutation.type === 'childList') {
+      if (mutation.addedNodes.length || mutation.removedNodes.length) return true;
+    }
+
+    if (mutation.type === 'attributes') {
+      const attr = mutation.attributeName || '';
+      return attr === 'class' || attr === 'aria-selected' || attr === 'data-state';
+    }
+
+    return false;
   }
 
-  let observer = null;
   function startObserver() {
-    const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
+    const target = getAppRoot();
     if (!target) return;
-    if (observer) observer.disconnect();
-    observer = new MutationObserver(() => debounce(reapplyAll, 200));
-    observer.observe(target, { childList: true, subtree: true });
+
+    if (state.observer) {
+      state.observer.disconnect();
+    }
+
+    state.observer = new MutationObserver((mutations) => {
+      let shouldProcess = false;
+
+      for (const mutation of mutations) {
+        if (!isRelevantMutation(mutation)) continue;
+
+        const targetEl = mutation.target;
+        if (!(targetEl instanceof HTMLElement)) continue;
+        if (targetEl.closest(`[${IGNORE_OBSERVER_ATTR}="true"]`)) continue;
+
+        shouldProcess = true;
+        state.mutationTargets.add(targetEl);
+
+        for (const node of mutation.addedNodes || []) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (node.closest?.(`[${IGNORE_OBSERVER_ATTR}="true"]`)) continue;
+          state.mutationTargets.add(node);
+        }
+      }
+
+      if (shouldProcess) scheduleMutationProcessing();
+    });
+
+    state.observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-selected', 'data-state'],
+    });
+  }
+
+  function hookTabButtons(root = document) {
+    const buttons = root.querySelectorAll ? root.querySelectorAll('button, [role="tab"], [data-state]') : [];
+
+    for (const el of buttons) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.getAttribute(TAB_HOOK_ATTR) === 'true') continue;
+
+      const text = normalizeTextLower(el.textContent);
+      const aria = normalizeTextLower(el.getAttribute('aria-label') || '');
+      const candidate = `${text} ${aria}`.trim();
+
+      const hasKnownTabText = Array.from(TAB_LABELS).some((label) => candidate.includes(label));
+      if (!hasKnownTabText) continue;
+
+      el.setAttribute(TAB_HOOK_ATTR, 'true');
+
+      const trigger = () => {
+        queueFullPass('tab-click', PASS_DELAYS_FAST);
+      };
+
+      el.addEventListener('pointerdown', trigger, true);
+      el.addEventListener('click', trigger, true);
+    }
+  }
+
+  function hookHistory() {
+    if (history.__tmEffinityHooked) return;
+    history.__tmEffinityHooked = true;
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    const onRouteMaybeChanged = () => {
+      const current = location.href;
+      if (state.routeUrl === current) {
+        queueFullPass('route-render', PASS_DELAYS_SETTLE);
+        return;
+      }
+
+      state.routeUrl = current;
+      queueFullPass('route-change', PASS_DELAYS_BOOT);
+    };
+
+    history.pushState = function (...args) {
+      const result = originalPushState.apply(this, args);
+      onRouteMaybeChanged();
+      return result;
+    };
+
+    history.replaceState = function (...args) {
+      const result = originalReplaceState.apply(this, args);
+      onRouteMaybeChanged();
+      return result;
+    };
+
+    window.addEventListener('popstate', () => queueFullPass('popstate', PASS_DELAYS_BOOT), true);
+    window.addEventListener('hashchange', () => queueFullPass('hashchange', PASS_DELAYS_BOOT), true);
+  }
+
+  function hookGlobalEvents() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        queueFullPass('visible', PASS_DELAYS_SETTLE);
+      }
+    }, true);
+
+    window.addEventListener('focus', () => {
+      queueFullPass('focus', PASS_DELAYS_SETTLE);
+    }, true);
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const clickable = target.closest('button, [role="tab"], a, div[role="button"]');
+      if (!clickable) return;
+
+      hookTabButtons(document);
+
+      const text = normalizeTextLower(clickable.textContent);
+      const aria = normalizeTextLower(clickable.getAttribute('aria-label') || '');
+      const mixed = `${text} ${aria}`;
+
+      if (
+        Array.from(TAB_LABELS).some((label) => mixed.includes(label)) ||
+        mixed.includes('ticket') ||
+        mixed.includes('fila') ||
+        mixed.includes('atendimento')
+      ) {
+        queueFullPass('ui-click', PASS_DELAYS_FAST);
+      }
+    }, true);
   }
 
   function init() {
-    reapplyAll();
-    scheduleReapplyPasses();
+    applyCSS();
+    hookHistory();
+    hookGlobalEvents();
+    hookTabButtons(document);
+    runFullPass('init');
+    queueFullPass('boot', PASS_DELAYS_BOOT);
+
+    setTimeout(() => {
+      collapseSidebar();
+    }, 700);
+
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
   function boot() {
+    if (state.booted) return;
+    state.booted = true;
+
     init();
     startObserver();
-    setTimeout(collapseSidebar, 800);
+
+    const root = getAppRoot();
+    if (root) {
+      hookTabButtons(root);
+    }
   }
+
+  applyCSS();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });
@@ -894,6 +1349,15 @@
     boot();
   }
 
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', () => {
+    queueFullPass('load', PASS_DELAYS_SETTLE);
+  }, true);
+
+  window.addEventListener('pageshow', () => {
+    queueFullPass('pageshow', PASS_DELAYS_SETTLE);
+  }, true);
+
+  setTimeout(() => {
+    scheduleFrameFullPass('late-frame');
+  }, 1200);
 })();

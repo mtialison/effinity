@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.3';
+  const SCRIPT_VERSION = '4.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -45,6 +45,9 @@
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+  const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
+  const UNREAD_CARD_ATTR = 'data-tm-unread-card';
+  const UNREAD_ICON_ATTR = 'data-tm-unread-icon';
 
   const SIDEBAR_BOOT_STYLE_ID = 'tm-effinity-sidebar-boot-style';
   const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-booting';
@@ -140,6 +143,34 @@
     /* ── Remover bolinha azul do ticket selecionado ───────────────────── */
     div.w-2.h-2.rounded-full.bg-blue-500.flex-shrink-0 {
       display: none !important;
+    }
+
+    /* ── Indicador de mensagem não lida no canto do card ──────────────── */
+    [${UNREAD_CARD_ATTR}="true"] {
+      position: relative !important;
+    }
+
+    [${UNREAD_ICON_ATTR}="true"] {
+      position: absolute !important;
+      right: 8px !important;
+      bottom: 8px !important;
+      width: 22px !important;
+      height: 22px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      pointer-events: none !important;
+      user-select: none !important;
+      z-index: 3 !important;
+    }
+
+    [${UNREAD_ICON_ATTR}="true"] img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      pointer-events: none !important;
+      user-select: none !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -1135,6 +1166,75 @@
     }
   }
 
+
+
+  function findUnreadBadgeElement(card) {
+    const candidates = card.querySelectorAll('span, div');
+    for (const el of candidates) {
+      if (!(el instanceof HTMLElement)) continue;
+      const text = normalizeText(el.textContent).toLowerCase();
+      if (text === 'não lida' || text === 'nao lida' || text === 'não lido' || text === 'nao lido') {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  function findUnreadBadgeWrapper(el, card) {
+    let node = el;
+    while (node && node !== card) {
+      if (!(node instanceof HTMLElement)) break;
+      if (
+        node.classList.contains('inline-flex') ||
+        node.classList.contains('rounded-full') ||
+        node.classList.contains('border')
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return el;
+  }
+
+  function ensureUnreadIcon(card) {
+    let icon = card.querySelector(`[${UNREAD_ICON_ATTR}="true"]`);
+    if (icon) return icon;
+
+    icon = document.createElement('div');
+    icon.setAttribute(UNREAD_ICON_ATTR, 'true');
+
+    const img = document.createElement('img');
+    img.src = UNREAD_ICON_URL;
+    img.alt = 'Mensagem não lida';
+    img.draggable = false;
+
+    icon.appendChild(img);
+    card.appendChild(icon);
+    return icon;
+  }
+
+  function removeUnreadIcon(card) {
+    card.removeAttribute(UNREAD_CARD_ATTR);
+    card.querySelector(`[${UNREAD_ICON_ATTR}="true"]`)?.remove();
+  }
+
+  function applyUnreadMessageIndicators() {
+    for (const card of getAllTicketListCards()) {
+      const unreadBadge = findUnreadBadgeElement(card);
+
+      if (!unreadBadge) {
+        removeUnreadIcon(card);
+        continue;
+      }
+
+      const wrapper = findUnreadBadgeWrapper(unreadBadge, card);
+      hideElement(wrapper instanceof HTMLElement ? wrapper : unreadBadge);
+
+      card.setAttribute(UNREAD_CARD_ATTR, 'true');
+      ensureUnreadIcon(card);
+    }
+  }
+
   /* ========================================================================
    * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
    * ====================================================================== */
@@ -1237,6 +1337,7 @@
     applyUppercaseToCustomerNames();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
+    applyUnreadMessageIndicators();
   }
 
   function applyFastAntiFlickerPass() {
@@ -1244,6 +1345,7 @@
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
     styleQueueTagsInTicketCards();
+    applyUnreadMessageIndicators();
   }
 
   function reapplyAll() {

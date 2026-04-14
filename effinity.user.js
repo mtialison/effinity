@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6.0-test1
-// @description  effinity teste anti-flicker css-only
+// @version      3.6
+// @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6.0-test1';
+  const SCRIPT_VERSION = '3.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -129,33 +129,6 @@
     div.p-2.border.rounded.cursor-pointer
       span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
       display: none !important;
-    }
-
-    /* ── TEST1: reforço CSS-only, sem mexer no JS ────────────────────────── */
-
-    /* Oculta badge "Contato" mesmo quando vier como div.inline-flex */
-    div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
-      display: none !important;
-    }
-
-    /* Oculta badges auxiliares pequenos na linha superior que reaparecem em algumas renderizações */
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1 > div.inline-flex.items-center.rounded-full.h-4 {
-      display: none !important;
-    }
-
-    /* Oculta wrappers vazios da linha de protocolo para reduzir micro-piscada visual */
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1:empty {
-      display: none !important;
-    }
-
-    /* Garante que tags de fila estilizadas não herdem gradiente/efeito visual tardio */
-    div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full[data-tm-queue-tag="true"] {
-      background-image: none !important;
-      box-shadow: none !important;
     }
 
     /* ── Elementos marcados via JS (fallback para casos dinâmicos) ───────── */

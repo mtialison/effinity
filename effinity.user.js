@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.7-clean
-// @description  Layout otimizado com sidebar iniciando recolhida sem flicker
+// @version      3.6-clean
+// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-start
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -18,10 +18,9 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.7-clean';
+  const SCRIPT_VERSION = '3.6-clean';
 
   const STYLE_ID = 'tm-effinity-style';
-  const PRECOLLAPSE_ATTR = 'data-tm-sidebar-precollapse';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
   const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
@@ -40,88 +39,12 @@
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
-  const SIDEBAR_COLLAPSED_WIDTH = '4rem';
 
   /* ========================================================================
-   * SEÇÃO: ESTILOS
+   * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
+   * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
-    /* ── 0. Sidebar iniciando recolhida (máscara temporária pré-paint) ─── */
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg {
-      width: ${SIDEBAR_COLLAPSED_WIDTH} !important;
-      min-width: ${SIDEBAR_COLLAPSED_WIDTH} !important;
-      max-width: ${SIDEBAR_COLLAPSED_WIDTH} !important;
-      overflow-x: hidden !important;
-      transition: none !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg * {
-      transition-duration: 0ms !important;
-      animation-duration: 0ms !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg > div:first-child {
-      justify-content: center !important;
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg > div:first-child > div:first-child {
-      display: none !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg button[aria-label="Fechar menu"],
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg button[aria-label="Abrir menu"] {
-      width: 100% !important;
-      justify-content: center !important;
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg nav h3,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg .lucide-chevron-right,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg a > span.flex-1,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg button > span.flex-1 {
-      display: none !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg nav a,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg nav > div > div > button,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg .space-y-3 > button {
-      width: calc(${SIDEBAR_COLLAPSED_WIDTH} - 12px) !important;
-      min-width: calc(${SIDEBAR_COLLAPSED_WIDTH} - 12px) !important;
-      margin-left: auto !important;
-      margin-right: auto !important;
-      justify-content: center !important;
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-      gap: 0 !important;
-      overflow: hidden !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg .space-y-3 > button {
-      font-size: 0 !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg .space-y-3 > button > span {
-      margin: 0 !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      font-size: initial !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg nav a svg,
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg nav button svg {
-      margin: 0 !important;
-      flex-shrink: 0 !important;
-    }
-
-    html[${PRECOLLAPSE_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg + * {
-      margin-left: ${SIDEBAR_COLLAPSED_WIDTH} !important;
-      width: calc(100% - ${SIDEBAR_COLLAPSED_WIDTH}) !important;
-    }
-
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -199,6 +122,7 @@
       display: none !important;
     }
 
+    /* ── Sistema interno de ocultação ──────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -269,7 +193,7 @@
       display: none !important;
     }
 
-    /* ── 18 + 19. Copiar dados do atendimento + feedback visual ───────── */
+    /* ── 19. Feedback visual de cópia ──────────────────────────────────── */
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
@@ -360,7 +284,7 @@
     if (!style) {
       style = document.createElement('style');
       style.id = STYLE_ID;
-      (document.head || document.documentElement).appendChild(style);
+      document.head.appendChild(style);
     }
 
     if (style.textContent !== css) {
@@ -424,105 +348,6 @@
       node = node.parentElement;
     }
     return null;
-  }
-
-  function getSidebarRoot() {
-    return document.querySelector('aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg');
-  }
-
-  function getSidebarToggleButton() {
-    const sidebar = getSidebarRoot();
-    if (!sidebar) return null;
-    return sidebar.querySelector('button[aria-label="Fechar menu"], button[aria-label="Abrir menu"]');
-  }
-
-  function isSidebarNativelyCollapsed() {
-    const toggle = getSidebarToggleButton();
-    if (toggle && toggle.getAttribute('aria-label') === 'Abrir menu') {
-      return true;
-    }
-
-    const sidebar = getSidebarRoot();
-    if (!sidebar) return false;
-    return !sidebar.classList.contains('w-64');
-  }
-
-  /* ========================================================================
-   * SEÇÃO: SIDEBAR INICIANDO RECOLHIDA (NOVA IMPLEMENTAÇÃO)
-   * Não remove a sidebar expandida. Apenas mascara visualmente o estado
-   * inicial e sincroniza o estado nativo o mais cedo possível.
-   * ====================================================================== */
-  let sidebarSyncDone = false;
-  let sidebarSyncObserver = null;
-
-  function enablePrecollapseMask() {
-    document.documentElement.setAttribute(PRECOLLAPSE_ATTR, 'true');
-  }
-
-  function disablePrecollapseMask() {
-    document.documentElement.removeAttribute(PRECOLLAPSE_ATTR);
-  }
-
-  function finalizeSidebarSync() {
-    if (sidebarSyncDone) return;
-    sidebarSyncDone = true;
-    disablePrecollapseMask();
-    if (sidebarSyncObserver) {
-      sidebarSyncObserver.disconnect();
-      sidebarSyncObserver = null;
-    }
-    log('sidebar sincronizada para iniciar recolhida');
-  }
-
-  function trySyncSidebarImmediately() {
-    if (sidebarSyncDone) return true;
-
-    const toggle = getSidebarToggleButton();
-    if (!toggle) return false;
-
-    if (isSidebarNativelyCollapsed()) {
-      finalizeSidebarSync();
-      return true;
-    }
-
-    toggle.click();
-
-    requestAnimationFrame(() => {
-      if (isSidebarNativelyCollapsed()) {
-        finalizeSidebarSync();
-        return;
-      }
-
-      setTimeout(() => {
-        if (isSidebarNativelyCollapsed()) {
-          finalizeSidebarSync();
-        }
-      }, 40);
-    });
-
-    return true;
-  }
-
-  function startInitialSidebarSync() {
-    enablePrecollapseMask();
-    applyCSS();
-
-    if (trySyncSidebarImmediately()) return;
-
-    if (sidebarSyncObserver) {
-      sidebarSyncObserver.disconnect();
-    }
-
-    sidebarSyncObserver = new MutationObserver(() => {
-      trySyncSidebarImmediately();
-    });
-
-    sidebarSyncObserver.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'aria-label']
-    });
   }
 
   /* ========================================================================
@@ -626,6 +451,7 @@
 
   /* ========================================================================
    * SEÇÃO: ÁREA DO AGENTE (10 + 11 mescladas)
+   * Reorganiza e mantém apenas ações relevantes visíveis.
    * ====================================================================== */
   function findAgentAreaContainer() {
     for (const span of document.querySelectorAll('span')) {
@@ -760,7 +586,8 @@
   }
 
   /* ========================================================================
-   * SEÇÃO: CARDS DA FILA / UPPERCASE / TAGS (7, 15, 21)
+   * SEÇÃO: CARDS DA FILA / TAGS / NOMES
+   * Mantém: 7, 15, 21
    * ====================================================================== */
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
@@ -768,9 +595,17 @@
     const hasUser = !!card.querySelector('.lucide-user');
     const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
       const text = normalizeText(el.textContent).toLowerCase();
-      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
+      return (
+        text === 'clínica do sono' ||
+        text === 'clinica do sono' ||
+        text === 'samec' ||
+        text === 'confirmação' ||
+        text === 'confirmacao'
+      );
     });
-    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
+    const hasTimeInfo =
+      normalizeText(card.textContent).includes('Última atividade:') ||
+      !!card.querySelector('.lucide-clock');
 
     return hasUser && hasQueueTag && hasTimeInfo;
   }
@@ -787,6 +622,10 @@
     }
   }
 
+  function applyUppercaseToCustomerNames() {
+    uppercaseTicketListCardNames();
+  }
+
   function getQueueType(labelText) {
     const text = normalizeText(labelText).toLowerCase();
     if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
@@ -799,6 +638,7 @@
     for (const card of getAllTicketListCards()) {
       for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
         if (!(badge instanceof HTMLElement)) continue;
+
         const queueType = getQueueType(normalizeText(badge.textContent));
         if (!queueType) continue;
 
@@ -813,18 +653,16 @@
   }
 
   /* ========================================================================
-   * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19)
+   * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
    * ====================================================================== */
   function findAttendanceDataCards() {
     const result = [];
-
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
       if (title && normalizeText(title.textContent) === 'Dados do Atendimento') {
         result.push(card);
       }
     }
-
     return result;
   }
 
@@ -906,59 +744,50 @@
   }
 
   /* ========================================================================
-   * SEÇÃO: REAPLICAÇÃO GERAL / SPA
+   * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
-  function applyDynamicAdjustments() {
+  function applySelectedFeatures() {
     hideSelectedCards();
     applyDateToMessages();
     reorganizeAgentArea();
-    uppercaseTicketListCardNames();
+    applyUppercaseToCustomerNames();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
   }
 
   function reapplyAll() {
     applyCSS();
-    applyDynamicAdjustments();
+    applySelectedFeatures();
   }
 
-  let scheduledPasses = [];
-  function scheduleReapplyPasses() {
-    scheduledPasses.forEach(clearTimeout);
-    scheduledPasses = [];
-
-    for (const delay of [120, 300, 700, 1400, 2400]) {
-      scheduledPasses.push(setTimeout(reapplyAll, delay));
-    }
-  }
-
+  /* ========================================================================
+   * SEÇÃO: INFRAESTRUTURA SPA / REAPLICAÇÃO
+   * Mantida apenas para estabilidade em re-renderizações.
+   * ====================================================================== */
   let observer = null;
+
   function startObserver() {
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
 
     if (observer) observer.disconnect();
-    observer = new MutationObserver(() => debounce(reapplyAll, 180));
+
+    observer = new MutationObserver(() => {
+      debounce(reapplyAll, 200);
+    });
+
     observer.observe(target, { childList: true, subtree: true });
   }
 
-  /* ========================================================================
-   * SEÇÃO: INICIALIZAÇÃO
-   * ====================================================================== */
   function init() {
     reapplyAll();
-    scheduleReapplyPasses();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
   function boot() {
-    startInitialSidebarSync();
     init();
     startObserver();
   }
-
-  applyCSS();
-  startInitialSidebarSync();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

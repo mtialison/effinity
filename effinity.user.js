@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.0';
+  const SCRIPT_VERSION = '4.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -205,6 +205,33 @@
     }
 
     .tm-agent-hidden {
+      display: none !important;
+    }
+
+    /* ── Header do ticket: anti-flicker da versão sem script ──────────── */
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.w-10.h-10.flex-shrink-0.rounded-full {
+      display: none !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.min-w-0.flex-1 {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: center !important;
+      gap: 2px !important;
+      min-width: 0 !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.min-w-0.flex-1
+      > h2.font-semibold.text-card-foreground.truncate {
+      text-transform: uppercase !important;
+      margin: 0 !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4 + div.px-4.py-2.border-t.border-border.bg-muted\/30 {
       display: none !important;
     }
 
@@ -1037,15 +1064,43 @@
     return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
   }
 
+  function uppercaseTicketHeaderNames() {
+    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
+      markUppercase(nameEl);
+    }
+  }
+
   function uppercaseTicketListCardNames() {
     for (const card of getAllTicketListCards()) {
-      for (const nameEl of card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium')) {
+      const selectors = [
+        'span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium',
+        'h4.font-medium',
+        'span.font-medium.text-sm',
+        'div.font-medium.text-sm',
+        'div.text-sm.font-medium',
+        'span.text-sm.font-medium'
+      ];
+
+      const found = new Set();
+      for (const selector of selectors) {
+        for (const nameEl of card.querySelectorAll(selector)) {
+          found.add(nameEl);
+        }
+      }
+
+      for (const nameEl of found) {
+        const text = normalizeText(nameEl.textContent);
+        if (!text) continue;
+        if (text.includes('Última atividade:')) continue;
+        if (text.toLowerCase() === 'clínica do sono' || text.toLowerCase() === 'clinica do sono') continue;
+        if (text.toLowerCase() === 'samec' || text.toLowerCase() === 'confirmação' || text.toLowerCase() === 'confirmacao') continue;
         markUppercase(nameEl);
       }
     }
   }
 
   function applyUppercaseToCustomerNames() {
+    uppercaseTicketHeaderNames();
     uppercaseTicketListCardNames();
   }
 

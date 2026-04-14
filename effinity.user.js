@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.1
-// @description  effinity corrigido e estável
+// @version      4.2
+// @description  effinity otimizado e estável
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.1';
+  const SCRIPT_VERSION = '4.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -45,6 +45,9 @@
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+
+  const QUICK_REAPPLY_DELAYS = [0, 40, 140, 320, 700];
+  const NORMAL_REAPPLY_DELAYS = [120, 320, 700, 1400, 2400];
 
   const css = `
     /* ── Layout geral ─────────────────────────────────────────────────────── */
@@ -363,7 +366,9 @@
 
   function markUppercase(el) {
     if (!el || !(el instanceof HTMLElement)) return;
-    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
+    if (el.getAttribute(UPPERCASE_NAME_ATTR) !== 'true') {
+      el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
+    }
   }
 
   function removeCountryCode55(value) {
@@ -518,7 +523,11 @@
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       const text = normalizeText(child.textContent);
-      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
+      if (
+        text.includes('Área do Agente') &&
+        (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) &&
+        text.includes('Enviar HSM')
+      ) {
         return child;
       }
     }
@@ -610,7 +619,13 @@
 
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
+      if (
+        text.includes('Enviar HSM') ||
+        text.includes('Offline') ||
+        text.includes('Online') ||
+        text.includes('Pausa') ||
+        text.includes('Ausente')
+      ) continue;
       btn.classList.add('tm-agent-hidden');
     }
 
@@ -708,12 +723,10 @@
     if (!card || !(card instanceof HTMLElement)) return false;
 
     const hasUser = !!card.querySelector('.lucide-user');
-
     const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
       const text = normalizeText(el.textContent).toLowerCase();
       return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
     });
-
     const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
 
     return hasUser && hasQueueTag && hasTimeInfo;
@@ -733,7 +746,12 @@
       if (!(child instanceof HTMLElement)) continue;
       const text = normalizeText(child.textContent);
 
-      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
+      if (
+        child.matches('span.text-xs') ||
+        child.matches('span.font-medium.text-sm.truncate') ||
+        text === 'Normal' ||
+        text.includes('Normal')
+      ) {
         hideElement(child);
       } else {
         allHidden = false;
@@ -816,14 +834,12 @@
 
   function findAttendanceDataCards() {
     const result = [];
-
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
       if (title && normalizeText(title.textContent) === 'Dados do Atendimento') {
         result.push(card);
       }
     }
-
     return result;
   }
 
@@ -948,13 +964,24 @@
   }
 
   let scheduledPasses = [];
-  function scheduleReapplyPasses(delays = [150, 400, 800, 1500, 2500]) {
+  function scheduleReapplyPasses(delays = NORMAL_REAPPLY_DELAYS) {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
 
     for (const delay of delays) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
+  }
+
+  let frameQueued = false;
+  function scheduleFrameReapply() {
+    if (frameQueued) return;
+    frameQueued = true;
+
+    requestAnimationFrame(() => {
+      frameQueued = false;
+      reapplyAll();
+    });
   }
 
   let sidebarAttempts = 0;
@@ -974,6 +1001,22 @@
     }
   }
 
+  function isRelevantTabText(text) {
+    return (
+      text.includes('atribuído') ||
+      text.includes('atribuido') ||
+      text.includes('atribuídos') ||
+      text.includes('atribuidos') ||
+      text.includes('atendimento') ||
+      text.includes('todos')
+    );
+  }
+
+  function triggerFastReapply() {
+    scheduleFrameReapply();
+    scheduleReapplyPasses(QUICK_REAPPLY_DELAYS);
+  }
+
   function hookTabButtons() {
     const possibleTabs = Array.from(document.querySelectorAll('button, [role="tab"]'));
 
@@ -982,25 +1025,20 @@
       if (el.dataset.tmEffinityTabHook === 'true') continue;
 
       const text = normalizeText(el.textContent).toLowerCase();
-      if (!text) continue;
+      const aria = normalizeText(el.getAttribute('aria-label') || '').toLowerCase();
+      const combined = `${text} ${aria}`.trim();
 
-      if (
-        text.includes('atribuído') ||
-        text.includes('atribuido') ||
-        text.includes('atribuídos') ||
-        text.includes('atribuidos') ||
-        text.includes('atendimento')
-      ) {
-        el.dataset.tmEffinityTabHook = 'true';
+      if (!combined || !isRelevantTabText(combined)) continue;
 
-        const trigger = () => {
-          reapplyAll();
-          scheduleReapplyPasses([50, 180, 400, 800]);
-        };
+      el.dataset.tmEffinityTabHook = 'true';
 
-        el.addEventListener('pointerdown', trigger, true);
-        el.addEventListener('click', trigger, true);
-      }
+      const trigger = () => {
+        triggerFastReapply();
+      };
+
+      el.addEventListener('pointerdown', trigger, true);
+      el.addEventListener('mousedown', trigger, true);
+      el.addEventListener('click', trigger, true);
     }
   }
 
@@ -1013,25 +1051,48 @@
 
     observer = new MutationObserver((mutations) => {
       let shouldReapply = false;
+      let tabLikeMutation = false;
 
       for (const mutation of mutations) {
-        if (mutation.type === 'childList' && (mutation.addedNodes.length || mutation.removedNodes.length)) {
+        if (mutation.type !== 'childList') continue;
+
+        if (mutation.addedNodes.length || mutation.removedNodes.length) {
           shouldReapply = true;
-          break;
         }
 
-        if (mutation.type === 'attributes') {
-          shouldReapply = true;
-          break;
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+
+          const text = normalizeText(node.textContent).toLowerCase();
+          if (isRelevantTabText(text)) {
+            tabLikeMutation = true;
+            break;
+          }
+
+          if (
+            node.matches?.('button, [role="tab"]') ||
+            node.querySelector?.('button, [role="tab"]')
+          ) {
+            tabLikeMutation = true;
+            break;
+          }
         }
+
+        if (tabLikeMutation) break;
       }
 
       if (!shouldReapply) return;
 
       hookTabButtons();
+
+      if (tabLikeMutation) {
+        triggerFastReapply();
+        return;
+      }
+
       debounce(() => {
         reapplyAll();
-      }, 80);
+      }, 60);
     });
 
     observer.observe(target, {
@@ -1044,7 +1105,7 @@
   function init() {
     reapplyAll();
     hookTabButtons();
-    scheduleReapplyPasses();
+    scheduleReapplyPasses(NORMAL_REAPPLY_DELAYS);
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
@@ -1066,5 +1127,9 @@
 
   window.addEventListener('pageshow', () => {
     init();
+  });
+
+  window.addEventListener('focus', () => {
+    scheduleReapplyPasses([0, 150, 400]);
   });
 })();

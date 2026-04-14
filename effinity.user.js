@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.1.1
-// @description  effinity recovery estável
+// @version      3.6.1
+// @description  effinity estável base segura
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.1.1';
+  const SCRIPT_VERSION = '3.6.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -38,7 +38,6 @@
   const COPY_VALUE_ATTR = 'data-tm-copy-value';
   const COPY_TOAST_ATTR = 'data-tm-copy-toast';
   const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
-  const COPY_BOUND_ATTR = 'data-tm-copy-bound';
 
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
@@ -47,31 +46,35 @@
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
   const css = `
+    /* ── Layout geral ─────────────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
       display: flex !important;
       flex-direction: column !important;
       overflow: hidden !important;
     }
-
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
       flex: 1 !important;
       min-height: 0 !important;
       overflow: hidden !important;
     }
 
+    /* ── Ocultar header ───────────────────────────────────────────────────── */
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
 
+    /* ── Ocultar cabeçalho "Gestão de Tickets / Tempo Real" ──────────────── */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
       display: none !important;
     }
 
+    /* ── Ocultar botão "Meta" ─────────────────────────────────────────────── */
     button:has(.lucide-database) {
       display: none !important;
     }
 
+    /* ── ANTI-FLICKER via CSS: cards da fila ─────────────────────────────── */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > span.text-xs:first-child {
@@ -119,6 +122,7 @@
       display: none !important;
     }
 
+    /* ── Elementos marcados via JS (fallback) ────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -127,16 +131,15 @@
       text-transform: uppercase !important;
     }
 
+    /* ── Área do Agente ───────────────────────────────────────────────────── */
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
       gap: 0 !important;
     }
-
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -146,14 +149,12 @@
       min-height: 40px !important;
       margin: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
       display: flex !important;
       align-items: center !important;
       flex: 1 1 auto !important;
       min-width: 0 !important;
     }
-
     [${AGENT_ACTIONS_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -163,13 +164,11 @@
       margin-left: auto !important;
       white-space: nowrap !important;
     }
-
     [${AGENT_ACTIONS_ATTR}="true"] button,
     [${AGENT_ACTIONS_ATTR}="true"] > div,
     [${AGENT_ACTIONS_ATTR}="true"] > span {
       flex-shrink: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
       display: flex !important;
       align-items: center !important;
@@ -177,20 +176,18 @@
       flex-wrap: nowrap !important;
       min-width: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
       margin-right: 4px !important;
       flex-shrink: 0 !important;
     }
-
     .tm-agent-hidden {
       display: none !important;
     }
 
+    /* ── Ticket header ────────────────────────────────────────────────────── */
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -199,13 +196,11 @@
       gap: 2px !important;
       min-width: 0 !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
       margin: 0 !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
       display: inline-flex !important;
       align-items: center !important;
@@ -213,7 +208,6 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
-
     [${TICKET_CREATED_HOST_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -226,7 +220,6 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
-
     [${TICKET_CREATED_MOVED_ATTR}="true"] {
       display: inline-flex !important;
       align-items: center !important;
@@ -237,31 +230,27 @@
       line-height: inherit !important;
       white-space: nowrap !important;
     }
-
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
       width: 12px !important;
       height: 12px !important;
       flex-shrink: 0 !important;
     }
 
+    /* ── Copiar ao clicar ─────────────────────────────────────────────────── */
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
-
     [${COPY_VALUE_ATTR}="true"] {
       cursor: pointer !important;
       user-select: none !important;
       transition: opacity 0.18s ease, transform 0.18s ease !important;
     }
-
     [${COPY_VALUE_ATTR}="true"]:hover {
       opacity: 0.88 !important;
     }
-
     [${COPY_VALUE_ATTR}="true"]:active {
       transform: scale(0.985) !important;
     }
-
     [${COPY_TOAST_ATTR}="true"] {
       position: absolute !important;
       top: 12px !important;
@@ -274,12 +263,10 @@
       pointer-events: none !important;
       z-index: 30 !important;
     }
-
     [${COPY_TOAST_VISIBLE_ATTR}="true"] {
       opacity: 1 !important;
       transform: scale(1) !important;
     }
-
     [${COPY_TOAST_ATTR}="true"] img {
       display: block !important;
       width: 100% !important;
@@ -289,6 +276,7 @@
       user-select: none !important;
     }
 
+    /* ── Tags de fila ─────────────────────────────────────────────────────── */
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -297,19 +285,16 @@
       font-weight: 600 !important;
       line-height: 1.1 !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
       background-color: #dbeafe !important;
       color: #1d4ed8 !important;
       border-color: #93c5fd !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="samec"] {
       background-color: #fef3c7 !important;
       color: #b45309 !important;
       border-color: #fcd34d !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
       background-color: #fee2e2 !important;
       color: #b91c1c !important;
@@ -327,13 +312,11 @@
 
   function applyCSS() {
     let style = document.getElementById(STYLE_ID);
-
     if (!style) {
       style = document.createElement('style');
       style.id = STYLE_ID;
       document.head.appendChild(style);
     }
-
     if (style.textContent !== css) {
       style.textContent = css;
     }
@@ -345,6 +328,14 @@
     debounceTimer = setTimeout(fn, delay);
   }
 
+  function getCurrentDateFormatted() {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
   function hideElement(el) {
     if (!el || !(el instanceof HTMLElement)) return;
     if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
@@ -354,9 +345,7 @@
 
   function markUppercase(el) {
     if (!el || !(el instanceof HTMLElement)) return;
-    if (el.getAttribute(UPPERCASE_NAME_ATTR) !== 'true') {
-      el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
-    }
+    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
   }
 
   function removeCountryCode55(value) {
@@ -371,7 +360,7 @@
     try {
       await navigator.clipboard.writeText(text);
       return true;
-    } catch (_) {
+    } catch (error) {
       try {
         const textarea = document.createElement('textarea');
         textarea.value = text;
@@ -460,10 +449,7 @@
       const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
       if (daySeparator) {
         const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) {
-          activeDate = parsedDate;
-          lastMinutes = null;
-        }
+        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
         continue;
       }
 
@@ -490,9 +476,8 @@
       const formatted = `${formatDate(activeDate)} ${timeText}`;
       if (timeSpan.textContent !== formatted) {
         timeSpan.textContent = formatted;
-        timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
       }
-
+      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
       lastMinutes = minutes;
     }
   }
@@ -522,7 +507,7 @@
     if (!agentContainer) return null;
     for (const child of Array.from(agentContainer.children)) {
       if (child === topRow) continue;
-      if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
+      if (!child.matches('div')) continue;
       if (normalizeText(child.textContent).includes('Filas:')) return child;
     }
     return null;
@@ -559,16 +544,13 @@
   function ensureAgentLeftWrapper(bottomRow) {
     let left = bottomRow.querySelector(':scope > .tm-agent-left');
     if (left) return left;
-
     left = document.createElement('div');
     left.className = 'tm-agent-left';
-
     const currentChildren = Array.from(bottomRow.childNodes);
     for (const node of currentChildren) {
       if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
       left.appendChild(node);
     }
-
     bottomRow.insertBefore(left, bottomRow.firstChild);
     return left;
   }
@@ -576,37 +558,23 @@
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
-
     agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
-
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
-
     if (!topRow || !bottomRow) return;
-
     topRow.setAttribute(AGENT_TOP_ATTR, 'true');
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
-
     const offlineControl = findOfflineControl(topRow);
     const sendHsmButton = findSendHsmButton(topRow);
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
-
     ensureAgentLeftWrapper(bottomRow);
-
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(offlineControl);
-    }
-
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(sendHsmButton);
-    }
-
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) actionsWrapper.appendChild(offlineControl);
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) actionsWrapper.appendChild(sendHsmButton);
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
       if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
       btn.classList.add('tm-agent-hidden');
     }
-
     topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
   }
 
@@ -616,24 +584,15 @@
 
   function findTicketInfoRowFromTopRow(topRow) {
     if (!topRow || !topRow.parentElement) return null;
-
     const siblings = Array.from(topRow.parentElement.children);
     const topIndex = siblings.indexOf(topRow);
-
     for (let i = topIndex + 1; i < siblings.length; i++) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (
-        el.classList.contains('px-4') &&
-        el.classList.contains('py-2') &&
-        el.classList.contains('border-t') &&
-        el.classList.contains('border-border') &&
-        (el.classList.contains('bg-muted/30') || el.className.includes('bg-muted/30'))
-      ) {
+      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
         return el;
       }
     }
-
     return null;
   }
 
@@ -666,46 +625,30 @@
     for (const topRow of findTicketHeaderTopRows()) {
       const infoRow = findTicketInfoRowFromTopRow(topRow);
       const targetBlock = findTicketInfoTarget(topRow);
-
       if (!infoRow || !targetBlock) continue;
-
       targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
-
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;
-
       const host = ensureCreatedHost(targetBlock);
-
       if (createdSpan.parentElement !== host) {
         createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
       }
-
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
-        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
-      }
-
+      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
-        avatar.setAttribute(HIDDEN_ATTR, 'true');
-      }
-
-      if (topRow.parentElement) {
-        topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
-      }
+      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') avatar.setAttribute(HIDDEN_ATTR, 'true');
+      if (topRow.parentElement) topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
     }
   }
 
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
-
     const hasUser = !!card.querySelector('.lucide-user');
     const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
       const text = normalizeText(el.textContent).toLowerCase();
       return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
     });
     const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
-
     return hasUser && hasQueueTag && hasTimeInfo;
   }
 
@@ -716,20 +659,16 @@
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
-
     let allHidden = true;
-
     for (const child of Array.from(protocolRow.children)) {
       if (!(child instanceof HTMLElement)) continue;
       const text = normalizeText(child.textContent);
-
       if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
         hideElement(child);
       } else {
         allHidden = false;
       }
     }
-
     if (allHidden) hideElement(protocolRow);
   }
 
@@ -744,9 +683,7 @@
     for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
       if (!(badge instanceof HTMLElement)) continue;
       const text = normalizeText(badge.textContent);
-      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal' || text === 'Novo' || text === 'No prazo') {
-        hideElement(badge);
-      }
+      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
     }
   }
 
@@ -781,19 +718,11 @@
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
       if (!title || normalizeText(title.textContent) !== 'Dados do Atendimento') continue;
-
       let phoneLabelFound = false;
-
       for (const span of card.querySelectorAll('span')) {
         const text = normalizeText(span.textContent);
-
-        if (text === 'Telefone') {
-          phoneLabelFound = true;
-          continue;
-        }
-
+        if (text === 'Telefone') { phoneLabelFound = true; continue; }
         if (!phoneLabelFound) continue;
-
         if (span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') && /^\d{12,14}$/.test(text)) {
           const normalized = removeCountryCode55(text);
           if (text !== normalized) span.textContent = normalized;
@@ -808,9 +737,7 @@
     const result = [];
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
-      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') {
-        result.push(card);
-      }
+      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') result.push(card);
     }
     return result;
   }
@@ -818,36 +745,27 @@
   function ensureCopyToast(card) {
     let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
     if (toast) return toast;
-
     toast = document.createElement('div');
     toast.setAttribute(COPY_TOAST_ATTR, 'true');
-
     const img = document.createElement('img');
     img.src = COPY_ICON_URL;
     img.alt = 'Copiado';
     img.draggable = false;
-
     toast.appendChild(img);
     card.appendChild(toast);
-
     return toast;
   }
 
   function showCopyToast(card) {
     const toast = ensureCopyToast(card);
-
     if (toast._tmHideTimer) clearTimeout(toast._tmHideTimer);
-
     toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
-    toast._tmHideTimer = setTimeout(() => {
-      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
-    }, 1300);
+    toast._tmHideTimer = setTimeout(() => toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR), 1300);
   }
 
   function findValueSpanByLabel(card, labelText) {
     for (const label of card.querySelectorAll('span')) {
       if (normalizeText(label.textContent) !== labelText) continue;
-
       let row = label.parentElement;
       while (row && row !== card) {
         const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
@@ -855,27 +773,19 @@
         row = row.parentElement;
       }
     }
-
     return null;
   }
 
   function bindCopyOnClick(valueEl, card, fieldName) {
-    if (!valueEl || valueEl.getAttribute(COPY_BOUND_ATTR) === 'true') return;
-
-    valueEl.setAttribute(COPY_BOUND_ATTR, 'true');
+    if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
-
     valueEl.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
-
       const text = normalizeText(valueEl.textContent);
       if (!text) return;
-
-      if (await copyTextToClipboard(text)) {
-        showCopyToast(card);
-      }
+      if (await copyTextToClipboard(text)) showCopyToast(card);
     });
   }
 
@@ -883,7 +793,6 @@
     for (const card of findAttendanceDataCards()) {
       card.setAttribute(COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
-
       for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
         const valueEl = findValueSpanByLabel(card, labelText);
         if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
@@ -903,10 +812,8 @@
     for (const card of getAllTicketListCards()) {
       for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
         if (!(badge instanceof HTMLElement)) continue;
-
         const queueType = getQueueType(normalizeText(badge.textContent));
         if (!queueType) continue;
-
         badge.setAttribute(QUEUE_TAG_ATTR, 'true');
         badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
         badge.style.backgroundColor = '';
@@ -936,11 +843,10 @@
   }
 
   let scheduledPasses = [];
-  function scheduleReapplyPasses(delays = [150, 400, 800, 1500, 2500]) {
+  function scheduleReapplyPasses() {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
-
-    for (const delay of delays) {
+    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
   }
@@ -948,85 +854,34 @@
   let sidebarAttempts = 0;
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
-    if (btn) {
-      btn.click();
-      log('sidebar recolhida');
-      return;
-    }
-
+    if (btn) { btn.click(); log('sidebar recolhida'); return; }
     if (document.querySelector('button[aria-label="Abrir menu"]')) return;
-
     sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
-      setTimeout(collapseSidebar, 300);
-    }
-  }
-
-  function hookTabButtons() {
-    const possibleTabs = Array.from(document.querySelectorAll('button, [role="tab"]'));
-
-    for (const el of possibleTabs) {
-      if (!(el instanceof HTMLElement)) continue;
-      if (el.dataset.tmEffinityTabHook === 'true') continue;
-
-      const text = normalizeText(el.textContent).toLowerCase();
-      if (!text) continue;
-
-      if (
-        text.includes('atribuído') ||
-        text.includes('atribuido') ||
-        text.includes('atribuídos') ||
-        text.includes('atribuidos') ||
-        text.includes('atendimento')
-      ) {
-        el.dataset.tmEffinityTabHook = 'true';
-
-        const trigger = () => {
-          reapplyAll();
-          scheduleReapplyPasses([50, 180, 400, 800]);
-        };
-
-        el.addEventListener('pointerdown', trigger, true);
-        el.addEventListener('click', trigger, true);
-      }
-    }
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
   }
 
   let observer = null;
   function startObserver() {
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
-
     if (observer) observer.disconnect();
-
     observer = new MutationObserver((mutations) => {
-      let shouldReapply = false;
-
+      let relevant = false;
       for (const mutation of mutations) {
-        if (mutation.type === 'childList' && (mutation.addedNodes.length || mutation.removedNodes.length)) {
-          shouldReapply = true;
+        if (mutation.type !== 'childList') continue;
+        if (mutation.addedNodes.length || mutation.removedNodes.length) {
+          relevant = true;
           break;
         }
       }
-
-      if (!shouldReapply) return;
-
-      hookTabButtons();
-      debounce(() => {
-        reapplyAll();
-      }, 80);
+      if (!relevant) return;
+      debounce(reapplyAll, 180);
     });
-
-    observer.observe(target, {
-      childList: true,
-      subtree: true,
-      attributes: false
-    });
+    observer.observe(target, { childList: true, subtree: true });
   }
 
   function init() {
     reapplyAll();
-    hookTabButtons();
     scheduleReapplyPasses();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
@@ -1043,11 +898,6 @@
     boot();
   }
 
-  window.addEventListener('load', () => {
-    init();
-  });
-
-  window.addEventListener('pageshow', () => {
-    init();
-  });
+  window.addEventListener('load', init);
+  window.addEventListener('pageshow', init);
 })();

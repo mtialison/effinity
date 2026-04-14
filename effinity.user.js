@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.2
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.1';
+  const SCRIPT_VERSION = '4.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1234,6 +1234,13 @@
     styleQueueTagsInTicketCards();
   }
 
+  function applyFastAntiFlickerPass() {
+    hideSelectedCards();
+    moveCreatedDateToHeader();
+    applyUppercaseToCustomerNames();
+    styleQueueTagsInTicketCards();
+  }
+
   function reapplyAll() {
     applyCSS();
     applySelectedFeatures();
@@ -1244,6 +1251,28 @@
    * Mantida apenas para estabilidade em re-renderizações.
    * ====================================================================== */
   let observer = null;
+  let tabPassTimers = [];
+
+  function scheduleTabAntiFlickerPasses() {
+    tabPassTimers.forEach(clearTimeout);
+    tabPassTimers = [];
+
+    applyFastAntiFlickerPass();
+
+    for (const delay of [0, 50, 120, 220]) {
+      tabPassTimers.push(window.setTimeout(applyFastAntiFlickerPass, delay));
+    }
+  }
+
+  function isSidePanelTabTrigger(target) {
+    if (!(target instanceof Element)) return false;
+
+    const trigger = target.closest('button, a, [role="tab"]');
+    if (!trigger) return false;
+
+    const text = normalizeText(trigger.textContent).toLowerCase();
+    return ['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs'].includes(text);
+  }
 
   function startObserver() {
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
@@ -1252,13 +1281,20 @@
     if (observer) observer.disconnect();
 
     observer = new MutationObserver(() => {
-      debounce(reapplyAll, 200);
+      applyFastAntiFlickerPass();
+      debounce(reapplyAll, 80);
     });
 
     observer.observe(target, { childList: true, subtree: true });
+
+    document.addEventListener('click', (event) => {
+      if (!isSidePanelTabTrigger(event.target)) return;
+      scheduleTabAntiFlickerPasses();
+    }, true);
   }
 
   function init() {
+    applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();
     ensureSidebarStartsCollapsed();

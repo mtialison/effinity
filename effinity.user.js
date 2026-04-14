@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6-clean-sidebar-init-collapsed
+// @version      3.6-clean-sidebar-init-collapsed-card-antiflicker
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6-clean-sidebar-init-collapsed';
+  const SCRIPT_VERSION = '3.6-clean-sidebar-init-collapsed-card-antiflicker';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -43,6 +43,9 @@
   const SIDEBAR_BOOT_STYLE_ID = 'tm-effinity-sidebar-boot-style';
   const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-booting';
   const SIDEBAR_COLLAPSED_READY_ATTR = 'data-tm-sidebar-collapsed-ready';
+
+  const CARD_BOOT_STYLE_ID = 'tm-effinity-card-boot-style';
+  const CARD_BOOT_ATTR = 'data-tm-card-booting';
 
   /* ========================================================================
    * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
@@ -275,6 +278,61 @@
 
 
   /* ========================================================================
+   * SEÇÃO: ANTI-FLICKER INICIAL DOS CARDS DE TICKET
+   * Objetivo: ao trocar entre Espera / Atribuído / Atendimento, os elementos
+   * ocultados pelo script já nascem invisíveis no primeiro paint.
+   * ====================================================================== */
+  const cardBootCSS = `
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.text-xs:first-child {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.font-medium.text-sm.truncate {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex:has(.lucide-minus) {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex.h-4 {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1.mb-1
+      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]) {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
+      display: none !important;
+    }
+
+    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
+      span.inline-flex.items-center.gap-1.rounded-full.px-1\.5.py-0\.5.text-\[10px\].border.bg-blue-50 {
+      display: none !important;
+    }
+  `;
+
+
+  /* ========================================================================
    * SEÇÃO: SIDEBAR INICIANDO RECOLHIDA
    * Objetivo: a sidebar nasce visualmente recolhida sem remover o modo expandido.
    * ====================================================================== */
@@ -359,6 +417,16 @@
     }
 
     return style;
+  }
+
+  function startCardBootMask() {
+    document.documentElement.setAttribute(CARD_BOOT_ATTR, 'true');
+    ensureStyleTag(CARD_BOOT_STYLE_ID, cardBootCSS);
+  }
+
+  function stopCardBootMask() {
+    document.documentElement.removeAttribute(CARD_BOOT_ATTR);
+    document.getElementById(CARD_BOOT_STYLE_ID)?.remove();
   }
 
   function startSidebarBootMask() {
@@ -912,6 +980,7 @@
 
   function init() {
     reapplyAll();
+    stopCardBootMask();
     ensureSidebarStartsCollapsed();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
@@ -921,7 +990,9 @@
     startObserver();
   }
 
+  startCardBootMask();
   startSidebarBootMask();
+  applyCSS();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

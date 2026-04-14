@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6.1
-// @description  effinity estável base segura
+// @version      3.6
+// @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6.1';
+  const SCRIPT_VERSION = '3.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -74,36 +74,43 @@
       display: none !important;
     }
 
-    /* ── ANTI-FLICKER via CSS: cards da fila ─────────────────────────────── */
+    /* ── ANTI-FLICKER: Cards da fila — elementos sempre ocultos via CSS ───── */
+
+    /* Emoji de status (✅ 🔵) — primeiro span.text-xs dentro da linha de protocolo */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > span.text-xs:first-child {
       display: none !important;
     }
 
+    /* Protocolo CS001... */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > span.font-medium.text-sm.truncate {
       display: none !important;
     }
 
+    /* Badge "Normal" (contém lucide-minus) */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > div.inline-flex:has(.lucide-minus) {
       display: none !important;
     }
 
+    /* Badge "Novo" (pequeno, h-4) */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > div.inline-flex.h-4 {
       display: none !important;
     }
 
+    /* Telefone (contém lucide-phone) */
     div.p-2.border.rounded.cursor-pointer
       span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
       display: none !important;
     }
 
+    /* Badge "Em Atendimento" */
     div.p-2.border.rounded.cursor-pointer
       div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
     div.p-2.border.rounded.cursor-pointer
@@ -112,17 +119,19 @@
       display: none !important;
     }
 
+    /* Badge "No prazo" (contém lucide-check-circle2) */
     div.p-2.border.rounded.cursor-pointer
       div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
       display: none !important;
     }
 
+    /* Badge "Contato" — tag azul no rodapé do card */
     div.p-2.border.rounded.cursor-pointer
       span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
       display: none !important;
     }
 
-    /* ── Elementos marcados via JS (fallback) ────────────────────────────── */
+    /* ── Elementos marcados via JS (fallback para casos dinâmicos) ───────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -307,7 +316,7 @@
   }
 
   function normalizeText(text) {
-    return String(text || '').replace(/\s+/g, ' ').trim();
+    return (text || '').replace(/\s+/g, ' ').trim();
   }
 
   function applyCSS() {
@@ -473,10 +482,7 @@
         activeDate.setDate(activeDate.getDate() + 1);
       }
 
-      const formatted = `${formatDate(activeDate)} ${timeText}`;
-      if (timeSpan.textContent !== formatted) {
-        timeSpan.textContent = formatted;
-      }
+      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
       timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
       lastMinutes = minutes;
     }
@@ -656,6 +662,7 @@
     return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
   }
 
+  // JS mantido apenas como fallback para casos que o CSS não cobrir
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
@@ -865,18 +872,7 @@
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
     if (observer) observer.disconnect();
-    observer = new MutationObserver((mutations) => {
-      let relevant = false;
-      for (const mutation of mutations) {
-        if (mutation.type !== 'childList') continue;
-        if (mutation.addedNodes.length || mutation.removedNodes.length) {
-          relevant = true;
-          break;
-        }
-      }
-      if (!relevant) return;
-      debounce(reapplyAll, 180);
-    });
+    observer = new MutationObserver(() => debounce(reapplyAll, 200));
     observer.observe(target, { childList: true, subtree: true });
   }
 

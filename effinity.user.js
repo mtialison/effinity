@@ -1,23 +1,25 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6
-// @description  envenenado
+// @version      4.1
+// @description  effinity otimizado anti-flicker + SPA + reaplicação eficiente
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6';
+  const SCRIPT_VERSION = '4.1';
 
   const STYLE_ID = 'tm-effinity-style';
+  const BOOT_STYLE_ID = 'tm-effinity-boot-style';
+
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
 
@@ -42,8 +44,54 @@
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
+  const PROCESSING_ATTR = 'data-tm-processing';
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+
+  const TAB_TEXTS = [
+    'Atribuído',
+    'Atendimento',
+    'Todos',
+    'Pendentes',
+    'Finalizados'
+  ];
+
+  const BOOT_CSS = `
+    /* Pré-ocultação cedo para reduzir flicker de elementos que sempre devem sumir */
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.text-xs:first-child,
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.font-medium.text-sm.truncate,
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex:has(.lucide-minus),
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex.h-4,
+    div.p-2.border.rounded.cursor-pointer
+      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone),
+    div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1.mb-1
+      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]),
+    div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2),
+    div.p-2.border.rounded.cursor-pointer
+      span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
+      display: none !important;
+    }
+
+    [data-tm-effinity-hidden="true"] {
+      display: none !important;
+    }
+
+    [data-tm-uppercase-name="true"] {
+      text-transform: uppercase !important;
+    }
+  `;
 
   const css = `
     /* ── Layout geral ─────────────────────────────────────────────────────── */
@@ -53,6 +101,7 @@
       flex-direction: column !important;
       overflow: hidden !important;
     }
+
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
       flex: 1 !important;
       min-height: 0 !important;
@@ -146,9 +195,11 @@
       flex-direction: column !important;
       gap: 0 !important;
     }
+
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -158,12 +209,14 @@
       min-height: 40px !important;
       margin: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
       display: flex !important;
       align-items: center !important;
       flex: 1 1 auto !important;
       min-width: 0 !important;
     }
+
     [${AGENT_ACTIONS_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -173,11 +226,13 @@
       margin-left: auto !important;
       white-space: nowrap !important;
     }
+
     [${AGENT_ACTIONS_ATTR}="true"] button,
     [${AGENT_ACTIONS_ATTR}="true"] > div,
     [${AGENT_ACTIONS_ATTR}="true"] > span {
       flex-shrink: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
       display: flex !important;
       align-items: center !important;
@@ -185,10 +240,12 @@
       flex-wrap: nowrap !important;
       min-width: 0 !important;
     }
+
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
       margin-right: 4px !important;
       flex-shrink: 0 !important;
     }
+
     .tm-agent-hidden {
       display: none !important;
     }
@@ -197,6 +254,7 @@
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -205,11 +263,13 @@
       gap: 2px !important;
       min-width: 0 !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
       margin: 0 !important;
     }
+
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
       display: inline-flex !important;
       align-items: center !important;
@@ -217,6 +277,7 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
+
     [${TICKET_CREATED_HOST_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -229,6 +290,7 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
+
     [${TICKET_CREATED_MOVED_ATTR}="true"] {
       display: inline-flex !important;
       align-items: center !important;
@@ -239,6 +301,7 @@
       line-height: inherit !important;
       white-space: nowrap !important;
     }
+
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
       width: 12px !important;
       height: 12px !important;
@@ -249,17 +312,21 @@
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
+
     [${COPY_VALUE_ATTR}="true"] {
       cursor: pointer !important;
       user-select: none !important;
       transition: opacity 0.18s ease, transform 0.18s ease !important;
     }
+
     [${COPY_VALUE_ATTR}="true"]:hover {
       opacity: 0.88 !important;
     }
+
     [${COPY_VALUE_ATTR}="true"]:active {
       transform: scale(0.985) !important;
     }
+
     [${COPY_TOAST_ATTR}="true"] {
       position: absolute !important;
       top: 12px !important;
@@ -272,10 +339,12 @@
       pointer-events: none !important;
       z-index: 30 !important;
     }
+
     [${COPY_TOAST_VISIBLE_ATTR}="true"] {
       opacity: 1 !important;
       transform: scale(1) !important;
     }
+
     [${COPY_TOAST_ATTR}="true"] img {
       display: block !important;
       width: 100% !important;
@@ -294,16 +363,19 @@
       font-weight: 600 !important;
       line-height: 1.1 !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
       background-color: #dbeafe !important;
       color: #1d4ed8 !important;
       border-color: #93c5fd !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="samec"] {
       background-color: #fef3c7 !important;
       color: #b45309 !important;
       border-color: #fcd34d !important;
     }
+
     [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
       background-color: #fee2e2 !important;
       color: #b91c1c !important;
@@ -319,22 +391,30 @@
     return (text || '').replace(/\s+/g, ' ').trim();
   }
 
-  function applyCSS() {
-    let style = document.getElementById(STYLE_ID);
+  function ensureStyle(id, content) {
+    const root = document.head || document.documentElement;
+    if (!root) return null;
+
+    let style = document.getElementById(id);
     if (!style) {
       style = document.createElement('style');
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
+      style.id = id;
+      root.appendChild(style);
     }
-    if (style.textContent !== css) {
-      style.textContent = css;
+
+    if (style.textContent !== content) {
+      style.textContent = content;
     }
+
+    return style;
   }
 
-  let debounceTimer = null;
-  function debounce(fn, delay) {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fn, delay);
+  function applyBootCSS() {
+    ensureStyle(BOOT_STYLE_ID, BOOT_CSS);
+  }
+
+  function applyCSS() {
+    ensureStyle(STYLE_ID, css);
   }
 
   function getCurrentDateFormatted() {
@@ -458,14 +538,18 @@
       const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
       if (daySeparator) {
         const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
+        if (parsedDate) {
+          activeDate = parsedDate;
+          lastMinutes = null;
+        }
         continue;
       }
 
       const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
       if (!timeSpan) continue;
 
-      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
+      const rawTime = normalizeText(timeSpan.textContent);
+      const timeMatch = rawTime.match(/(\d{2}:\d{2})$/);
       if (!timeMatch) continue;
 
       const timeText = timeMatch[1];
@@ -482,7 +566,10 @@
         activeDate.setDate(activeDate.getDate() + 1);
       }
 
-      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
+      const formatted = `${formatDate(activeDate)} ${timeText}`;
+      if (timeSpan.textContent !== formatted) {
+        timeSpan.textContent = formatted;
+      }
       timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
       lastMinutes = minutes;
     }
@@ -502,7 +589,11 @@
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       const text = normalizeText(child.textContent);
-      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
+      if (
+        text.includes('Área do Agente') &&
+        (text.includes('Offline') || text.includes('Online')) &&
+        text.includes('Enviar HSM')
+      ) {
         return child;
       }
     }
@@ -513,7 +604,7 @@
     if (!agentContainer) return null;
     for (const child of Array.from(agentContainer.children)) {
       if (child === topRow) continue;
-      if (!child.matches('div')) continue;
+      if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       if (normalizeText(child.textContent).includes('Filas:')) return child;
     }
     return null;
@@ -523,7 +614,12 @@
     if (!topRow) return null;
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-      if (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) {
+      if (
+        text.includes('Offline') ||
+        text.includes('Online') ||
+        text.includes('Pausa') ||
+        text.includes('Ausente')
+      ) {
         return btn.closest('.relative.inline-block.text-left') || btn;
       }
     }
@@ -541,6 +637,7 @@
   function ensureAgentActionsWrapper(bottomRow) {
     let wrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
     if (wrapper) return wrapper;
+
     wrapper = document.createElement('div');
     wrapper.setAttribute(AGENT_ACTIONS_ATTR, 'true');
     bottomRow.appendChild(wrapper);
@@ -550,13 +647,22 @@
   function ensureAgentLeftWrapper(bottomRow) {
     let left = bottomRow.querySelector(':scope > .tm-agent-left');
     if (left) return left;
+
     left = document.createElement('div');
     left.className = 'tm-agent-left';
+
     const currentChildren = Array.from(bottomRow.childNodes);
     for (const node of currentChildren) {
-      if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        node.getAttribute &&
+        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
+      ) {
+        continue;
+      }
       left.appendChild(node);
     }
+
     bottomRow.insertBefore(left, bottomRow.firstChild);
     return left;
   }
@@ -564,24 +670,45 @@
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
+
     agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
     if (!topRow || !bottomRow) return;
+
     topRow.setAttribute(AGENT_TOP_ATTR, 'true');
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+
     const offlineControl = findOfflineControl(topRow);
     const sendHsmButton = findSendHsmButton(topRow);
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
+
     ensureAgentLeftWrapper(bottomRow);
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) actionsWrapper.appendChild(offlineControl);
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) actionsWrapper.appendChild(sendHsmButton);
+
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(offlineControl);
+    }
+
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(sendHsmButton);
+    }
+
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
+      if (
+        text.includes('Enviar HSM') ||
+        text.includes('Offline') ||
+        text.includes('Online') ||
+        text.includes('Pausa') ||
+        text.includes('Ausente')
+      ) {
+        continue;
+      }
       btn.classList.add('tm-agent-hidden');
     }
-    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
+
+    topRow.querySelectorAll('.w-px').forEach((el) => el.classList.add('tm-agent-hidden'));
   }
 
   function findTicketHeaderTopRows() {
@@ -590,15 +717,28 @@
 
   function findTicketInfoRowFromTopRow(topRow) {
     if (!topRow || !topRow.parentElement) return null;
+
     const siblings = Array.from(topRow.parentElement.children);
     const topIndex = siblings.indexOf(topRow);
-    for (let i = topIndex + 1; i < siblings.length; i++) {
+
+    for (let i = topIndex + 1; i < siblings.length; i += 1) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
+
+      if (
+        el.classList.contains('px-4') &&
+        el.classList.contains('py-2') &&
+        el.classList.contains('border-t') &&
+        el.classList.contains('border-border') &&
+        (
+          el.classList.contains('bg-muted/30') ||
+          el.className.includes('bg-muted/30')
+        )
+      ) {
         return el;
       }
     }
+
     return null;
   }
 
@@ -621,6 +761,7 @@
   function ensureCreatedHost(targetBlock) {
     let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
     if (host) return host;
+
     host = document.createElement('div');
     host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
     targetBlock.appendChild(host);
@@ -631,30 +772,55 @@
     for (const topRow of findTicketHeaderTopRows()) {
       const infoRow = findTicketInfoRowFromTopRow(topRow);
       const targetBlock = findTicketInfoTarget(topRow);
+
       if (!infoRow || !targetBlock) continue;
+
       targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
+
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;
+
       const host = ensureCreatedHost(targetBlock);
+
       if (createdSpan.parentElement !== host) {
         createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
       }
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+
+      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
+        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+      }
+
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') avatar.setAttribute(HIDDEN_ATTR, 'true');
-      if (topRow.parentElement) topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
+      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
+        avatar.setAttribute(HIDDEN_ATTR, 'true');
+      }
+
+      if (topRow.parentElement) {
+        topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
+      }
     }
   }
 
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
+
     const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
+    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find((el) => {
       const text = normalizeText(el.textContent).toLowerCase();
-      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
+      return (
+        text === 'clínica do sono' ||
+        text === 'clinica do sono' ||
+        text === 'samec' ||
+        text === 'confirmação' ||
+        text === 'confirmacao'
+      );
     });
-    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
+
+    const hasTimeInfo =
+      normalizeText(card.textContent).includes('Última atividade:') ||
+      !!card.querySelector('.lucide-clock');
+
     return hasUser && hasQueueTag && hasTimeInfo;
   }
 
@@ -662,20 +828,29 @@
     return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
   }
 
-  // JS mantido apenas como fallback para casos que o CSS não cobrir
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
+
     let allHidden = true;
+
     for (const child of Array.from(protocolRow.children)) {
       if (!(child instanceof HTMLElement)) continue;
+
       const text = normalizeText(child.textContent);
-      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
+
+      if (
+        child.matches('span.text-xs') ||
+        child.matches('span.font-medium.text-sm.truncate') ||
+        text === 'Normal' ||
+        text.includes('Normal')
+      ) {
         hideElement(child);
       } else {
         allHidden = false;
       }
     }
+
     if (allHidden) hideElement(protocolRow);
   }
 
@@ -690,7 +865,9 @@
     for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
       if (!(badge instanceof HTMLElement)) continue;
       const text = normalizeText(badge.textContent);
-      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
+      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') {
+        hideElement(badge);
+      }
     }
   }
 
@@ -725,12 +902,23 @@
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
       if (!title || normalizeText(title.textContent) !== 'Dados do Atendimento') continue;
+
       let phoneLabelFound = false;
+
       for (const span of card.querySelectorAll('span')) {
         const text = normalizeText(span.textContent);
-        if (text === 'Telefone') { phoneLabelFound = true; continue; }
+
+        if (text === 'Telefone') {
+          phoneLabelFound = true;
+          continue;
+        }
+
         if (!phoneLabelFound) continue;
-        if (span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') && /^\d{12,14}$/.test(text)) {
+
+        if (
+          span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') &&
+          /^\d{12,14}$/.test(text)
+        ) {
           const normalized = removeCountryCode55(text);
           if (text !== normalized) span.textContent = normalized;
           span.setAttribute(PHONE_NORMALIZED_ATTR, 'true');
@@ -744,7 +932,9 @@
     const result = [];
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
-      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') result.push(card);
+      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') {
+        result.push(card);
+      }
     }
     return result;
   }
@@ -752,27 +942,36 @@
   function ensureCopyToast(card) {
     let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
     if (toast) return toast;
+
     toast = document.createElement('div');
     toast.setAttribute(COPY_TOAST_ATTR, 'true');
+
     const img = document.createElement('img');
     img.src = COPY_ICON_URL;
     img.alt = 'Copiado';
     img.draggable = false;
+
     toast.appendChild(img);
     card.appendChild(toast);
+
     return toast;
   }
 
   function showCopyToast(card) {
     const toast = ensureCopyToast(card);
+
     if (toast._tmHideTimer) clearTimeout(toast._tmHideTimer);
+
     toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
-    toast._tmHideTimer = setTimeout(() => toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR), 1300);
+    toast._tmHideTimer = setTimeout(() => {
+      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
+    }, 1300);
   }
 
   function findValueSpanByLabel(card, labelText) {
     for (const label of card.querySelectorAll('span')) {
       if (normalizeText(label.textContent) !== labelText) continue;
+
       let row = label.parentElement;
       while (row && row !== card) {
         const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
@@ -785,14 +984,20 @@
 
   function bindCopyOnClick(valueEl, card, fieldName) {
     if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
+
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
+
     valueEl.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
+
       const text = normalizeText(valueEl.textContent);
       if (!text) return;
-      if (await copyTextToClipboard(text)) showCopyToast(card);
+
+      if (await copyTextToClipboard(text)) {
+        showCopyToast(card);
+      }
     });
   }
 
@@ -800,7 +1005,13 @@
     for (const card of findAttendanceDataCards()) {
       card.setAttribute(COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
-      for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
+
+      for (const [labelText, fieldName] of [
+        ['Nome', 'nome'],
+        ['Nascimento', 'nascimento'],
+        ['CPF', 'cpf'],
+        ['Telefone', 'telefone']
+      ]) {
         const valueEl = findValueSpanByLabel(card, labelText);
         if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
       }
@@ -819,8 +1030,10 @@
     for (const card of getAllTicketListCards()) {
       for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
         if (!(badge instanceof HTMLElement)) continue;
+
         const queueType = getQueueType(normalizeText(badge.textContent));
         if (!queueType) continue;
+
         badge.setAttribute(QUEUE_TAG_ATTR, 'true');
         badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
         badge.style.backgroundColor = '';
@@ -845,55 +1058,254 @@
   }
 
   function reapplyAll() {
+    applyBootCSS();
     applyCSS();
     applyDynamicAdjustments();
   }
 
+  let rafScheduled = false;
+  let timeoutScheduled = null;
   let scheduledPasses = [];
-  function scheduleReapplyPasses() {
-    scheduledPasses.forEach(clearTimeout);
+  let lastApplyTs = 0;
+
+  function clearScheduledPasses() {
+    for (const id of scheduledPasses) clearTimeout(id);
     scheduledPasses = [];
-    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
-      scheduledPasses.push(setTimeout(reapplyAll, delay));
+  }
+
+  function runApply(reason = 'unknown') {
+    rafScheduled = false;
+    lastApplyTs = Date.now();
+    reapplyAll();
+  }
+
+  function scheduleApply(reason = 'unknown', mode = 'normal') {
+    const now = Date.now();
+    const tooSoon = now - lastApplyTs < 12;
+
+    if (mode === 'instant' && !tooSoon) {
+      reapplyAll();
+      lastApplyTs = Date.now();
+      return;
+    }
+
+    if (!rafScheduled) {
+      rafScheduled = true;
+      requestAnimationFrame(() => runApply(reason));
+    }
+
+    if (timeoutScheduled) clearTimeout(timeoutScheduled);
+    timeoutScheduled = setTimeout(() => {
+      timeoutScheduled = null;
+      reapplyAll();
+      lastApplyTs = Date.now();
+    }, mode === 'instant' ? 0 : 60);
+  }
+
+  function scheduleReapplyPasses(reason = 'passes') {
+    clearScheduledPasses();
+
+    const delays = [0, 80, 220, 500, 1000];
+    for (const delay of delays) {
+      scheduledPasses.push(setTimeout(() => {
+        scheduleApply(`${reason}:${delay}`, delay === 0 ? 'instant' : 'normal');
+      }, delay));
     }
   }
 
-  let sidebarAttempts = 0;
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
-    if (btn) { btn.click(); log('sidebar recolhida'); return; }
+    if (btn) {
+      btn.click();
+      log('sidebar recolhida');
+      return;
+    }
+
     if (document.querySelector('button[aria-label="Abrir menu"]')) return;
-    sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
+
+    collapseSidebar._attempts = (collapseSidebar._attempts || 0) + 1;
+    if (collapseSidebar._attempts < MAX_SIDEBAR_ATTEMPTS) {
+      setTimeout(collapseSidebar, 300);
+    }
+  }
+
+  function mutationLooksRelevant(mutation) {
+    if (!mutation) return false;
+
+    if (mutation.type === 'childList') {
+      if (mutation.addedNodes && mutation.addedNodes.length) return true;
+      if (mutation.removedNodes && mutation.removedNodes.length) return true;
+    }
+
+    if (mutation.type === 'attributes') {
+      const target = mutation.target;
+      if (!(target instanceof HTMLElement)) return false;
+
+      const attr = mutation.attributeName || '';
+      if (
+        attr === 'class' ||
+        attr === 'style' ||
+        attr === 'hidden' ||
+        attr === 'aria-selected' ||
+        attr === 'data-state' ||
+        attr === 'aria-expanded'
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   let observer = null;
+
   function startObserver() {
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
+
     if (observer) observer.disconnect();
-    observer = new MutationObserver(() => debounce(reapplyAll, 200));
-    observer.observe(target, { childList: true, subtree: true });
+
+    observer = new MutationObserver((mutations) => {
+      let relevant = false;
+
+      for (const mutation of mutations) {
+        if (!mutationLooksRelevant(mutation)) continue;
+
+        if (mutation.type === 'childList') {
+          const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+          for (const node of nodes) {
+            if (!(node instanceof HTMLElement)) {
+              relevant = true;
+              break;
+            }
+
+            const text = normalizeText(node.textContent);
+            if (
+              node.matches?.('div, span, button, h2, h3, a') ||
+              text.includes('Área do Agente') ||
+              text.includes('Dados do Atendimento') ||
+              text.includes('Criado há') ||
+              text.includes('Última atividade:') ||
+              TAB_TEXTS.some((tab) => text.includes(tab))
+            ) {
+              relevant = true;
+              break;
+            }
+          }
+        } else {
+          relevant = true;
+        }
+
+        if (relevant) break;
+      }
+
+      if (relevant) {
+        scheduleApply('observer');
+      }
+    });
+
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'aria-selected', 'data-state', 'aria-expanded']
+    });
+  }
+
+  function handlePotentialTabInteraction(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const clickable = target.closest('button, [role="tab"], [role="button"], a, div');
+    if (!(clickable instanceof HTMLElement)) return;
+
+    const text = normalizeText(clickable.textContent);
+    if (!text) return;
+
+    if (TAB_TEXTS.some((tab) => text.includes(tab))) {
+      scheduleApply('tab-interaction', 'instant');
+      scheduleReapplyPasses('tab-interaction');
+    }
+  }
+
+  function hookNavigation() {
+    if (window.__tmEffinityHistoryHooked) return;
+    window.__tmEffinityHistoryHooked = true;
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      const result = originalPushState.apply(this, args);
+      scheduleApply('pushState', 'instant');
+      scheduleReapplyPasses('pushState');
+      return result;
+    };
+
+    history.replaceState = function (...args) {
+      const result = originalReplaceState.apply(this, args);
+      scheduleApply('replaceState', 'instant');
+      scheduleReapplyPasses('replaceState');
+      return result;
+    };
+
+    window.addEventListener('popstate', () => {
+      scheduleApply('popstate', 'instant');
+      scheduleReapplyPasses('popstate');
+    });
+
+    window.addEventListener('hashchange', () => {
+      scheduleApply('hashchange', 'instant');
+      scheduleReapplyPasses('hashchange');
+    });
+  }
+
+  function bindGlobalListeners() {
+    document.addEventListener('pointerdown', handlePotentialTabInteraction, true);
+    document.addEventListener('click', handlePotentialTabInteraction, true);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        scheduleApply('visibilitychange', 'instant');
+        scheduleReapplyPasses('visibilitychange');
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      scheduleApply('focus', 'instant');
+    });
+
+    window.addEventListener('load', () => {
+      scheduleApply('load', 'instant');
+      scheduleReapplyPasses('load');
+    });
+
+    window.addEventListener('pageshow', () => {
+      scheduleApply('pageshow', 'instant');
+      scheduleReapplyPasses('pageshow');
+    });
   }
 
   function init() {
     reapplyAll();
-    scheduleReapplyPasses();
-    log(`iniciado v${SCRIPT_VERSION}`);
+    scheduleReapplyPasses('init');
+    log(`iniciado v${SCRIPT_VERSION} em ${getCurrentDateFormatted()}`);
   }
 
   function boot() {
+    applyBootCSS();
+    applyCSS();
+    hookNavigation();
+    bindGlobalListeners();
     init();
     startObserver();
     setTimeout(collapseSidebar, 800);
   }
+
+  applyBootCSS();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {
     boot();
   }
-
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
 })();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6-clean-sidebar-init-collapsed-card-antiflicker
+// @version      3.7
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6-clean-sidebar-init-collapsed-card-antiflicker';
+  const SCRIPT_VERSION = '3.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -46,6 +46,8 @@
 
   const CARD_BOOT_STYLE_ID = 'tm-effinity-card-boot-style';
   const CARD_BOOT_ATTR = 'data-tm-card-booting';
+  const AGENT_BOOT_STYLE_ID = 'tm-effinity-agent-boot-style';
+  const AGENT_BOOT_ATTR = 'data-tm-agent-booting';
 
   /* ========================================================================
    * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
@@ -384,6 +386,69 @@
     }
   `;
 
+  const agentBootCSS = `
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_AREA_ATTR}="true"] {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_TOP_ATTR}="true"] {
+      display: none !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: nowrap !important;
+      gap: 24px !important;
+      min-height: 40px !important;
+      margin: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
+      display: flex !important;
+      align-items: center !important;
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 16px !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] button,
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] > div,
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] > span {
+      flex-shrink: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      flex-wrap: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
+      margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    html[${AGENT_BOOT_ATTR}="true"] .tm-agent-hidden {
+      display: none !important;
+    }
+  `;
+
+
   /* ========================================================================
    * SEÇÃO: UTILITÁRIOS
    * ====================================================================== */
@@ -440,6 +505,16 @@
     document.getElementById(SIDEBAR_BOOT_STYLE_ID)?.remove();
   }
 
+  function startAgentBootMask() {
+    document.documentElement.setAttribute(AGENT_BOOT_ATTR, 'true');
+    ensureStyleTag(AGENT_BOOT_STYLE_ID, agentBootCSS);
+  }
+
+  function stopAgentBootMask() {
+    document.documentElement.removeAttribute(AGENT_BOOT_ATTR);
+    document.getElementById(AGENT_BOOT_STYLE_ID)?.remove();
+  }
+
   function getSidebarElement() {
     return document.querySelector('aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg');
   }
@@ -488,6 +563,7 @@
         return;
       }
       ensureSidebarStartsCollapsed();
+    ensureAgentHeaderStartsOptimized();
     });
   }
 
@@ -748,6 +824,65 @@
     return left;
   }
 
+  function primeAgentAreaBootState() {
+    const agentContainer = findAgentAreaContainer();
+    if (!agentContainer) return false;
+
+    const topRow = findTopRow(agentContainer);
+    const bottomRow = findBottomRow(agentContainer, topRow);
+    if (!topRow || !bottomRow) return false;
+
+    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
+    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+    return true;
+  }
+
+  let agentBootDone = false;
+  let agentBootObserver = null;
+
+  function ensureAgentHeaderStartsOptimized() {
+    if (agentBootDone) return;
+
+    primeAgentAreaBootState();
+    reorganizeAgentArea();
+
+    const agentContainer = findAgentAreaContainer();
+    if (!agentContainer) return;
+
+    const topRow = findTopRow(agentContainer);
+    const bottomRow = findBottomRow(agentContainer, topRow);
+    const actionsWrapper = bottomRow?.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
+
+    if (
+      agentContainer.getAttribute(AGENT_AREA_ATTR) === 'true' &&
+      topRow?.getAttribute(AGENT_TOP_ATTR) === 'true' &&
+      bottomRow?.getAttribute(AGENT_BOTTOM_ATTR) === 'true' &&
+      actionsWrapper
+    ) {
+      agentBootDone = true;
+      stopAgentBootMask();
+      if (agentBootObserver) {
+        agentBootObserver.disconnect();
+        agentBootObserver = null;
+      }
+    }
+  }
+
+  function startAgentBootObserver() {
+    if (agentBootDone || agentBootObserver) return;
+
+    const target = document.documentElement || document.body;
+    if (!target) return;
+
+    agentBootObserver = new MutationObserver(() => {
+      ensureAgentHeaderStartsOptimized();
+    });
+
+    agentBootObserver.observe(target, { childList: true, subtree: true });
+    ensureAgentHeaderStartsOptimized();
+  }
+
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
@@ -782,6 +917,18 @@
     }
 
     topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
+
+    if (!agentBootDone) {
+      const actionsWrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
+      if (actionsWrapper) {
+        agentBootDone = true;
+        stopAgentBootMask();
+        if (agentBootObserver) {
+          agentBootObserver.disconnect();
+          agentBootObserver = null;
+        }
+      }
+    }
   }
 
   /* ========================================================================
@@ -982,6 +1129,7 @@
     reapplyAll();
     stopCardBootMask();
     ensureSidebarStartsCollapsed();
+    ensureAgentHeaderStartsOptimized();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
@@ -992,7 +1140,9 @@
 
   startCardBootMask();
   startSidebarBootMask();
+  startAgentBootMask();
   applyCSS();
+  startAgentBootObserver();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

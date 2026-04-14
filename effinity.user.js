@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.7
+// @version      3.8
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.7';
+  const SCRIPT_VERSION = '3.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -387,65 +387,6 @@
   `;
 
   const agentBootCSS = `
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_AREA_ATTR}="true"] {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_TOP_ATTR}="true"] {
-      display: none !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      flex-wrap: nowrap !important;
-      gap: 24px !important;
-      min-height: 40px !important;
-      margin: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
-      display: flex !important;
-      align-items: center !important;
-      flex: 1 1 auto !important;
-      min-width: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: flex-end !important;
-      gap: 16px !important;
-      flex: 0 0 auto !important;
-      margin-left: auto !important;
-      white-space: nowrap !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] button,
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] > div,
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_ACTIONS_ATTR}="true"] > span {
-      flex-shrink: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
-      display: flex !important;
-      align-items: center !important;
-      gap: 12px !important;
-      flex-wrap: nowrap !important;
-      min-width: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
-      margin-right: 4px !important;
-      flex-shrink: 0 !important;
-    }
-
-    html[${AGENT_BOOT_ATTR}="true"] .tm-agent-hidden {
-      display: none !important;
-    }
   `;
 
 
@@ -563,7 +504,6 @@
         return;
       }
       ensureSidebarStartsCollapsed();
-    ensureAgentHeaderStartsOptimized();
     });
   }
 
@@ -839,51 +779,20 @@
   }
 
   let agentBootDone = false;
-  let agentBootObserver = null;
 
-  function ensureAgentHeaderStartsOptimized() {
+  function finalizeAgentBootMask() {
     if (agentBootDone) return;
-
-    primeAgentAreaBootState();
-    reorganizeAgentArea();
-
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
-
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
-    const actionsWrapper = bottomRow?.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
-
-    if (
-      agentContainer.getAttribute(AGENT_AREA_ATTR) === 'true' &&
-      topRow?.getAttribute(AGENT_TOP_ATTR) === 'true' &&
-      bottomRow?.getAttribute(AGENT_BOTTOM_ATTR) === 'true' &&
-      actionsWrapper
-    ) {
-      agentBootDone = true;
-      stopAgentBootMask();
-      if (agentBootObserver) {
-        agentBootObserver.disconnect();
-        agentBootObserver = null;
-      }
-    }
-  }
-
-  function startAgentBootObserver() {
-    if (agentBootDone || agentBootObserver) return;
-
-    const target = document.documentElement || document.body;
-    if (!target) return;
-
-    agentBootObserver = new MutationObserver(() => {
-      ensureAgentHeaderStartsOptimized();
-    });
-
-    agentBootObserver.observe(target, { childList: true, subtree: true });
-    ensureAgentHeaderStartsOptimized();
+    if (!topRow || !bottomRow) return;
+    agentBootDone = true;
+    stopAgentBootMask();
   }
 
   function reorganizeAgentArea() {
+
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
 
@@ -918,17 +827,7 @@
 
     topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
 
-    if (!agentBootDone) {
-      const actionsWrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
-      if (actionsWrapper) {
-        agentBootDone = true;
-        stopAgentBootMask();
-        if (agentBootObserver) {
-          agentBootObserver.disconnect();
-          agentBootObserver = null;
-        }
-      }
-    }
+    finalizeAgentBootMask();
   }
 
   /* ========================================================================
@@ -1129,7 +1028,7 @@
     reapplyAll();
     stopCardBootMask();
     ensureSidebarStartsCollapsed();
-    ensureAgentHeaderStartsOptimized();
+    finalizeAgentBootMask();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 
@@ -1142,7 +1041,6 @@
   startSidebarBootMask();
   startAgentBootMask();
   applyCSS();
-  startAgentBootObserver();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

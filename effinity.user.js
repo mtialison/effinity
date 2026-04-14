@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.6
-// @description  envenenado
+// @version      3.6.9
+// @description  effinity estabilidade total
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.6';
+  const SCRIPT_VERSION = '3.6.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -38,12 +38,24 @@
   const COPY_VALUE_ATTR = 'data-tm-copy-value';
   const COPY_TOAST_ATTR = 'data-tm-copy-toast';
   const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
+  const COPY_BOUND_ATTR = 'data-tm-copy-bound';
 
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+
+  const INITIAL_REAPPLY_DELAYS = [250, 700, 1500, 2600];
+  const OBSERVER_DEBOUNCE_MS = 260;
+  const OBSERVER_START_DELAY_MS = 1800;
+
+  let debounceTimer = null;
+  let observer = null;
+  let observerStarted = false;
+  let observerSuspended = false;
+  let scheduledPasses = [];
+  let sidebarAttempts = 0;
 
   const css = `
     /* ── Layout geral ─────────────────────────────────────────────────────── */
@@ -316,7 +328,14 @@
   }
 
   function normalizeText(text) {
-    return (text || '').replace(/\s+/g, ' ').trim();
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function safeSetAttr(el, attr, value) {
+    if (!el || !(el instanceof HTMLElement)) return false;
+    if (el.getAttribute(attr) === value) return false;
+    el.setAttribute(attr, value);
+    return true;
   }
 
   function applyCSS() {
@@ -331,30 +350,33 @@
     }
   }
 
-  let debounceTimer = null;
   function debounce(fn, delay) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(fn, delay);
   }
 
-  function getCurrentDateFormatted() {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
-
-  function hideElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
-      el.setAttribute(HIDDEN_ATTR, 'true');
+  function withObserverSuspended(fn) {
+    observerSuspended = true;
+    try {
+      fn();
+    } finally {
+      setTimeout(() => {
+        observerSuspended = false;
+      }, 0);
     }
   }
 
+  function cancelScheduledPasses() {
+    scheduledPasses.forEach(clearTimeout);
+    scheduledPasses = [];
+  }
+
+  function hideElement(el) {
+    safeSetAttr(el, HIDDEN_ATTR, 'true');
+  }
+
   function markUppercase(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
+    safeSetAttr(el, UPPERCASE_NAME_ATTR, 'true');
   }
 
   function removeCountryCode55(value) {
@@ -458,7 +480,10 @@
       const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
       if (daySeparator) {
         const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
+        if (parsedDate) {
+          activeDate = parsedDate;
+          lastMinutes = null;
+        }
         continue;
       }
 
@@ -482,8 +507,11 @@
         activeDate.setDate(activeDate.getDate() + 1);
       }
 
-      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
-      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+      const finalText = `${formatDate(activeDate)} ${timeText}`;
+      if (timeSpan.textContent !== finalText) {
+        timeSpan.textContent = finalText;
+      }
+      safeSetAttr(timeSpan, DATE_APPLIED_ATTR, 'true');
       lastMinutes = minutes;
     }
   }
@@ -502,7 +530,11 @@
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       const text = normalizeText(child.textContent);
-      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
+      if (
+        text.includes('Área do Agente') &&
+        (text.includes('Offline') || text.includes('Online')) &&
+        text.includes('Enviar HSM')
+      ) {
         return child;
       }
     }
@@ -513,7 +545,7 @@
     if (!agentContainer) return null;
     for (const child of Array.from(agentContainer.children)) {
       if (child === topRow) continue;
-      if (!child.matches('div')) continue;
+      if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       if (normalizeText(child.textContent).includes('Filas:')) return child;
     }
     return null;
@@ -554,7 +586,13 @@
     left.className = 'tm-agent-left';
     const currentChildren = Array.from(bottomRow.childNodes);
     for (const node of currentChildren) {
-      if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        node.getAttribute &&
+        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
+      ) {
+        continue;
+      }
       left.appendChild(node);
     }
     bottomRow.insertBefore(left, bottomRow.firstChild);
@@ -564,24 +602,36 @@
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
-    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+
+    safeSetAttr(agentContainer, AGENT_AREA_ATTR, 'true');
+
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
     if (!topRow || !bottomRow) return;
-    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
-    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+
+    safeSetAttr(topRow, AGENT_TOP_ATTR, 'true');
+    safeSetAttr(bottomRow, AGENT_BOTTOM_ATTR, 'true');
+
     const offlineControl = findOfflineControl(topRow);
     const sendHsmButton = findSendHsmButton(topRow);
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
+
     ensureAgentLeftWrapper(bottomRow);
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) actionsWrapper.appendChild(offlineControl);
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) actionsWrapper.appendChild(sendHsmButton);
+
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(offlineControl);
+    }
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
+      actionsWrapper.appendChild(sendHsmButton);
+    }
+
     for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
       if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
       btn.classList.add('tm-agent-hidden');
     }
-    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
+
+    topRow.querySelectorAll('.w-px').forEach((el) => el.classList.add('tm-agent-hidden'));
   }
 
   function findTicketHeaderTopRows() {
@@ -592,10 +642,17 @@
     if (!topRow || !topRow.parentElement) return null;
     const siblings = Array.from(topRow.parentElement.children);
     const topIndex = siblings.indexOf(topRow);
+
     for (let i = topIndex + 1; i < siblings.length; i++) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
+      if (
+        el.classList.contains('px-4') &&
+        el.classList.contains('py-2') &&
+        el.classList.contains('border-t') &&
+        el.classList.contains('border-border') &&
+        el.classList.contains('bg-muted/30')
+      ) {
         return el;
       }
     }
@@ -632,25 +689,33 @@
       const infoRow = findTicketInfoRowFromTopRow(topRow);
       const targetBlock = findTicketInfoTarget(topRow);
       if (!infoRow || !targetBlock) continue;
-      targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
+
+      safeSetAttr(targetBlock, TICKET_CONTACT_BLOCK_ATTR, 'true');
+
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;
+
       const host = ensureCreatedHost(targetBlock);
       if (createdSpan.parentElement !== host) {
-        createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
+        safeSetAttr(createdSpan, TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
       }
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+
+      safeSetAttr(infoRow, TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
+
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') avatar.setAttribute(HIDDEN_ATTR, 'true');
-      if (topRow.parentElement) topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
+      if (avatar) hideElement(avatar);
+
+      if (topRow.parentElement) {
+        safeSetAttr(topRow.parentElement, TICKET_HEADER_ATTR, 'true');
+      }
     }
   }
 
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
     const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
+    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find((el) => {
       const text = normalizeText(el.textContent).toLowerCase();
       return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
     });
@@ -662,20 +727,27 @@
     return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
   }
 
-  // JS mantido apenas como fallback para casos que o CSS não cobrir
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
+
     let allHidden = true;
     for (const child of Array.from(protocolRow.children)) {
       if (!(child instanceof HTMLElement)) continue;
       const text = normalizeText(child.textContent);
-      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
+
+      if (
+        child.matches('span.text-xs') ||
+        child.matches('span.font-medium.text-sm.truncate') ||
+        text === 'Normal' ||
+        text.includes('Normal')
+      ) {
         hideElement(child);
       } else {
         allHidden = false;
       }
     }
+
     if (allHidden) hideElement(protocolRow);
   }
 
@@ -725,15 +797,20 @@
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
       if (!title || normalizeText(title.textContent) !== 'Dados do Atendimento') continue;
+
       let phoneLabelFound = false;
       for (const span of card.querySelectorAll('span')) {
         const text = normalizeText(span.textContent);
-        if (text === 'Telefone') { phoneLabelFound = true; continue; }
+        if (text === 'Telefone') {
+          phoneLabelFound = true;
+          continue;
+        }
         if (!phoneLabelFound) continue;
+
         if (span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') && /^\d{12,14}$/.test(text)) {
           const normalized = removeCountryCode55(text);
           if (text !== normalized) span.textContent = normalized;
-          span.setAttribute(PHONE_NORMALIZED_ATTR, 'true');
+          safeSetAttr(span, PHONE_NORMALIZED_ATTR, 'true');
           break;
         }
       }
@@ -784,7 +861,8 @@
   }
 
   function bindCopyOnClick(valueEl, card, fieldName) {
-    if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
+    if (!valueEl || valueEl.getAttribute(COPY_BOUND_ATTR) === 'true') return;
+    valueEl.setAttribute(COPY_BOUND_ATTR, 'true');
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
     valueEl.addEventListener('click', async (event) => {
@@ -798,7 +876,7 @@
 
   function enableCopyOnAttendanceData() {
     for (const card of findAttendanceDataCards()) {
-      card.setAttribute(COPY_CARD_ATTR, 'true');
+      safeSetAttr(card, COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
       for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
         const valueEl = findValueSpanByLabel(card, labelText);
@@ -821,8 +899,8 @@
         if (!(badge instanceof HTMLElement)) continue;
         const queueType = getQueueType(normalizeText(badge.textContent));
         if (!queueType) continue;
-        badge.setAttribute(QUEUE_TAG_ATTR, 'true');
-        badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
+        safeSetAttr(badge, QUEUE_TAG_ATTR, 'true');
+        safeSetAttr(badge, QUEUE_TAG_TYPE_ATTR, queueType);
         badge.style.backgroundColor = '';
         badge.style.color = '';
         badge.style.borderColor = '';
@@ -845,34 +923,58 @@
   }
 
   function reapplyAll() {
-    applyCSS();
-    applyDynamicAdjustments();
+    withObserverSuspended(() => {
+      applyCSS();
+      applyDynamicAdjustments();
+    });
   }
 
-  let scheduledPasses = [];
-  function scheduleReapplyPasses() {
-    scheduledPasses.forEach(clearTimeout);
-    scheduledPasses = [];
-    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
+  function scheduleReapplyPasses(delays = INITIAL_REAPPLY_DELAYS) {
+    cancelScheduledPasses();
+    for (const delay of delays) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
   }
 
-  let sidebarAttempts = 0;
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
-    if (btn) { btn.click(); log('sidebar recolhida'); return; }
+    if (btn) {
+      btn.click();
+      log('sidebar recolhida');
+      return;
+    }
     if (document.querySelector('button[aria-label="Abrir menu"]')) return;
     sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
+      setTimeout(collapseSidebar, 300);
+    }
   }
 
-  let observer = null;
   function startObserver() {
+    if (observerStarted) return;
+    observerStarted = true;
+
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
+
     if (observer) observer.disconnect();
-    observer = new MutationObserver(() => debounce(reapplyAll, 200));
+
+    observer = new MutationObserver((mutations) => {
+      if (observerSuspended) return;
+
+      let relevant = false;
+      for (const mutation of mutations) {
+        if (mutation.type !== 'childList') continue;
+        if (mutation.addedNodes.length || mutation.removedNodes.length) {
+          relevant = true;
+          break;
+        }
+      }
+
+      if (!relevant) return;
+      debounce(reapplyAll, OBSERVER_DEBOUNCE_MS);
+    });
+
     observer.observe(target, { childList: true, subtree: true });
   }
 
@@ -884,8 +986,8 @@
 
   function boot() {
     init();
-    startObserver();
-    setTimeout(collapseSidebar, 800);
+    setTimeout(startObserver, OBSERVER_START_DELAY_MS);
+    setTimeout(collapseSidebar, 1000);
   }
 
   if (document.readyState === 'loading') {
@@ -894,6 +996,13 @@
     boot();
   }
 
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', () => {
+    reapplyAll();
+    scheduleReapplyPasses([500, 1400]);
+  });
+
+  window.addEventListener('pageshow', () => {
+    reapplyAll();
+    scheduleReapplyPasses([350, 1000]);
+  });
 })();

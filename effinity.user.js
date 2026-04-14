@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      3.5
+// @version      3.6
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -15,7 +15,7 @@
   'use strict';
 
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '3.4';
+  const SCRIPT_VERSION = '3.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -46,31 +46,92 @@
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
   const css = `
+    /* ── Layout geral ─────────────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
       display: flex !important;
       flex-direction: column !important;
       overflow: hidden !important;
     }
-
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
       flex: 1 !important;
       min-height: 0 !important;
       overflow: hidden !important;
     }
 
+    /* ── Ocultar header ───────────────────────────────────────────────────── */
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
 
+    /* ── Ocultar cabeçalho "Gestão de Tickets / Tempo Real" ──────────────── */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
       display: none !important;
     }
 
+    /* ── Ocultar botão "Meta" ─────────────────────────────────────────────── */
     button:has(.lucide-database) {
       display: none !important;
     }
 
+    /* ── ANTI-FLICKER: Cards da fila — elementos sempre ocultos via CSS ───── */
+
+    /* Emoji de status (✅ 🔵) — primeiro span.text-xs dentro da linha de protocolo */
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.text-xs:first-child {
+      display: none !important;
+    }
+
+    /* Protocolo CS001... */
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > span.font-medium.text-sm.truncate {
+      display: none !important;
+    }
+
+    /* Badge "Normal" (contém lucide-minus) */
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex:has(.lucide-minus) {
+      display: none !important;
+    }
+
+    /* Badge "Novo" (pequeno, h-4) */
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1
+      > div.inline-flex.h-4 {
+      display: none !important;
+    }
+
+    /* Telefone (contém lucide-phone) */
+    div.p-2.border.rounded.cursor-pointer
+      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
+      display: none !important;
+    }
+
+    /* Badge "Em Atendimento" */
+    div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
+    div.p-2.border.rounded.cursor-pointer
+      div.flex.items-center.gap-1.mb-1
+      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]) {
+      display: none !important;
+    }
+
+    /* Badge "No prazo" (contém lucide-check-circle2) */
+    div.p-2.border.rounded.cursor-pointer
+      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
+      display: none !important;
+    }
+
+    /* Badge "Contato" — tag azul no rodapé do card */
+    div.p-2.border.rounded.cursor-pointer
+      span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
+      display: none !important;
+    }
+
+    /* ── Elementos marcados via JS (fallback para casos dinâmicos) ───────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -79,16 +140,15 @@
       text-transform: uppercase !important;
     }
 
+    /* ── Área do Agente ───────────────────────────────────────────────────── */
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
       gap: 0 !important;
     }
-
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -98,14 +158,12 @@
       min-height: 40px !important;
       margin: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
       display: flex !important;
       align-items: center !important;
       flex: 1 1 auto !important;
       min-width: 0 !important;
     }
-
     [${AGENT_ACTIONS_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -115,13 +173,11 @@
       margin-left: auto !important;
       white-space: nowrap !important;
     }
-
     [${AGENT_ACTIONS_ATTR}="true"] button,
     [${AGENT_ACTIONS_ATTR}="true"] > div,
     [${AGENT_ACTIONS_ATTR}="true"] > span {
       flex-shrink: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
       display: flex !important;
       align-items: center !important;
@@ -129,20 +185,18 @@
       flex-wrap: nowrap !important;
       min-width: 0 !important;
     }
-
     [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
       margin-right: 4px !important;
       flex-shrink: 0 !important;
     }
-
     .tm-agent-hidden {
       display: none !important;
     }
 
+    /* ── Ticket header ────────────────────────────────────────────────────── */
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -151,13 +205,11 @@
       gap: 2px !important;
       min-width: 0 !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
       margin: 0 !important;
     }
-
     [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
       display: inline-flex !important;
       align-items: center !important;
@@ -165,7 +217,6 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
-
     [${TICKET_CREATED_HOST_ATTR}="true"] {
       display: flex !important;
       align-items: center !important;
@@ -178,7 +229,6 @@
       width: fit-content !important;
       max-width: 100% !important;
     }
-
     [${TICKET_CREATED_MOVED_ATTR}="true"] {
       display: inline-flex !important;
       align-items: center !important;
@@ -189,35 +239,27 @@
       line-height: inherit !important;
       white-space: nowrap !important;
     }
-
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
       width: 12px !important;
       height: 12px !important;
       flex-shrink: 0 !important;
     }
 
-    /* ==========================================================================
-       Dados do Atendimento - clique para copiar
-       ========================================================================== */
-
+    /* ── Copiar ao clicar ─────────────────────────────────────────────────── */
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
-
     [${COPY_VALUE_ATTR}="true"] {
       cursor: pointer !important;
       user-select: none !important;
       transition: opacity 0.18s ease, transform 0.18s ease !important;
     }
-
     [${COPY_VALUE_ATTR}="true"]:hover {
       opacity: 0.88 !important;
     }
-
     [${COPY_VALUE_ATTR}="true"]:active {
       transform: scale(0.985) !important;
     }
-
     [${COPY_TOAST_ATTR}="true"] {
       position: absolute !important;
       top: 12px !important;
@@ -230,12 +272,10 @@
       pointer-events: none !important;
       z-index: 30 !important;
     }
-
     [${COPY_TOAST_VISIBLE_ATTR}="true"] {
       opacity: 1 !important;
       transform: scale(1) !important;
     }
-
     [${COPY_TOAST_ATTR}="true"] img {
       display: block !important;
       width: 100% !important;
@@ -245,10 +285,7 @@
       user-select: none !important;
     }
 
-    /* ==========================================================================
-       Tags de fila nos cards
-       ========================================================================== */
-
+    /* ── Tags de fila ─────────────────────────────────────────────────────── */
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -257,19 +294,16 @@
       font-weight: 600 !important;
       line-height: 1.1 !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
       background-color: #dbeafe !important;
       color: #1d4ed8 !important;
       border-color: #93c5fd !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="samec"] {
       background-color: #fef3c7 !important;
       color: #b45309 !important;
       border-color: #fcd34d !important;
     }
-
     [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
       background-color: #fee2e2 !important;
       color: #b91c1c !important;
@@ -287,13 +321,11 @@
 
   function applyCSS() {
     let style = document.getElementById(STYLE_ID);
-
     if (!style) {
       style = document.createElement('style');
       style.id = STYLE_ID;
       document.head.appendChild(style);
     }
-
     if (style.textContent !== css) {
       style.textContent = css;
     }
@@ -360,7 +392,6 @@
 
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
-
     while (node && node !== document.body) {
       if (
         node.classList &&
@@ -371,257 +402,161 @@
       }
       node = node.parentElement;
     }
-
     return null;
   }
 
   function hideCardByExactTitle(titleText) {
     const titles = document.querySelectorAll('h3');
-
     for (const title of titles) {
       const text = normalizeText(title.textContent);
       if (text !== titleText) continue;
-
       const card = findCardContainerFromTitle(title);
       if (!card) continue;
-
       hideElement(card);
     }
   }
 
-  function isTimeText(text) {
-    return /^\d{2}:\d{2}$/.test(text);
-  }
+  function applyDateToMessages() {
+    const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
+    if (!chatContainer) return;
 
-  function looksLikeMessageMetaContainer(el) {
-    if (!el) return false;
-    const text = normalizeText(el.textContent);
-    return text.length <= 40 && /\d{2}:\d{2}/.test(text);
-  }
+    const currentYear = new Date().getFullYear();
+    const monthMap = {
+      janeiro: 0, fevereiro: 1, março: 2, marco: 2,
+      abril: 3, maio: 4, junho: 5, julho: 6,
+      agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
+    };
 
-function applyDateToMessages() {
-  const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
-  if (!chatContainer) return;
+    function parseDaySeparator(text) {
+      const normalized = normalizeText(text).toLowerCase();
+      const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
+      if (!match) return null;
+      const day = Number(match[1]);
+      const monthIndex = monthMap[match[2]];
+      if (Number.isNaN(day) || monthIndex === undefined) return null;
+      return new Date(currentYear, monthIndex, day);
+    }
 
-  const currentYear = new Date().getFullYear();
+    function formatDate(date) {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      return `${day}/${month}/${date.getFullYear()}`;
+    }
 
-  const monthMap = {
-    janeiro: 0,
-    fevereiro: 1,
-    março: 2,
-    marco: 2,
-    abril: 3,
-    maio: 4,
-    junho: 5,
-    julho: 6,
-    agosto: 7,
-    setembro: 8,
-    outubro: 9,
-    novembro: 10,
-    dezembro: 11
-  };
+    function timeToMinutes(timeText) {
+      const match = timeText.match(/^(\d{2}):(\d{2})$/);
+      if (!match) return null;
+      return Number(match[1]) * 60 + Number(match[2]);
+    }
 
-  function parseDaySeparator(text) {
-    const normalized = normalizeText(text).toLowerCase();
-    const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
-    if (!match) return null;
+    let activeDate = null;
+    let lastMinutes = null;
 
-    const day = Number(match[1]);
-    const monthName = match[2];
-    const monthIndex = monthMap[monthName];
+    for (const child of Array.from(chatContainer.children)) {
+      if (!(child instanceof HTMLElement)) continue;
 
-    if (Number.isNaN(day) || monthIndex === undefined) return null;
-
-    return new Date(currentYear, monthIndex, day);
-  }
-
-  function formatDate(date) {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
-
-  function timeToMinutes(timeText) {
-    const match = timeText.match(/^(\d{2}):(\d{2})$/);
-    if (!match) return null;
-
-    const hours = Number(match[1]);
-    const minutes = Number(match[2]);
-
-    return (hours * 60) + minutes;
-  }
-
-  let activeDate = null;
-  let lastMinutes = null;
-
-  const children = Array.from(chatContainer.children);
-
-  for (const child of children) {
-    if (!(child instanceof HTMLElement)) continue;
-
-    // Detecta separador de dia
-    const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
-    if (daySeparator) {
-      const parsedDate = parseDaySeparator(daySeparator.textContent);
-      if (parsedDate) {
-        activeDate = parsedDate;
-        lastMinutes = null;
+      const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
+      if (daySeparator) {
+        const parsedDate = parseDaySeparator(daySeparator.textContent);
+        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
+        continue;
       }
-      continue;
+
+      const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
+      if (!timeSpan) continue;
+
+      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
+      if (!timeMatch) continue;
+
+      const timeText = timeMatch[1];
+      const minutes = timeToMinutes(timeText);
+      if (minutes === null) continue;
+
+      if (!activeDate) {
+        activeDate = new Date();
+        activeDate.setHours(0, 0, 0, 0);
+      }
+
+      if (lastMinutes !== null && minutes < lastMinutes) {
+        activeDate = new Date(activeDate);
+        activeDate.setDate(activeDate.getDate() + 1);
+      }
+
+      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
+      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+      lastMinutes = minutes;
     }
-
-    // Processa mensagem
-    const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
-    if (!timeSpan) continue;
-
-    const rawText = normalizeText(timeSpan.textContent);
-
-    // Se já foi alterado antes, tenta extrair só o horário final
-    const timeMatch = rawText.match(/(\d{2}:\d{2})$/);
-    if (!timeMatch) continue;
-
-    const timeText = timeMatch[1];
-    const minutes = timeToMinutes(timeText);
-    if (minutes === null) continue;
-
-    if (!activeDate) {
-      // fallback seguro: usa hoje apenas se não existir separador
-      activeDate = new Date();
-      activeDate.setHours(0, 0, 0, 0);
-    }
-
-    // Detecta virada de dia quando a hora "volta"
-    if (lastMinutes !== null && minutes < lastMinutes) {
-      activeDate = new Date(activeDate);
-      activeDate.setDate(activeDate.getDate() + 1);
-    }
-
-    timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
-    timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
-
-    lastMinutes = minutes;
   }
-}
 
   function findAgentAreaContainer() {
-    const spans = document.querySelectorAll('span');
-
-    for (const span of spans) {
+    for (const span of document.querySelectorAll('span')) {
       if (normalizeText(span.textContent) !== 'Área do Agente') continue;
-
       const container = span.closest('.bg-card.border.border-border.rounded-lg');
       if (container) return container;
     }
-
     return null;
   }
 
   function findTopRow(agentContainer) {
     if (!agentContainer) return null;
-
-    const directChildren = Array.from(agentContainer.children);
-
-    for (const child of directChildren) {
+    for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
-
       const text = normalizeText(child.textContent);
-
-      const hasTitle = text.includes('Área do Agente');
-      const hasStatusControl = text.includes('Offline') || text.includes('Online');
-      const hasHsmButton = text.includes('Enviar HSM');
-
-      if (hasTitle && hasStatusControl && hasHsmButton) {
+      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
         return child;
       }
     }
-
     return null;
   }
 
   function findBottomRow(agentContainer, topRow) {
     if (!agentContainer) return null;
-
-    const directChildren = Array.from(agentContainer.children);
-    for (const child of directChildren) {
+    for (const child of Array.from(agentContainer.children)) {
       if (child === topRow) continue;
-      if (!child.matches || !child.matches('div')) continue;
-
-      const text = normalizeText(child.textContent);
-      if (text.includes('Filas:')) {
-        return child;
-      }
+      if (!child.matches('div')) continue;
+      if (normalizeText(child.textContent).includes('Filas:')) return child;
     }
-
     return null;
   }
 
   function findOfflineControl(topRow) {
     if (!topRow) return null;
-
-    const buttons = topRow.querySelectorAll('button');
-
-    for (const btn of buttons) {
+    for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-
-      if (
-        text.includes('Offline') ||
-        text.includes('Online') ||
-        text.includes('Pausa') ||
-        text.includes('Ausente')
-      ) {
-        const wrapper = btn.closest('.relative.inline-block.text-left');
-        return wrapper || btn;
+      if (text.includes('Offline') || text.includes('Online') || text.includes('Pausa') || text.includes('Ausente')) {
+        return btn.closest('.relative.inline-block.text-left') || btn;
       }
     }
-
     return null;
   }
 
   function findSendHsmButton(topRow) {
     if (!topRow) return null;
-
-    const buttons = topRow.querySelectorAll('button');
-    for (const btn of buttons) {
-      const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM')) {
-        return btn;
-      }
+    for (const btn of topRow.querySelectorAll('button')) {
+      if (normalizeText(btn.textContent).includes('Enviar HSM')) return btn;
     }
-
     return null;
   }
 
   function ensureAgentActionsWrapper(bottomRow) {
     let wrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
     if (wrapper) return wrapper;
-
     wrapper = document.createElement('div');
     wrapper.setAttribute(AGENT_ACTIONS_ATTR, 'true');
     bottomRow.appendChild(wrapper);
-
     return wrapper;
   }
 
   function ensureAgentLeftWrapper(bottomRow) {
     let left = bottomRow.querySelector(':scope > .tm-agent-left');
     if (left) return left;
-
     left = document.createElement('div');
     left.className = 'tm-agent-left';
-
     const currentChildren = Array.from(bottomRow.childNodes);
     for (const node of currentChildren) {
-      if (
-        node.nodeType === Node.ELEMENT_NODE &&
-        node.getAttribute &&
-        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
-      ) {
-        continue;
-      }
+      if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
       left.appendChild(node);
     }
-
     bottomRow.insertBefore(left, bottomRow.firstChild);
     return left;
   }
@@ -629,43 +564,24 @@ function applyDateToMessages() {
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
-
     agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
-
     const topRow = findTopRow(agentContainer);
     const bottomRow = findBottomRow(agentContainer, topRow);
-
     if (!topRow || !bottomRow) return;
-
     topRow.setAttribute(AGENT_TOP_ATTR, 'true');
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
-
     const offlineControl = findOfflineControl(topRow);
     const sendHsmButton = findSendHsmButton(topRow);
-
     const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
     ensureAgentLeftWrapper(bottomRow);
-
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(offlineControl);
-    }
-
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(sendHsmButton);
-    }
-
-    const buttons = topRow.querySelectorAll('button');
-    for (const btn of buttons) {
+    if (offlineControl && offlineControl.parentElement !== actionsWrapper) actionsWrapper.appendChild(offlineControl);
+    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) actionsWrapper.appendChild(sendHsmButton);
+    for (const btn of topRow.querySelectorAll('button')) {
       const text = normalizeText(btn.textContent);
-
-      if (text.includes('Enviar HSM')) continue;
-      if (text.includes('Offline') || text.includes('Online')) continue;
-
+      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
       btn.classList.add('tm-agent-hidden');
     }
-
-    const separators = topRow.querySelectorAll('.w-px');
-    separators.forEach(el => el.classList.add('tm-agent-hidden'));
+    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
   }
 
   function findTicketHeaderTopRows() {
@@ -674,203 +590,112 @@ function applyDateToMessages() {
 
   function findTicketInfoRowFromTopRow(topRow) {
     if (!topRow || !topRow.parentElement) return null;
-
     const siblings = Array.from(topRow.parentElement.children);
     const topIndex = siblings.indexOf(topRow);
-
-    for (let i = topIndex + 1; i < siblings.length; i += 1) {
+    for (let i = topIndex + 1; i < siblings.length; i++) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-
-      if (
-        el.classList.contains('px-4') &&
-        el.classList.contains('py-2') &&
-        el.classList.contains('border-t') &&
-        el.classList.contains('border-border') &&
-        el.classList.contains('bg-muted/30')
-      ) {
+      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
         return el;
       }
     }
-
     return null;
   }
 
   function findCreatedSpan(infoRow) {
     if (!infoRow) return null;
-
-    const spans = infoRow.querySelectorAll('span.flex.items-center.gap-1');
-    for (const span of spans) {
-      const text = normalizeText(span.textContent);
-      if (text.includes('Criado há')) {
-        return span;
-      }
+    for (const span of infoRow.querySelectorAll('span.flex.items-center.gap-1')) {
+      if (normalizeText(span.textContent).includes('Criado há')) return span;
     }
-
     return null;
   }
 
   function findTicketInfoTarget(topRow) {
-    if (!topRow) return null;
-    return topRow.querySelector('div.min-w-0.flex-1');
+    return topRow ? topRow.querySelector('div.min-w-0.flex-1') : null;
   }
 
   function findTicketAvatar(topRow) {
-    if (!topRow) return null;
-    return topRow.querySelector('div.w-10.h-10.flex-shrink-0.rounded-full');
+    return topRow ? topRow.querySelector('div.w-10.h-10.flex-shrink-0.rounded-full') : null;
   }
 
   function ensureCreatedHost(targetBlock) {
     let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
     if (host) return host;
-
     host = document.createElement('div');
     host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
     targetBlock.appendChild(host);
-
     return host;
   }
 
   function moveCreatedDateToHeader() {
-    const topRows = findTicketHeaderTopRows();
-
-    for (const topRow of topRows) {
+    for (const topRow of findTicketHeaderTopRows()) {
       const infoRow = findTicketInfoRowFromTopRow(topRow);
       const targetBlock = findTicketInfoTarget(topRow);
-
       if (!infoRow || !targetBlock) continue;
-
       targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
-
       const createdSpan = findCreatedSpan(infoRow);
       if (!createdSpan) continue;
-
       const host = ensureCreatedHost(targetBlock);
-
       if (createdSpan.parentElement !== host) {
         createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
         host.appendChild(createdSpan);
       }
-
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
-        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
-      }
-
+      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
       const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
-        avatar.setAttribute(HIDDEN_ATTR, 'true');
-      }
-
-      const ticketContainer = topRow.parentElement;
-      if (ticketContainer) {
-        ticketContainer.setAttribute(TICKET_HEADER_ATTR, 'true');
-      }
+      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') avatar.setAttribute(HIDDEN_ATTR, 'true');
+      if (topRow.parentElement) topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
     }
   }
 
   function isTicketListCard(card) {
     if (!card || !(card instanceof HTMLElement)) return false;
-
     const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full'))
-      .find(el => {
-        const text = normalizeText(el.textContent).toLowerCase();
-        return (
-          text === 'clínica do sono' ||
-          text === 'clinica do sono' ||
-          text === 'samec' ||
-          text === 'confirmação' ||
-          text === 'confirmacao'
-        );
-      });
-
-    const hasTimeInfo =
-      normalizeText(card.textContent).includes('Última atividade:') ||
-      !!card.querySelector('.lucide-clock');
-
+    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
+      const text = normalizeText(el.textContent).toLowerCase();
+      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
+    });
+    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
     return hasUser && hasQueueTag && hasTimeInfo;
   }
 
   function getAllTicketListCards() {
-    const candidates = document.querySelectorAll('div.p-2.border.rounded.cursor-pointer');
-    return Array.from(candidates).filter(isTicketListCard);
+    return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
   }
 
+  // JS mantido apenas como fallback para casos que o CSS não cobrir
   function hideProtocolAndPriority(card) {
     const protocolRow = card.querySelector('div.flex.items-center.gap-1');
     if (!protocolRow) return;
-
-    const children = Array.from(protocolRow.children);
-
-    for (const child of children) {
+    let allHidden = true;
+    for (const child of Array.from(protocolRow.children)) {
       if (!(child instanceof HTMLElement)) continue;
-
       const text = normalizeText(child.textContent);
-
-      if (child.matches('span.text-xs') && /^(✅|☑️|✔️|🔵)$/.test(text)) {
+      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
         hideElement(child);
-        continue;
-      }
-
-      if (child.matches('span.font-medium.text-sm.truncate')) {
-        hideElement(child);
-        continue;
-      }
-
-      if (text === 'Normal' || text.includes('Normal')) {
-        hideElement(child);
+      } else {
+        allHidden = false;
       }
     }
-
-    const visibleChildren = children.filter(el => {
-      if (!(el instanceof HTMLElement)) return false;
-      return el.getAttribute(HIDDEN_ATTR) !== 'true';
-    });
-
-    if (visibleChildren.length === 0) {
-      hideElement(protocolRow);
-    }
+    if (allHidden) hideElement(protocolRow);
   }
 
   function hidePhoneInCard(card) {
-    const phoneIcons = card.querySelectorAll('.lucide-phone');
-
-    for (const icon of phoneIcons) {
-      const phoneWrapper = icon.closest('span.flex.items-center.gap-1.text-xs.text-muted-foreground');
-      if (phoneWrapper) {
-        hideElement(phoneWrapper);
-      }
+    for (const icon of card.querySelectorAll('.lucide-phone')) {
+      const wrapper = icon.closest('span.flex.items-center.gap-1.text-xs.text-muted-foreground');
+      if (wrapper) hideElement(wrapper);
     }
   }
 
   function hideStatusTags(card) {
-    const badgeCandidates = card.querySelectorAll('span.inline-flex, div.inline-flex');
-
-    for (const badge of badgeCandidates) {
+    for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
       if (!(badge instanceof HTMLElement)) continue;
-
       const text = normalizeText(badge.textContent);
-
-      if (text === 'Contato' || text.includes('Contato')) {
-        hideElement(badge);
-        continue;
-      }
-
-      if (text === 'Em Atendimento' || text.includes('Em Atendimento')) {
-        hideElement(badge);
-        continue;
-      }
-
-      if (text === 'Normal' || text.includes('Normal')) {
-        hideElement(badge);
-      }
+      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
     }
   }
 
   function cleanTicketListCards() {
-    const cards = getAllTicketListCards();
-
-    for (const card of cards) {
+    for (const card of getAllTicketListCards()) {
       hideProtocolAndPriority(card);
       hidePhoneInCard(card);
       hideStatusTags(card);
@@ -878,24 +703,14 @@ function applyDateToMessages() {
   }
 
   function uppercaseTicketHeaderNames() {
-    const headerNames = document.querySelectorAll(
-      'div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate'
-    );
-
-    for (const nameEl of headerNames) {
+    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
       markUppercase(nameEl);
     }
   }
 
   function uppercaseTicketListCardNames() {
-    const cards = getAllTicketListCards();
-
-    for (const card of cards) {
-      const nameEls = card.querySelectorAll(
-        'span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium'
-      );
-
-      for (const nameEl of nameEls) {
+    for (const card of getAllTicketListCards()) {
+      for (const nameEl of card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium')) {
         markUppercase(nameEl);
       }
     }
@@ -907,39 +722,17 @@ function applyDateToMessages() {
   }
 
   function normalizeAttendanceDataPhones() {
-    const cards = document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border');
-
-    for (const card of cards) {
+    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
-      if (!title) continue;
-
-      const titleText = normalizeText(title.textContent);
-      if (titleText !== 'Dados do Atendimento') continue;
-
-      const labels = card.querySelectorAll('span');
+      if (!title || normalizeText(title.textContent) !== 'Dados do Atendimento') continue;
       let phoneLabelFound = false;
-
-      for (const span of labels) {
+      for (const span of card.querySelectorAll('span')) {
         const text = normalizeText(span.textContent);
-
-        if (text === 'Telefone') {
-          phoneLabelFound = true;
-          continue;
-        }
-
+        if (text === 'Telefone') { phoneLabelFound = true; continue; }
         if (!phoneLabelFound) continue;
-
-        if (
-          span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') &&
-          /^\d{12,14}$/.test(normalizeText(span.textContent))
-        ) {
-          const original = normalizeText(span.textContent);
-          const normalized = removeCountryCode55(original);
-
-          if (original !== normalized) {
-            span.textContent = normalized;
-          }
-
+        if (span.matches('span.text-sm.text-card-foreground.break-words.min-w-0') && /^\d{12,14}$/.test(text)) {
+          const normalized = removeCountryCode55(text);
+          if (text !== normalized) span.textContent = normalized;
           span.setAttribute(PHONE_NORMALIZED_ATTR, 'true');
           break;
         }
@@ -948,151 +741,88 @@ function applyDateToMessages() {
   }
 
   function findAttendanceDataCards() {
-    const cards = document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border');
     const result = [];
-
-    for (const card of cards) {
+    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
       const title = card.querySelector('h3');
-      if (!title) continue;
-
-      if (normalizeText(title.textContent) === 'Dados do Atendimento') {
-        result.push(card);
-      }
+      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') result.push(card);
     }
-
     return result;
   }
 
   function ensureCopyToast(card) {
     let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
     if (toast) return toast;
-
     toast = document.createElement('div');
     toast.setAttribute(COPY_TOAST_ATTR, 'true');
-
     const img = document.createElement('img');
     img.src = COPY_ICON_URL;
     img.alt = 'Copiado';
     img.draggable = false;
-
     toast.appendChild(img);
     card.appendChild(toast);
-
     return toast;
   }
 
   function showCopyToast(card) {
     const toast = ensureCopyToast(card);
-
-    if (toast._tmHideTimer) {
-      clearTimeout(toast._tmHideTimer);
-    }
-
+    if (toast._tmHideTimer) clearTimeout(toast._tmHideTimer);
     toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
-
-    toast._tmHideTimer = setTimeout(() => {
-      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
-    }, 1300);
+    toast._tmHideTimer = setTimeout(() => toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR), 1300);
   }
 
   function findValueSpanByLabel(card, labelText) {
-    const labelSpans = card.querySelectorAll('span');
-
-    for (const label of labelSpans) {
+    for (const label of card.querySelectorAll('span')) {
       if (normalizeText(label.textContent) !== labelText) continue;
-
       let row = label.parentElement;
       while (row && row !== card) {
         const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
-        if (valueSpan) {
-          return valueSpan;
-        }
+        if (valueSpan) return valueSpan;
         row = row.parentElement;
       }
     }
-
     return null;
   }
 
   function bindCopyOnClick(valueEl, card, fieldName) {
-    if (!valueEl || !(valueEl instanceof HTMLElement)) return;
-    if (valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
-
+    if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
-
     valueEl.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
-
-      const textToCopy = normalizeText(valueEl.textContent);
-      if (!textToCopy) return;
-
-      const copied = await copyTextToClipboard(textToCopy);
-      if (copied) {
-        showCopyToast(card);
-      }
+      const text = normalizeText(valueEl.textContent);
+      if (!text) return;
+      if (await copyTextToClipboard(text)) showCopyToast(card);
     });
   }
 
   function enableCopyOnAttendanceData() {
-    const cards = findAttendanceDataCards();
-
-    for (const card of cards) {
+    for (const card of findAttendanceDataCards()) {
       card.setAttribute(COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
-
-      const targets = [
-        ['Nome', 'nome'],
-        ['Nascimento', 'nascimento'],
-        ['CPF', 'cpf'],
-        ['Telefone', 'telefone']
-      ];
-
-      for (const [labelText, fieldName] of targets) {
+      for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
         const valueEl = findValueSpanByLabel(card, labelText);
-        if (!valueEl) continue;
-
-        bindCopyOnClick(valueEl, card, fieldName);
+        if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
       }
     }
   }
 
   function getQueueType(labelText) {
     const text = normalizeText(labelText).toLowerCase();
-
-    if (text === 'clínica do sono' || text === 'clinica do sono') {
-      return 'clinica_do_sono';
-    }
-
-    if (text === 'samec') {
-      return 'samec';
-    }
-
-    if (text === 'confirmação' || text === 'confirmacao') {
-      return 'confirmacao';
-    }
-
+    if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
+    if (text === 'samec') return 'samec';
+    if (text === 'confirmação' || text === 'confirmacao') return 'confirmacao';
     return '';
   }
 
   function styleQueueTagsInTicketCards() {
-    const cards = getAllTicketListCards();
-
-    for (const card of cards) {
-      const badges = card.querySelectorAll('div.inline-flex.items-center.rounded-full');
-
-      for (const badge of badges) {
+    for (const card of getAllTicketListCards()) {
+      for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
         if (!(badge instanceof HTMLElement)) continue;
-
-        const text = normalizeText(badge.textContent);
-        const queueType = getQueueType(text);
-
+        const queueType = getQueueType(normalizeText(badge.textContent));
         if (!queueType) continue;
-
         badge.setAttribute(QUEUE_TAG_ATTR, 'true');
         badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
-
         badge.style.backgroundColor = '';
         badge.style.color = '';
         badge.style.borderColor = '';
@@ -1120,58 +850,30 @@ function applyDateToMessages() {
   }
 
   let scheduledPasses = [];
-
   function scheduleReapplyPasses() {
     scheduledPasses.forEach(clearTimeout);
     scheduledPasses = [];
-
-    const delays = [150, 400, 800, 1500, 2500, 4000];
-    for (const delay of delays) {
+    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
       scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
   }
 
   let sidebarAttempts = 0;
-
   function collapseSidebar() {
     const btn = document.querySelector('button[aria-label="Fechar menu"]');
-
-    if (btn) {
-      btn.click();
-      log('sidebar recolhida');
-      return;
-    }
-
-    if (document.querySelector('button[aria-label="Abrir menu"]')) {
-      return;
-    }
-
+    if (btn) { btn.click(); log('sidebar recolhida'); return; }
+    if (document.querySelector('button[aria-label="Abrir menu"]')) return;
     sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) {
-      setTimeout(collapseSidebar, 300);
-    }
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
   }
 
   let observer = null;
-
   function startObserver() {
-    const target =
-      document.getElementById('app') ||
-      document.querySelector('[data-v-app]') ||
-      document.body;
-
+    const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
-
     if (observer) observer.disconnect();
-
-    observer = new MutationObserver(() => {
-      debounce(reapplyAll, 200);
-    });
-
-    observer.observe(target, {
-      childList: true,
-      subtree: true
-    });
+    observer = new MutationObserver(() => debounce(reapplyAll, 200));
+    observer.observe(target, { childList: true, subtree: true });
   }
 
   function init() {

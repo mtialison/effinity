@@ -1,72 +1,82 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      3.6
 // @description  envenenado
 // @author       raik
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
-// @run-at       document-start
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const SCRIPT_NAME    = 'TM effinity';
-  const SCRIPT_VERSION = '4.0';
+  const SCRIPT_NAME = 'TM effinity';
+  const SCRIPT_VERSION = '3.6';
 
-  // ── Atributos data-* ──────────────────────────────────────────────────────
-  const STYLE_GUARDIAN_ID   = 'tm-effinity-guardian';   // CSS que nunca sai do DOM
-  const STYLE_DYNAMIC_ID    = 'tm-effinity-dynamic';    // CSS que usa data-* attributes
-  const HIDDEN_ATTR                = 'data-tm-effinity-hidden';
-  const DATE_APPLIED_ATTR          = 'data-tm-date-applied';
-  const AGENT_AREA_ATTR            = 'data-tm-agent-area';
-  const AGENT_TOP_ATTR             = 'data-tm-agent-top-row';
-  const AGENT_BOTTOM_ATTR          = 'data-tm-agent-bottom-row';
-  const AGENT_ACTIONS_ATTR         = 'data-tm-agent-actions-row';
-  const TICKET_HEADER_ATTR         = 'data-tm-ticket-header';
-  const TICKET_INFO_ROW_HIDDEN_ATTR= 'data-tm-ticket-info-row-hidden';
-  const TICKET_CREATED_HOST_ATTR   = 'data-tm-ticket-created-host';
-  const TICKET_CREATED_MOVED_ATTR  = 'data-tm-ticket-created-moved';
-  const TICKET_CONTACT_BLOCK_ATTR  = 'data-tm-ticket-contact-block';
-  const UPPERCASE_NAME_ATTR        = 'data-tm-uppercase-name';
-  const PHONE_NORMALIZED_ATTR      = 'data-tm-phone-normalized';
-  const COPY_CARD_ATTR             = 'data-tm-copy-card';
-  const COPY_VALUE_ATTR            = 'data-tm-copy-value';
-  const COPY_TOAST_ATTR            = 'data-tm-copy-toast';
-  const COPY_TOAST_VISIBLE_ATTR    = 'data-tm-copy-toast-visible';
-  const QUEUE_TAG_ATTR             = 'data-tm-queue-tag';
-  const QUEUE_TAG_TYPE_ATTR        = 'data-tm-queue-type';
+  const STYLE_ID = 'tm-effinity-style';
+  const HIDDEN_ATTR = 'data-tm-effinity-hidden';
+  const DATE_APPLIED_ATTR = 'data-tm-date-applied';
+
+  const AGENT_AREA_ATTR = 'data-tm-agent-area';
+  const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
+  const AGENT_BOTTOM_ATTR = 'data-tm-agent-bottom-row';
+  const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
+
+  const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
+  const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
+  const TICKET_CREATED_HOST_ATTR = 'data-tm-ticket-created-host';
+  const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
+  const TICKET_CONTACT_BLOCK_ATTR = 'data-tm-ticket-contact-block';
+  const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
+  const PHONE_NORMALIZED_ATTR = 'data-tm-phone-normalized';
+
+  const COPY_CARD_ATTR = 'data-tm-copy-card';
+  const COPY_VALUE_ATTR = 'data-tm-copy-value';
+  const COPY_TOAST_ATTR = 'data-tm-copy-toast';
+  const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
+
+  const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
+  const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
   const MAX_SIDEBAR_ATTEMPTS = 10;
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CSS GUARDIÃO — injetado em document-start, NUNCA é removido ou substituído
-  // Cobre todos os seletores que causam flicker antes do JS processar o DOM.
-  // Não usa atributos data-* pois estes ainda não foram aplicados.
-  // ══════════════════════════════════════════════════════════════════════════
-  const CSS_GUARDIAN = `
-    /* ── Header global ──────────────────────────────────────────────────── */
+  const css = `
+    /* ── Layout geral ─────────────────────────────────────────────────────── */
+    .h-\\[calc\\(100vh-100px\\)\\] {
+      height: 100vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+    }
+    .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
+      flex: 1 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    /* ── Ocultar header ───────────────────────────────────────────────────── */
     header.glass.sticky.top-0.z-50 {
       display: none !important;
     }
 
-    /* ── Título "Gestão de Tickets / Tempo Real" ─────────────────────────── */
+    /* ── Ocultar cabeçalho "Gestão de Tickets / Tempo Real" ──────────────── */
     .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
       display: none !important;
     }
 
-    /* ── Botão "Meta" ────────────────────────────────────────────────────── */
+    /* ── Ocultar botão "Meta" ─────────────────────────────────────────────── */
     button:has(.lucide-database) {
       display: none !important;
     }
 
-    /* ── Cards da fila: elementos sempre ocultos ─────────────────────────── */
+    /* ── ANTI-FLICKER: Cards da fila — elementos sempre ocultos via CSS ───── */
 
-    /* Emoji de status (✅ 🔵) */
+    /* Emoji de status (✅ 🔵) — primeiro span.text-xs dentro da linha de protocolo */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > span.text-xs:first-child {
@@ -80,21 +90,21 @@
       display: none !important;
     }
 
-    /* Badge "Normal" (lucide-minus) */
+    /* Badge "Normal" (contém lucide-minus) */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > div.inline-flex:has(.lucide-minus) {
       display: none !important;
     }
 
-    /* Badge "Novo" (h-4) */
+    /* Badge "Novo" (pequeno, h-4) */
     div.p-2.border.rounded.cursor-pointer
       div.flex.items-center.gap-1
       > div.inline-flex.h-4 {
       display: none !important;
     }
 
-    /* Telefone (lucide-phone) */
+    /* Telefone (contém lucide-phone) */
     div.p-2.border.rounded.cursor-pointer
       span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
       display: none !important;
@@ -109,47 +119,28 @@
       display: none !important;
     }
 
-    /* Badge "No prazo" (lucide-check-circle2) */
+    /* Badge "No prazo" (contém lucide-check-circle2) */
     div.p-2.border.rounded.cursor-pointer
       div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
       display: none !important;
     }
 
-    /* Badge "Contato" — tag azul no rodapé */
+    /* Badge "Contato" — tag azul no rodapé do card */
     div.p-2.border.rounded.cursor-pointer
       span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
       display: none !important;
     }
-  `;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CSS DINÂMICO — depende de atributos data-* aplicados pelo JS
-  // ══════════════════════════════════════════════════════════════════════════
-  const CSS_DYNAMIC = `
-    /* ── Layout geral ────────────────────────────────────────────────────── */
-    .h-\\[calc\\(100vh-100px\\)\\] {
-      height: 100vh !important;
-      display: flex !important;
-      flex-direction: column !important;
-      overflow: hidden !important;
-    }
-    .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
-      flex: 1 !important;
-      min-height: 0 !important;
-      overflow: hidden !important;
-    }
-
-    /* ── Elementos ocultos via JS ────────────────────────────────────────── */
+    /* ── Elementos marcados via JS (fallback para casos dinâmicos) ───────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }
 
-    /* ── Uppercase em nomes ──────────────────────────────────────────────── */
     [${UPPERCASE_NAME_ATTR}="true"] {
       text-transform: uppercase !important;
     }
 
-    /* ── Área do Agente ──────────────────────────────────────────────────── */
+    /* ── Área do Agente ───────────────────────────────────────────────────── */
     [${AGENT_AREA_ATTR}="true"] {
       display: flex !important;
       flex-direction: column !important;
@@ -202,7 +193,7 @@
       display: none !important;
     }
 
-    /* ── Ticket header ───────────────────────────────────────────────────── */
+    /* ── Ticket header ────────────────────────────────────────────────────── */
     [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
@@ -254,7 +245,7 @@
       flex-shrink: 0 !important;
     }
 
-    /* ── Copiar ao clicar ────────────────────────────────────────────────── */
+    /* ── Copiar ao clicar ─────────────────────────────────────────────────── */
     [${COPY_CARD_ATTR}="true"] {
       position: relative !important;
     }
@@ -294,7 +285,7 @@
       user-select: none !important;
     }
 
-    /* ── Tags de fila ────────────────────────────────────────────────────── */
+    /* ── Tags de fila ─────────────────────────────────────────────────────── */
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -320,55 +311,38 @@
     }
   `;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // INJEÇÃO DE CSS
-  // O guardião é injetado imediatamente (document-start), antes de qualquer
-  // renderização. O dinâmico é separado para não invalidar o guardião.
-  // ══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Injeta o CSS guardião o mais cedo possível.
-   * Usa document.head se disponível, senão documentElement.
-   * Nunca substitui — só cria uma vez.
-   */
-  function injectGuardianCSS() {
-    if (document.getElementById(STYLE_GUARDIAN_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_GUARDIAN_ID;
-    style.textContent = CSS_GUARDIAN;
-    // Em document-start o <head> pode não existir ainda
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  /**
-   * Injeta/atualiza o CSS dinâmico (data-* attributes).
-   * Separado do guardião para não re-parsear o guardião a cada ciclo.
-   */
-  function applyDynamicCSS() {
-    let style = document.getElementById(STYLE_DYNAMIC_ID);
-    if (!style) {
-      style = document.createElement('style');
-      style.id = STYLE_DYNAMIC_ID;
-      (document.head || document.documentElement).appendChild(style);
-    }
-    if (style.textContent !== CSS_DYNAMIC) {
-      style.textContent = CSS_DYNAMIC;
-    }
-  }
-
-  // Injeta o guardião imediatamente — ainda em document-start
-  injectGuardianCSS();
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // UTILITÁRIOS
-  // ══════════════════════════════════════════════════════════════════════════
-
   function log(...args) {
     console.log(`[${SCRIPT_NAME}]`, ...args);
   }
 
   function normalizeText(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function applyCSS() {
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = STYLE_ID;
+      document.head.appendChild(style);
+    }
+    if (style.textContent !== css) {
+      style.textContent = css;
+    }
+  }
+
+  let debounceTimer = null;
+  function debounce(fn, delay) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fn, delay);
+  }
+
+  function getCurrentDateFormatted() {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}/${month}/${year}`;
   }
 
   function hideElement(el) {
@@ -395,155 +369,52 @@
     try {
       await navigator.clipboard.writeText(text);
       return true;
-    } catch {
+    } catch (error) {
       try {
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.setAttribute('readonly', '');
-        textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
         document.body.appendChild(textarea);
         textarea.select();
         textarea.setSelectionRange(0, textarea.value.length);
         const copied = document.execCommand('copy');
         document.body.removeChild(textarea);
         return copied;
-      } catch (err) {
-        console.error(`[${SCRIPT_NAME}] falha ao copiar`, err);
+      } catch (fallbackError) {
+        console.error(`[${SCRIPT_NAME}] falha ao copiar`, fallbackError);
         return false;
       }
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CARDS DA FILA — ocultar elementos residuais (fallback JS)
-  // CSS já resolve a maior parte; JS cobre edge cases dinâmicos
-  // ══════════════════════════════════════════════════════════════════════════
-
-  function isTicketListCard(card) {
-    if (!card || !(card instanceof HTMLElement)) return false;
-    const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
-      const text = normalizeText(el.textContent).toLowerCase();
-      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
-    });
-    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
-    return hasUser && hasQueueTag && hasTimeInfo;
-  }
-
-  function getAllTicketListCards() {
-    return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
-  }
-
-  function hideProtocolAndPriority(card) {
-    const protocolRow = card.querySelector('div.flex.items-center.gap-1');
-    if (!protocolRow) return;
-    for (const child of Array.from(protocolRow.children)) {
-      if (!(child instanceof HTMLElement)) continue;
-      const text = normalizeText(child.textContent);
-      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
-        hideElement(child);
-      }
-    }
-  }
-
-  function hidePhoneInCard(card) {
-    for (const icon of card.querySelectorAll('.lucide-phone')) {
-      const wrapper = icon.closest('span.flex.items-center.gap-1.text-xs.text-muted-foreground');
-      if (wrapper) hideElement(wrapper);
-    }
-  }
-
-  function hideStatusTags(card) {
-    for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
-      if (!(badge instanceof HTMLElement)) continue;
-      const text = normalizeText(badge.textContent);
-      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
-    }
-  }
-
-  function cleanTicketListCards() {
-    for (const card of getAllTicketListCards()) {
-      hideProtocolAndPriority(card);
-      hidePhoneInCard(card);
-      hideStatusTags(card);
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAGS DE FILA — cores customizadas
-  // ══════════════════════════════════════════════════════════════════════════
-
-  function getQueueType(labelText) {
-    const text = normalizeText(labelText).toLowerCase();
-    if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
-    if (text === 'samec') return 'samec';
-    if (text === 'confirmação' || text === 'confirmacao') return 'confirmacao';
-    return '';
-  }
-
-  function styleQueueTagsInTicketCards() {
-    for (const card of getAllTicketListCards()) {
-      for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
-        if (!(badge instanceof HTMLElement)) continue;
-        const queueType = getQueueType(normalizeText(badge.textContent));
-        if (!queueType) continue;
-        badge.setAttribute(QUEUE_TAG_ATTR, 'true');
-        badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
-        badge.style.backgroundColor = '';
-        badge.style.color = '';
-        badge.style.borderColor = '';
-        badge.style.backgroundImage = 'none';
-      }
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // UPPERCASE EM NOMES
-  // ══════════════════════════════════════════════════════════════════════════
-
-  function uppercaseTicketHeaderNames() {
-    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
-      markUppercase(nameEl);
-    }
-  }
-
-  function uppercaseTicketListCardNames() {
-    for (const card of getAllTicketListCards()) {
-      for (const nameEl of card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium')) {
-        markUppercase(nameEl);
-      }
-    }
-  }
-
-  function applyUppercaseToCustomerNames() {
-    uppercaseTicketHeaderNames();
-    uppercaseTicketListCardNames();
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // CARDS "Informações do Cliente" e "Resumo do Ticket"
-  // ══════════════════════════════════════════════════════════════════════════
-
   function findCardContainerFromTitle(titleEl) {
     let node = titleEl;
     while (node && node !== document.body) {
-      if (node.classList && node.classList.contains('rounded-xl') && node.classList.contains('bg-card')) return node;
+      if (
+        node.classList &&
+        node.classList.contains('rounded-xl') &&
+        node.classList.contains('bg-card')
+      ) {
+        return node;
+      }
       node = node.parentElement;
     }
     return null;
   }
 
   function hideCardByExactTitle(titleText) {
-    for (const title of document.querySelectorAll('h3')) {
-      if (normalizeText(title.textContent) !== titleText) continue;
+    const titles = document.querySelectorAll('h3');
+    for (const title of titles) {
+      const text = normalizeText(title.textContent);
+      if (text !== titleText) continue;
       const card = findCardContainerFromTitle(title);
-      if (card) hideElement(card);
+      if (!card) continue;
+      hideElement(card);
     }
   }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // DATAS NAS MENSAGENS
-  // ══════════════════════════════════════════════════════════════════════════
 
   function applyDateToMessages() {
     const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
@@ -567,14 +438,15 @@
     }
 
     function formatDate(date) {
-      const d = String(date.getDate()).padStart(2, '0');
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      return `${d}/${m}/${date.getFullYear()}`;
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      return `${day}/${month}/${date.getFullYear()}`;
     }
 
-    function timeToMinutes(t) {
-      const match = t.match(/^(\d{2}):(\d{2})$/);
-      return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+    function timeToMinutes(timeText) {
+      const match = timeText.match(/^(\d{2}):(\d{2})$/);
+      if (!match) return null;
+      return Number(match[1]) * 60 + Number(match[2]);
     }
 
     let activeDate = null;
@@ -583,23 +455,28 @@
     for (const child of Array.from(chatContainer.children)) {
       if (!(child instanceof HTMLElement)) continue;
 
-      const daySep = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
-      if (daySep) {
-        const parsed = parseDaySeparator(daySep.textContent);
-        if (parsed) { activeDate = parsed; lastMinutes = null; }
+      const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
+      if (daySeparator) {
+        const parsedDate = parseDaySeparator(daySeparator.textContent);
+        if (parsedDate) { activeDate = parsedDate; lastMinutes = null; }
         continue;
       }
 
       const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
-      if (!timeSpan || timeSpan.getAttribute(DATE_APPLIED_ATTR) === 'true') continue;
+      if (!timeSpan) continue;
 
       const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
       if (!timeMatch) continue;
+
       const timeText = timeMatch[1];
       const minutes = timeToMinutes(timeText);
       if (minutes === null) continue;
 
-      if (!activeDate) { activeDate = new Date(); activeDate.setHours(0,0,0,0); }
+      if (!activeDate) {
+        activeDate = new Date();
+        activeDate.setHours(0, 0, 0, 0);
+      }
+
       if (lastMinutes !== null && minutes < lastMinutes) {
         activeDate = new Date(activeDate);
         activeDate.setDate(activeDate.getDate() + 1);
@@ -610,10 +487,6 @@
       lastMinutes = minutes;
     }
   }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // ÁREA DO AGENTE — reorganização de layout
-  // ══════════════════════════════════════════════════════════════════════════
 
   function findAgentAreaContainer() {
     for (const span of document.querySelectorAll('span')) {
@@ -629,7 +502,9 @@
     for (const child of Array.from(agentContainer.children)) {
       if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
       const text = normalizeText(child.textContent);
-      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) return child;
+      if (text.includes('Área do Agente') && (text.includes('Offline') || text.includes('Online')) && text.includes('Enviar HSM')) {
+        return child;
+      }
     }
     return null;
   }
@@ -677,7 +552,8 @@
     if (left) return left;
     left = document.createElement('div');
     left.className = 'tm-agent-left';
-    for (const node of Array.from(bottomRow.childNodes)) {
+    const currentChildren = Array.from(bottomRow.childNodes);
+    for (const node of currentChildren) {
       if (node.nodeType === Node.ELEMENT_NODE && node.getAttribute && node.getAttribute(AGENT_ACTIONS_ATTR) === 'true') continue;
       left.appendChild(node);
     }
@@ -708,10 +584,6 @@
     topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TICKET HEADER — mover "Criado há...", ocultar avatar e info row
-  // ══════════════════════════════════════════════════════════════════════════
-
   function findTicketHeaderTopRows() {
     return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
   }
@@ -723,7 +595,9 @@
     for (let i = topIndex + 1; i < siblings.length; i++) {
       const el = siblings[i];
       if (!(el instanceof HTMLElement)) continue;
-      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) return el;
+      if (el.classList.contains('px-4') && el.classList.contains('py-2') && el.classList.contains('border-t') && el.classList.contains('border-border') && el.classList.contains('bg-muted/30')) {
+        return el;
+      }
     }
     return null;
   }
@@ -773,9 +647,79 @@
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // DADOS DO ATENDIMENTO — normalizar telefone + copiar ao clicar
-  // ══════════════════════════════════════════════════════════════════════════
+  function isTicketListCard(card) {
+    if (!card || !(card instanceof HTMLElement)) return false;
+    const hasUser = !!card.querySelector('.lucide-user');
+    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
+      const text = normalizeText(el.textContent).toLowerCase();
+      return text === 'clínica do sono' || text === 'clinica do sono' || text === 'samec' || text === 'confirmação' || text === 'confirmacao';
+    });
+    const hasTimeInfo = normalizeText(card.textContent).includes('Última atividade:') || !!card.querySelector('.lucide-clock');
+    return hasUser && hasQueueTag && hasTimeInfo;
+  }
+
+  function getAllTicketListCards() {
+    return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
+  }
+
+  // JS mantido apenas como fallback para casos que o CSS não cobrir
+  function hideProtocolAndPriority(card) {
+    const protocolRow = card.querySelector('div.flex.items-center.gap-1');
+    if (!protocolRow) return;
+    let allHidden = true;
+    for (const child of Array.from(protocolRow.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      const text = normalizeText(child.textContent);
+      if (child.matches('span.text-xs') || child.matches('span.font-medium.text-sm.truncate') || text === 'Normal' || text.includes('Normal')) {
+        hideElement(child);
+      } else {
+        allHidden = false;
+      }
+    }
+    if (allHidden) hideElement(protocolRow);
+  }
+
+  function hidePhoneInCard(card) {
+    for (const icon of card.querySelectorAll('.lucide-phone')) {
+      const wrapper = icon.closest('span.flex.items-center.gap-1.text-xs.text-muted-foreground');
+      if (wrapper) hideElement(wrapper);
+    }
+  }
+
+  function hideStatusTags(card) {
+    for (const badge of card.querySelectorAll('span.inline-flex, div.inline-flex')) {
+      if (!(badge instanceof HTMLElement)) continue;
+      const text = normalizeText(badge.textContent);
+      if (text === 'Contato' || text === 'Em Atendimento' || text === 'Normal') hideElement(badge);
+    }
+  }
+
+  function cleanTicketListCards() {
+    for (const card of getAllTicketListCards()) {
+      hideProtocolAndPriority(card);
+      hidePhoneInCard(card);
+      hideStatusTags(card);
+    }
+  }
+
+  function uppercaseTicketHeaderNames() {
+    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
+      markUppercase(nameEl);
+    }
+  }
+
+  function uppercaseTicketListCardNames() {
+    for (const card of getAllTicketListCards()) {
+      for (const nameEl of card.querySelectorAll('span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium')) {
+        markUppercase(nameEl);
+      }
+    }
+  }
+
+  function applyUppercaseToCustomerNames() {
+    uppercaseTicketHeaderNames();
+    uppercaseTicketListCardNames();
+  }
 
   function normalizeAttendanceDataPhones() {
     for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
@@ -797,11 +741,12 @@
   }
 
   function findAttendanceDataCards() {
-    return Array.from(document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border'))
-      .filter(card => {
-        const title = card.querySelector('h3');
-        return title && normalizeText(title.textContent) === 'Dados do Atendimento';
-      });
+    const result = [];
+    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
+      const title = card.querySelector('h3');
+      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') result.push(card);
+    }
+    return result;
   }
 
   function ensureCopyToast(card) {
@@ -842,9 +787,9 @@
     if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
     valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
     valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
-    valueEl.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    valueEl.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const text = normalizeText(valueEl.textContent);
       if (!text) return;
       if (await copyTextToClipboard(text)) showCopyToast(card);
@@ -855,28 +800,36 @@
     for (const card of findAttendanceDataCards()) {
       card.setAttribute(COPY_CARD_ATTR, 'true');
       ensureCopyToast(card);
-      for (const [label, field] of [['Nome','nome'],['Nascimento','nascimento'],['CPF','cpf'],['Telefone','telefone']]) {
-        bindCopyOnClick(findValueSpanByLabel(card, label), card, field);
+      for (const [labelText, fieldName] of [['Nome', 'nome'], ['Nascimento', 'nascimento'], ['CPF', 'cpf'], ['Telefone', 'telefone']]) {
+        const valueEl = findValueSpanByLabel(card, labelText);
+        if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
       }
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SIDEBAR — recolher automaticamente
-  // ══════════════════════════════════════════════════════════════════════════
-
-  let sidebarAttempts = 0;
-  function collapseSidebar() {
-    const btn = document.querySelector('button[aria-label="Fechar menu"]');
-    if (btn) { btn.click(); log('sidebar recolhida'); return; }
-    if (document.querySelector('button[aria-label="Abrir menu"]')) return;
-    sidebarAttempts += 1;
-    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
+  function getQueueType(labelText) {
+    const text = normalizeText(labelText).toLowerCase();
+    if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
+    if (text === 'samec') return 'samec';
+    if (text === 'confirmação' || text === 'confirmacao') return 'confirmacao';
+    return '';
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CICLO PRINCIPAL — agrupamento de todas as funções de ajuste
-  // ══════════════════════════════════════════════════════════════════════════
+  function styleQueueTagsInTicketCards() {
+    for (const card of getAllTicketListCards()) {
+      for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
+        if (!(badge instanceof HTMLElement)) continue;
+        const queueType = getQueueType(normalizeText(badge.textContent));
+        if (!queueType) continue;
+        badge.setAttribute(QUEUE_TAG_ATTR, 'true');
+        badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
+        badge.style.backgroundColor = '';
+        badge.style.color = '';
+        badge.style.borderColor = '';
+        badge.style.backgroundImage = 'none';
+      }
+    }
+  }
 
   function applyDynamicAdjustments() {
     hideCardByExactTitle('Informações do Cliente');
@@ -892,59 +845,26 @@
   }
 
   function reapplyAll() {
-    applyDynamicCSS();        // garante CSS dinâmico no DOM (reaplicado se sumiu)
+    applyCSS();
     applyDynamicAdjustments();
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // OBSERVER OTIMIZADO — throttle + detecção de troca de aba
-  //
-  // Estratégia:
-  //   • Throttle de 80ms (era debounce 200ms) — reage mais rápido
-  //   • Filtra mutações irrelevantes antes de executar reapplyAll
-  //   • Detecta troca de aba (Atribuído ↔ Atendimento) para aplicação imediata
-  // ══════════════════════════════════════════════════════════════════════════
-
-  let throttleTimer = null;
-  let pendingImmediate = false;
-
-  /**
-   * Verifica se alguma mutação contém um nó de card de ticket
-   * (indicativo de troca de aba ou nova renderização de lista).
-   * Se sim, dispara reapplyAll imediatamente sem esperar o throttle.
-   */
-  function mutationContainsTicketCards(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (!(node instanceof HTMLElement)) continue;
-        // Novo card de ticket na lista
-        if (node.matches('div.p-2.border.rounded.cursor-pointer')) return true;
-        if (node.querySelector('div.p-2.border.rounded.cursor-pointer')) return true;
-        // Container que envolve a lista de tickets (troca de aba)
-        if (node.querySelector('[role="tabpanel"]') || node.matches('[role="tabpanel"]')) return true;
-      }
+  let scheduledPasses = [];
+  function scheduleReapplyPasses() {
+    scheduledPasses.forEach(clearTimeout);
+    scheduledPasses = [];
+    for (const delay of [150, 400, 800, 1500, 2500, 4000]) {
+      scheduledPasses.push(setTimeout(reapplyAll, delay));
     }
-    return false;
   }
 
-  function handleMutations(mutations) {
-    // Se detectou mudança relevante (troca de aba / novos cards), aplica imediatamente
-    if (!pendingImmediate && mutationContainsTicketCards(mutations)) {
-      pendingImmediate = true;
-      // requestAnimationFrame garante que o DOM já foi pintado pelo browser
-      requestAnimationFrame(() => {
-        pendingImmediate = false;
-        reapplyAll();
-      });
-      return; // evita enfileirar o throttle também
-    }
-
-    // Para todas as outras mutações: throttle de 80ms
-    if (throttleTimer) return;
-    throttleTimer = setTimeout(() => {
-      throttleTimer = null;
-      reapplyAll();
-    }, 80);
+  let sidebarAttempts = 0;
+  function collapseSidebar() {
+    const btn = document.querySelector('button[aria-label="Fechar menu"]');
+    if (btn) { btn.click(); log('sidebar recolhida'); return; }
+    if (document.querySelector('button[aria-label="Abrir menu"]')) return;
+    sidebarAttempts += 1;
+    if (sidebarAttempts < MAX_SIDEBAR_ATTEMPTS) setTimeout(collapseSidebar, 300);
   }
 
   let observer = null;
@@ -952,27 +872,9 @@
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
     if (observer) observer.disconnect();
-    observer = new MutationObserver(handleMutations);
+    observer = new MutationObserver(() => debounce(reapplyAll, 200));
     observer.observe(target, { childList: true, subtree: true });
   }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // PASSES ESCALONADOS — cobre elementos que aparecem de forma assíncrona
-  // Mantidos para robustez, mas com delays menores agora que o observer é mais ágil
-  // ══════════════════════════════════════════════════════════════════════════
-
-  let scheduledPasses = [];
-  function scheduleReapplyPasses() {
-    scheduledPasses.forEach(clearTimeout);
-    scheduledPasses = [];
-    for (const delay of [100, 300, 600, 1200, 2200]) {
-      scheduledPasses.push(setTimeout(reapplyAll, delay));
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // BOOT
-  // ══════════════════════════════════════════════════════════════════════════
 
   function init() {
     reapplyAll();
@@ -994,5 +896,4 @@
 
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
-
 })();

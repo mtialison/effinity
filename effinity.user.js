@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.7
 // @description  layout envenenado
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.6';
+  const SCRIPT_VERSION = '4.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1285,6 +1285,27 @@
     }
   }
 
+  function formatBrazilCpfDisplay(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length !== 11) return String(value || '');
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+
+  function formatAttendanceDataCpfs() {
+    for (const card of findAttendanceDataCards()) {
+      const cpfValueEl = findValueSpanByLabel(card, 'CPF');
+      if (!cpfValueEl) continue;
+
+      const currentText = normalizeText(cpfValueEl.textContent);
+      if (!currentText) continue;
+
+      const formatted = formatBrazilCpfDisplay(currentText);
+      if (formatted && currentText !== formatted) {
+        cpfValueEl.textContent = formatted;
+      }
+    }
+  }
+
   /* ========================================================================
    * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
    * ====================================================================== */
@@ -1386,6 +1407,7 @@
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
+    formatAttendanceDataCpfs();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
@@ -1396,6 +1418,7 @@
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
+    formatAttendanceDataCpfs();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
   }

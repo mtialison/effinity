@@ -2,8 +2,8 @@
 // @name         effinity
 // @namespace    http://tampermonkey.net/
 // @version      4.5
-// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
-// @author       Alison + ChatGPT
+// @description  layout otimizado
+// @author       alison
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,12 +18,13 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.4';
+  const SCRIPT_VERSION = '4.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
   const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
+  const PHONE_FORMATTED_ATTR = 'data-tm-phone-formatted';
 
   const AGENT_AREA_ATTR = 'data-tm-agent-area';
   const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
@@ -181,6 +182,11 @@
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
     [${UPPERCASE_NAME_ATTR}="true"] {
       text-transform: uppercase !important;
+    }
+
+    /* ── Telefone formatado em Dados do Atendimento ───────────────────── */
+    [${PHONE_FORMATTED_ATTR}="true"] {
+      white-space: normal !important;
     }
 
     /* ── 10 + 11. Área do Agente reorganizada e ações enxutas ─────────── */
@@ -1235,6 +1241,50 @@
     }
   }
 
+
+  /* ========================================================================
+   * SEÇÃO: FORMATAÇÃO DO TELEFONE EM DADOS DO ATENDIMENTO
+   * Remove o 55 e exibe no padrão (DD) 99999-9999 sem flicker.
+   * ====================================================================== */
+  function stripCountryCode55(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('55') && digits.length > 11) {
+      return digits.slice(2);
+    }
+    return digits;
+  }
+
+  function formatBrazilPhoneDisplay(value) {
+    const digits = stripCountryCode55(value);
+
+    if (digits.length === 11) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    }
+
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+
+    return digits || String(value || '');
+  }
+
+  function formatAttendanceDataPhones() {
+    for (const card of findAttendanceDataCards()) {
+      const phoneValueEl = findValueSpanByLabel(card, 'Telefone');
+      if (!phoneValueEl) continue;
+
+      const currentText = normalizeText(phoneValueEl.textContent);
+      if (!currentText) continue;
+
+      const formatted = formatBrazilPhoneDisplay(currentText);
+      if (formatted && currentText !== formatted) {
+        phoneValueEl.textContent = formatted;
+      }
+
+      phoneValueEl.setAttribute(PHONE_FORMATTED_ATTR, 'true');
+    }
+  }
+
   /* ========================================================================
    * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
    * ====================================================================== */
@@ -1335,6 +1385,7 @@
     reorganizeAgentArea();
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
+    formatAttendanceDataPhones();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
@@ -1344,6 +1395,7 @@
     hideSelectedCards();
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
+    formatAttendanceDataPhones();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
   }

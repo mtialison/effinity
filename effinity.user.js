@@ -1,1506 +1,1044 @@
 // ==UserScript==
-// @name         effinity
+// @name         klingo
 // @namespace    http://tampermonkey.net/
-// @version      4.7
-// @description  layout envenenado
-// @author       alison
-// @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
-// @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
-// @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
+// @version      2.5
+// @description  envenenado
+// @match        *://*.klingo.app/*
+// @match        *://samec.klingo.app/*
+// @updateURL    https://raw.githubusercontent.com/mtialison/klingo/main/klingo.user.js
+// @downloadURL  https://raw.githubusercontent.com/mtialison/klingo/main/klingo.user.js
 // @grant        none
-// @run-at       document-start
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  /* ========================================================================
-   * CONFIGURAÇÕES GERAIS
-   * ====================================================================== */
-  const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.7';
-
-  const STYLE_ID = 'tm-effinity-style';
-  const HIDDEN_ATTR = 'data-tm-effinity-hidden';
-  const DATE_APPLIED_ATTR = 'data-tm-date-applied';
-  const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
-  const PHONE_FORMATTED_ATTR = 'data-tm-phone-formatted';
-
-  const AGENT_AREA_ATTR = 'data-tm-agent-area';
-  const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
-  const AGENT_BOTTOM_ATTR = 'data-tm-agent-bottom-row';
-  const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
-
-  const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
-  const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
-  const TICKET_CREATED_HOST_ATTR = 'data-tm-ticket-created-host';
-  const TICKET_CREATED_MOVED_ATTR = 'data-tm-ticket-created-moved';
-  const TICKET_CONTACT_BLOCK_ATTR = 'data-tm-ticket-contact-block';
-
-  const COPY_CARD_ATTR = 'data-tm-copy-card';
-  const COPY_VALUE_ATTR = 'data-tm-copy-value';
-  const COPY_TOAST_ATTR = 'data-tm-copy-toast';
-  const COPY_TOAST_VISIBLE_ATTR = 'data-tm-copy-toast-visible';
-
-  const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
-  const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
-
-  const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
-  const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
-  const UNREAD_CARD_ATTR = 'data-tm-unread-card';
-  const UNREAD_ICON_ATTR = 'data-tm-unread-icon';
-
-  const SIDEBAR_BOOT_STYLE_ID = 'tm-effinity-sidebar-boot-style';
-  const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-booting';
-  const SIDEBAR_COLLAPSED_READY_ATTR = 'data-tm-sidebar-collapsed-ready';
-
-  const CARD_BOOT_STYLE_ID = 'tm-effinity-card-boot-style';
-  const CARD_BOOT_ATTR = 'data-tm-card-booting';
-  const AGENT_BOOT_STYLE_ID = 'tm-effinity-agent-boot-style';
-  const AGENT_BOOT_ATTR = 'data-tm-agent-booting';
-
-  /* ========================================================================
-   * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
-   * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
-   * ====================================================================== */
-  const css = `
-    /* ── 2. Layout geral ───────────────────────────────────────────────── */
-    .h-\\[calc\\(100vh-100px\\)\\] {
-      height: 100vh !important;
-      display: flex !important;
-      flex-direction: column !important;
-      overflow: hidden !important;
-    }
-
-    .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
-      flex: 1 !important;
-      min-height: 0 !important;
-      overflow: hidden !important;
-    }
-
-    /* ── 3. Ocultar header principal ───────────────────────────────────── */
-    header.glass.sticky.top-0.z-50 {
-      display: none !important;
-    }
-
-    /* ── 4. Ocultar bloco Gestão de Tickets / Tempo Real ───────────────── */
-    .flex.flex-col.space-y-1\\.5.pb-3:has(.lucide-clock) {
-      display: none !important;
-    }
-
-    /* ── 5. Ocultar botão Meta ─────────────────────────────────────────── */
-    button:has(.lucide-database) {
-      display: none !important;
-    }
-
-    /* ── 7. Ocultações dos cards da fila (anti-flicker via CSS) ────────── */
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > span.text-xs:first-child {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > span.font-medium.text-sm.truncate {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > div.inline-flex:has(.lucide-minus) {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > div.inline-flex.h-4 {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
-    div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1.mb-1
-      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]) {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
-      display: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer
-      span.inline-flex.items-center.gap-1.rounded-full.px-1\\.5.py-0\\.5.text-\\[10px\\].border.bg-blue-50 {
-      display: none !important;
-    }
-
-    /* ── Remover bolinha azul do ticket selecionado ───────────────────── */
-    div.w-2.h-2.rounded-full.bg-blue-500.flex-shrink-0 {
-      display: none !important;
-    }
-
-    /* ── Indicador de mensagem não lida no canto do card ──────────────── */
-    [${UNREAD_CARD_ATTR}="true"] {
-      position: relative !important;
-    }
-
-    [${UNREAD_ICON_ATTR}="true"] {
-      position: absolute !important;
-      right: 8px !important;
-      bottom: 8px !important;
-      width: 22px !important;
-      height: 22px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      pointer-events: none !important;
-      user-select: none !important;
-      z-index: 3 !important;
-    }
-
-    [${UNREAD_ICON_ATTR}="true"] img {
-      display: block !important;
-      width: 100% !important;
-      height: 100% !important;
-      object-fit: contain !important;
-      pointer-events: none !important;
-      user-select: none !important;
-    }
-
-    /* ── Sistema interno de ocultação ──────────────────────────────────── */
-    [${HIDDEN_ATTR}="true"] {
-      display: none !important;
-    }
-
-    /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
-    [${UPPERCASE_NAME_ATTR}="true"] {
-      text-transform: uppercase !important;
-    }
-
-    /* ── Telefone formatado em Dados do Atendimento ───────────────────── */
-    [${PHONE_FORMATTED_ATTR}="true"] {
-      white-space: normal !important;
-    }
-
-    /* ── 10 + 11. Área do Agente reorganizada e ações enxutas ─────────── */
-    [${AGENT_AREA_ATTR}="true"] {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 0 !important;
-    }
-
-    [${AGENT_TOP_ATTR}="true"] {
-      display: none !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      flex-wrap: nowrap !important;
-      gap: 24px !important;
-      min-height: 40px !important;
-      margin: 0 !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
-      display: flex !important;
-      align-items: center !important;
-      flex: 1 1 auto !important;
-      min-width: 0 !important;
-    }
-
-    [${AGENT_ACTIONS_ATTR}="true"] {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: flex-end !important;
-      gap: 16px !important;
-      flex: 0 0 auto !important;
-      margin-left: auto !important;
-      white-space: nowrap !important;
-    }
-
-    [${AGENT_ACTIONS_ATTR}="true"] button,
-    [${AGENT_ACTIONS_ATTR}="true"] > div,
-    [${AGENT_ACTIONS_ATTR}="true"] > span {
-      flex-shrink: 0 !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
-      display: flex !important;
-      align-items: center !important;
-      gap: 12px !important;
-      flex-wrap: nowrap !important;
-      min-width: 0 !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
-      margin-right: 4px !important;
-      flex-shrink: 0 !important;
-    }
-
-    .tm-agent-hidden {
-      display: none !important;
-    }
-
-    /* ── Header do ticket: anti-flicker da versão sem script ──────────── */
-    div.px-4.py-3.flex.items-center.justify-between.gap-4
-      div.w-10.h-10.flex-shrink-0.rounded-full {
-      display: none !important;
-    }
-
-    div.px-4.py-3.flex.items-center.justify-between.gap-4
-      div.min-w-0.flex-1 {
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      justify-content: center !important;
-      gap: 2px !important;
-      min-width: 0 !important;
-    }
-
-    div.px-4.py-3.flex.items-center.justify-between.gap-4
-      div.min-w-0.flex-1
-      > h2.font-semibold.text-card-foreground.truncate {
-      text-transform: uppercase !important;
-      margin: 0 !important;
-    }
-
-    div.px-4.py-3.flex.items-center.justify-between.gap-4 + div.px-4.py-2.border-t.border-border.bg-muted\/30 {
-      display: none !important;
-    }
-
-    /* ── Header do ticket: mover "Criado há" e ocultar linha inferior ── */
-    [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
-      display: none !important;
-    }
-
-    [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      justify-content: center !important;
-      gap: 2px !important;
-      min-width: 0 !important;
-    }
-
-    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
-    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
-    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
-      margin: 0 !important;
-    }
-
-    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-      width: fit-content !important;
-      max-width: 100% !important;
-    }
-
-    [${TICKET_CREATED_HOST_ATTR}="true"] {
-      display: flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-      margin-top: 0 !important;
-      min-height: 14px !important;
-      color: hsl(var(--muted-foreground)) !important;
-      font-size: 11px !important;
-      line-height: 1.2 !important;
-      width: fit-content !important;
-      max-width: 100% !important;
-    }
-
-    [${TICKET_CREATED_MOVED_ATTR}="true"] {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-      margin: 0 !important;
-      color: inherit !important;
-      font-size: inherit !important;
-      line-height: inherit !important;
-      white-space: nowrap !important;
-    }
-
-    [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
-      width: 12px !important;
-      height: 12px !important;
-      flex-shrink: 0 !important;
-    }
-
-    /* ── 19. Feedback visual de cópia ──────────────────────────────────── */
-    [${COPY_CARD_ATTR}="true"] {
-      position: relative !important;
-    }
-
-    [${COPY_VALUE_ATTR}="true"] {
-      cursor: pointer !important;
-      user-select: none !important;
-      transition: opacity 0.18s ease, transform 0.18s ease !important;
-    }
-
-    [${COPY_VALUE_ATTR}="true"]:hover {
-      opacity: 0.88 !important;
-    }
-
-    [${COPY_VALUE_ATTR}="true"]:active {
-      transform: scale(0.985) !important;
-    }
-
-    [${COPY_TOAST_ATTR}="true"] {
-      position: absolute !important;
-      top: 12px !important;
-      right: 12px !important;
-      width: 40px !important;
-      height: 40px !important;
-      opacity: 0 !important;
-      transform: scale(0.96) !important;
-      transition: opacity 0.18s ease, transform 0.18s ease !important;
-      pointer-events: none !important;
-      z-index: 30 !important;
-    }
-
-    [${COPY_TOAST_VISIBLE_ATTR}="true"] {
-      opacity: 1 !important;
-      transform: scale(1) !important;
-    }
-
-    [${COPY_TOAST_ATTR}="true"] img {
-      display: block !important;
-      width: 100% !important;
-      height: 100% !important;
-      object-fit: contain !important;
-      pointer-events: none !important;
-      user-select: none !important;
-    }
-
-    /* ── 21. Tags de fila com cor por tipo ─────────────────────────────── */
-    [${QUEUE_TAG_ATTR}="true"] {
-      background-image: none !important;
-      box-shadow: none !important;
-      border-width: 1px !important;
-      border-style: solid !important;
-      font-weight: 600 !important;
-      line-height: 1.1 !important;
-    }
-
-    [${QUEUE_TAG_TYPE_ATTR}="clinica_do_sono"] {
-      background-color: #dbeafe !important;
-      color: #1d4ed8 !important;
-      border-color: #93c5fd !important;
-    }
-
-    [${QUEUE_TAG_TYPE_ATTR}="samec"] {
-      background-color: #fef3c7 !important;
-      color: #b45309 !important;
-      border-color: #fcd34d !important;
-    }
-
-    [${QUEUE_TAG_TYPE_ATTR}="confirmacao"] {
-      background-color: #fee2e2 !important;
-      color: #b91c1c !important;
-      border-color: #fca5a5 !important;
-    }
-  `;
-
-
-
-  /* ========================================================================
-   * SEÇÃO: ANTI-FLICKER INICIAL DOS CARDS DE TICKET
-   * Objetivo: ao trocar entre Espera / Atribuído / Atendimento, os elementos
-   * ocultados pelo script já nascem invisíveis no primeiro paint.
-   * ====================================================================== */
-  const cardBootCSS = `
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > span.text-xs:first-child {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > span.font-medium.text-sm.truncate {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > div.inline-flex:has(.lucide-minus) {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1
-      > div.inline-flex.h-4 {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      span.flex.items-center.gap-1.text-xs.text-muted-foreground:has(.lucide-phone) {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]):has(+ *),
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.flex.items-center.gap-1.mb-1
-      > div.inline-flex.items-center.rounded-full:not([data-tm-queue-tag]) {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      div.inline-flex.items-center.rounded-full:has(.lucide-check-circle2) {
-      display: none !important;
-    }
-
-    html[${CARD_BOOT_ATTR}="true"] div.p-2.border.rounded.cursor-pointer
-      span.inline-flex.items-center.gap-1.rounded-full.px-1\.5.py-0\.5.text-\[10px\].border.bg-blue-50 {
-      display: none !important;
-    }
-  `;
-
-
-  /* ========================================================================
-   * SEÇÃO: SIDEBAR INICIANDO RECOLHIDA
-   * Objetivo: a sidebar nasce visualmente recolhida sem remover o modo expandido.
-   * ====================================================================== */
-  const sidebarBootCSS = `
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) {
-      width: 4rem !important;
-      min-width: 4rem !important;
-      max-width: 4rem !important;
-      overflow: hidden !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child {
-      justify-content: center !important;
-      padding-left: 0.75rem !important;
-      padding-right: 0.75rem !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > div {
-      display: none !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > button {
-      margin: 0 auto !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav h3,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav span,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .lucide-chevron-right,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button:not([aria-label]),
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a > span,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button > span {
-      display: none !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button {
-      justify-content: center !important;
-      padding-left: 0.625rem !important;
-      padding-right: 0.625rem !important;
-      min-height: 2.5rem !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-3,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-1,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mb-8,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mt-8 {
-      margin-top: 0 !important;
-      margin-bottom: 0 !important;
-    }
-  `;
-
-  const agentBootCSS = `
-    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-users),
-    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-headphones),
-    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-send),
-    html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-message-square) {
-      visibility: hidden !important;
-      opacity: 0 !important;
-      max-height: 0 !important;
-      min-height: 0 !important;
-      overflow: hidden !important;
-      margin: 0 !important;
-      padding-top: 0 !important;
-      padding-bottom: 0 !important;
-      border: 0 !important;
-      pointer-events: none !important;
-    }
-  `;
-
-
-  /* ========================================================================
-   * SEÇÃO: UTILITÁRIOS
-   * ====================================================================== */
-  function log(...args) {
-    console.log(`[${SCRIPT_NAME}]`, ...args);
-  }
-
-  function normalizeText(text) {
+  const state = {
+    selectedDate: '',
+    selectedWeekday: '',
+    selectedTime: '',
+  };
+
+  const WEEKDAYS = [
+    'Segunda-feira',
+    'Terça-feira',
+    'Quarta-feira',
+    'Quinta-feira',
+    'Sexta-feira',
+    'Sábado',
+    'Domingo'
+  ];
+
+  function norm(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
   }
 
-  function applyCSS() {
-    ensureStyleTag(STYLE_ID, css);
+  function toTitleCase(text) {
+    const lowerWords = ['de', 'da', 'do', 'das', 'dos', 'e'];
+    return norm(text)
+      .toLowerCase()
+      .split(' ')
+      .map((word, i) =>
+        i > 0 && lowerWords.includes(word)
+          ? word
+          : word.charAt(0).toUpperCase() + word.slice(1)
+      )
+      .join(' ');
   }
 
-
-
-  function ensureStyleTag(id, cssText) {
-    const parent = document.head || document.documentElement;
-    if (!parent) return null;
-
-    let style = document.getElementById(id);
-    if (!style) {
-      style = document.createElement('style');
-      style.id = id;
-      parent.appendChild(style);
-    }
-
-    if (style.textContent !== cssText) {
-      style.textContent = cssText;
-    }
-
-    return style;
-  }
-
-  function startCardBootMask() {
-    document.documentElement.setAttribute(CARD_BOOT_ATTR, 'true');
-    ensureStyleTag(CARD_BOOT_STYLE_ID, cardBootCSS);
-  }
-
-  function stopCardBootMask() {
-    document.documentElement.removeAttribute(CARD_BOOT_ATTR);
-    document.getElementById(CARD_BOOT_STYLE_ID)?.remove();
-  }
-
-  function startSidebarBootMask() {
-    document.documentElement.setAttribute(SIDEBAR_BOOT_ATTR, 'true');
-    ensureStyleTag(SIDEBAR_BOOT_STYLE_ID, sidebarBootCSS);
-  }
-
-  function stopSidebarBootMask() {
-    document.documentElement.removeAttribute(SIDEBAR_BOOT_ATTR);
-    document.documentElement.setAttribute(SIDEBAR_COLLAPSED_READY_ATTR, 'true');
-    document.getElementById(SIDEBAR_BOOT_STYLE_ID)?.remove();
-  }
-
-  function startAgentBootMask() {
-    document.documentElement.setAttribute(AGENT_BOOT_ATTR, 'true');
-    ensureStyleTag(AGENT_BOOT_STYLE_ID, agentBootCSS);
-  }
-
-  function stopAgentBootMask() {
-    document.documentElement.removeAttribute(AGENT_BOOT_ATTR);
-    document.getElementById(AGENT_BOOT_STYLE_ID)?.remove();
-  }
-
-
-  function scheduleAgentBootFailsafe() {
-    window.setTimeout(() => {
-      if (!agentBootDone) {
-        stopAgentBootMask();
-      }
-    }, 4000);
-  }
-
-  function getSidebarElement() {
-    return document.querySelector('aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg');
-  }
-
-  function isSidebarCollapsed(sidebar) {
-    if (!sidebar) return false;
-    const openButton = sidebar.querySelector('button[aria-label="Abrir menu"]');
-    return sidebar.classList.contains('w-16') || !!openButton;
-  }
-
-  function isSidebarExpanded(sidebar) {
-    if (!sidebar) return false;
-    const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
-    return sidebar.classList.contains('w-64') || !!closeButton;
-  }
-
-  let sidebarBootDone = false;
-  let sidebarBootFrame = 0;
-  function ensureSidebarStartsCollapsed() {
-    if (sidebarBootDone) return;
-
-    const sidebar = getSidebarElement();
-    if (!sidebar) {
-      sidebarBootFrame = window.requestAnimationFrame(ensureSidebarStartsCollapsed);
-      return;
-    }
-
-    if (isSidebarCollapsed(sidebar)) {
-      sidebarBootDone = true;
-      stopSidebarBootMask();
-      return;
-    }
-
-    if (isSidebarExpanded(sidebar)) {
-      const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
-      if (closeButton) {
-        closeButton.click();
-      }
-    }
-
-    sidebarBootFrame = window.requestAnimationFrame(() => {
-      const currentSidebar = getSidebarElement();
-      if (isSidebarCollapsed(currentSidebar)) {
-        sidebarBootDone = true;
-        stopSidebarBootMask();
-        return;
-      }
-      ensureSidebarStartsCollapsed();
-    });
-  }
-
-  let debounceTimer = null;
-  function debounce(fn, delay) {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fn, delay);
-  }
-
-  function hideElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    if (el.getAttribute(HIDDEN_ATTR) !== 'true') {
-      el.setAttribute(HIDDEN_ATTR, 'true');
-    }
-  }
-
-  function markUppercase(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    el.setAttribute(UPPERCASE_NAME_ATTR, 'true');
-  }
-
-  async function copyTextToClipboard(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (error) {
-      try {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        textarea.style.pointerEvents = 'none';
-        document.body.appendChild(textarea);
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-        const copied = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        return copied;
-      } catch (fallbackError) {
-        console.error(`[${SCRIPT_NAME}] falha ao copiar`, fallbackError);
-        return false;
-      }
-    }
-  }
-
-  function findCardContainerFromTitle(titleEl) {
-    let node = titleEl;
-    while (node && node !== document.body) {
-      if (
-        node.classList &&
-        node.classList.contains('rounded-xl') &&
-        node.classList.contains('bg-card')
-      ) {
-        return node;
-      }
-      node = node.parentElement;
-    }
-    return null;
-  }
-
-  /* ========================================================================
-   * SEÇÃO: OCULTAR CARDS INTEIROS POR TÍTULO (22)
-   * ====================================================================== */
-  function hideCardByExactTitle(titleText) {
-    const titles = document.querySelectorAll('h3');
-    for (const title of titles) {
-      const text = normalizeText(title.textContent);
-      if (text !== titleText) continue;
-
-      const card = findCardContainerFromTitle(title);
-      if (!card) continue;
-      hideElement(card);
-    }
-  }
-
-  function hideSelectedCards() {
-    hideCardByExactTitle('Informações do Cliente');
-    hideCardByExactTitle('Resumo do Ticket');
-  }
-
-  /* ========================================================================
-   * SEÇÃO: DATA NAS MENSAGENS DO CHAT (23)
-   * ====================================================================== */
-  function applyDateToMessages() {
-    const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
-    if (!chatContainer) return;
-
-    const currentYear = new Date().getFullYear();
-    const monthMap = {
-      janeiro: 0, fevereiro: 1, março: 2, marco: 2,
-      abril: 3, maio: 4, junho: 5, julho: 6,
-      agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
+  function monthNameFromNumber(mm) {
+    const months = {
+      '01': 'Janeiro',
+      '02': 'Fevereiro',
+      '03': 'Março',
+      '04': 'Abril',
+      '05': 'Maio',
+      '06': 'Junho',
+      '07': 'Julho',
+      '08': 'Agosto',
+      '09': 'Setembro',
+      '10': 'Outubro',
+      '11': 'Novembro',
+      '12': 'Dezembro'
     };
-
-    function parseDaySeparator(text) {
-      const normalized = normalizeText(text).toLowerCase();
-      const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
-      if (!match) return null;
-
-      const day = Number(match[1]);
-      const monthIndex = monthMap[match[2]];
-      if (Number.isNaN(day) || monthIndex === undefined) return null;
-      return new Date(currentYear, monthIndex, day);
-    }
-
-    function formatDate(date) {
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      return `${day}/${month}/${date.getFullYear()}`;
-    }
-
-    function timeToMinutes(timeText) {
-      const match = timeText.match(/^(\d{2}):(\d{2})$/);
-      if (!match) return null;
-      return Number(match[1]) * 60 + Number(match[2]);
-    }
-
-    let activeDate = null;
-    let lastMinutes = null;
-
-    for (const child of Array.from(chatContainer.children)) {
-      if (!(child instanceof HTMLElement)) continue;
-
-      const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
-      if (daySeparator) {
-        const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) {
-          activeDate = parsedDate;
-          lastMinutes = null;
-        }
-        continue;
-      }
-
-      const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
-      if (!timeSpan) continue;
-
-      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
-      if (!timeMatch) continue;
-
-      const timeText = timeMatch[1];
-      const minutes = timeToMinutes(timeText);
-      if (minutes === null) continue;
-
-      if (!activeDate) {
-        activeDate = new Date();
-        activeDate.setHours(0, 0, 0, 0);
-      }
-
-      if (lastMinutes !== null && minutes < lastMinutes) {
-        activeDate = new Date(activeDate);
-        activeDate.setDate(activeDate.getDate() + 1);
-      }
-
-      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
-      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
-      lastMinutes = minutes;
-    }
+    return months[mm] || mm;
   }
 
-  /* ========================================================================
-   * SEÇÃO: ÁREA DO AGENTE (10 + 11 mescladas)
-   * Reorganiza e mantém apenas ações relevantes visíveis.
-   * ====================================================================== */
-  function findAgentAreaContainer() {
-    for (const span of document.querySelectorAll('span')) {
-      if (normalizeText(span.textContent) !== 'Área do Agente') continue;
-      const container = span.closest('.bg-card.border.border-border.rounded-lg');
-      if (container) return container;
+  function formatDatePtBr(ddmm) {
+    const m = norm(ddmm).match(/^(\d{2})\/(\d{2})$/);
+    if (!m) return norm(ddmm);
+    const dd = String(parseInt(m[1], 10));
+    const mm = m[2];
+    return `${dd} de ${monthNameFromNumber(mm)}`;
+  }
+
+  function normalizeHour(text) {
+    const t = norm(text);
+    if (/^\d{1,2}h$/i.test(t)) {
+      const hour = t.replace(/h/i, '');
+      return `${String(parseInt(hour, 10)).padStart(2, '0')}h`;
+    }
+    if (/^\d{1,2}:\d{2}$/.test(t)) return t;
+    return t;
+  }
+
+  function isTimeButton(el) {
+    if (!el) return false;
+    const text = norm(el.textContent);
+    return /^\d{1,2}h$/i.test(text) || /^\d{1,2}:\d{2}$/.test(text);
+  }
+
+  function findRowContainer(el) {
+    let current = el;
+    while (current && current !== document.body) {
+      const text = norm(current.innerText || current.textContent || '');
+      const hasDate = /\b\d{2}\/\d{2}\b/.test(text);
+      const hasWeekday = WEEKDAYS.some(day => text.includes(day));
+      if (hasDate && hasWeekday) return current;
+      current = current.parentElement;
     }
     return null;
   }
 
-  function findTopRow(agentContainer) {
-    if (!agentContainer) return null;
+  function captureSelectionFromClick(target, allowModalTime = false) {
+    const insideModal = !!target.closest('#minutoModal');
 
-    for (const child of Array.from(agentContainer.children)) {
-      if (!(child instanceof HTMLElement) || child.tagName !== 'DIV') continue;
-      const text = normalizeText(child.textContent);
-      if (
-        text.includes('Área do Agente') &&
-        (text.includes('Offline') || text.includes('Online')) &&
-        text.includes('Enviar HSM')
-      ) {
-        return child;
-      }
-    }
-    return null;
-  }
+    if (insideModal && !allowModalTime) return false;
 
-  function findBottomRow(agentContainer, topRow) {
-    if (!agentContainer) return null;
+    const btn = target.closest('button, a, div, span');
+    if (!btn || !isTimeButton(btn)) return false;
 
-    for (const child of Array.from(agentContainer.children)) {
-      if (child === topRow) continue;
-      if (!child.matches('div')) continue;
-      if (normalizeText(child.textContent).includes('Filas:')) return child;
-    }
-    return null;
-  }
+    const time = normalizeHour(btn.textContent);
 
-  function findOfflineControl(topRow) {
-    if (!topRow) return null;
-
-    for (const btn of topRow.querySelectorAll('button')) {
-      const text = normalizeText(btn.textContent);
-      if (
-        text.includes('Offline') ||
-        text.includes('Online') ||
-        text.includes('Pausa') ||
-        text.includes('Ausente')
-      ) {
-        return btn.closest('.relative.inline-block.text-left') || btn;
-      }
-    }
-    return null;
-  }
-
-  function findSendHsmButton(topRow) {
-    if (!topRow) return null;
-
-    for (const btn of topRow.querySelectorAll('button')) {
-      if (normalizeText(btn.textContent).includes('Enviar HSM')) return btn;
-    }
-    return null;
-  }
-
-  function ensureAgentActionsWrapper(bottomRow) {
-    let wrapper = bottomRow.querySelector(`[${AGENT_ACTIONS_ATTR}="true"]`);
-    if (wrapper) return wrapper;
-
-    wrapper = document.createElement('div');
-    wrapper.setAttribute(AGENT_ACTIONS_ATTR, 'true');
-    bottomRow.appendChild(wrapper);
-    return wrapper;
-  }
-
-  function ensureAgentLeftWrapper(bottomRow) {
-    let left = bottomRow.querySelector(':scope > .tm-agent-left');
-    if (left) return left;
-
-    left = document.createElement('div');
-    left.className = 'tm-agent-left';
-
-    const currentChildren = Array.from(bottomRow.childNodes);
-    for (const node of currentChildren) {
-      if (
-        node.nodeType === Node.ELEMENT_NODE &&
-        node.getAttribute &&
-        node.getAttribute(AGENT_ACTIONS_ATTR) === 'true'
-      ) {
-        continue;
-      }
-      left.appendChild(node);
+    if (insideModal && allowModalTime) {
+      state.selectedTime = time;
+      return true;
     }
 
-    bottomRow.insertBefore(left, bottomRow.firstChild);
-    return left;
-  }
+    const row = findRowContainer(btn);
+    if (!row) return false;
 
-  function primeAgentAreaBootState() {
-    const agentContainer = findAgentAreaContainer();
-    if (!agentContainer) return false;
+    const rowText = norm(row.innerText || row.textContent || '');
+    const dateMatch = rowText.match(/\b\d{2}\/\d{2}\b/);
+    const weekday = WEEKDAYS.find(day => rowText.includes(day)) || '';
 
-    const topRow = findTopRow(agentContainer);
-    const bottomRow = findBottomRow(agentContainer, topRow);
-    if (!topRow || !bottomRow) return false;
+    if (!dateMatch || !weekday) return false;
 
-    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
-    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
-    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+    state.selectedDate = formatDatePtBr(dateMatch[0]);
+    state.selectedWeekday = weekday;
+    state.selectedTime = time;
     return true;
   }
 
-  let agentBootDone = false;
+  function getDoctorNameFromModal() {
+    const doctorEl = document.querySelector('#minutoModal .col.col-12.col-md-6 > div:first-child');
+    if (!doctorEl) return '';
 
-  function finalizeAgentBootMask() {
-    if (agentBootDone) return;
-    const agentContainer = findAgentAreaContainer();
-    if (!agentContainer) return;
-    const topRow = findTopRow(agentContainer);
-    const bottomRow = findBottomRow(agentContainer, topRow);
-    if (!topRow || !bottomRow) return;
-    agentBootDone = true;
-    stopAgentBootMask();
+    const text = norm(doctorEl.textContent);
+    if (!text) return '';
+
+    return toTitleCase(text);
   }
 
-  function reorganizeAgentArea() {
+  function getSubtitleHtml(titleEl) {
+    const subtitleEl = titleEl.querySelector('.small.text-muted');
+    return subtitleEl ? subtitleEl.outerHTML : '';
+  }
 
-    const agentContainer = findAgentAreaContainer();
-    if (!agentContainer) return;
-
-    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
-
-    const topRow = findTopRow(agentContainer);
-    const bottomRow = findBottomRow(agentContainer, topRow);
-    if (!topRow || !bottomRow) return;
-
-    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
-    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
-
-    const offlineControl = findOfflineControl(topRow);
-    const sendHsmButton = findSendHsmButton(topRow);
-    const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
-
-    ensureAgentLeftWrapper(bottomRow);
-
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(offlineControl);
+  function buildTitleHtml(doctorName) {
+    if (!state.selectedDate || !state.selectedWeekday || !state.selectedTime || !doctorName) {
+      return '';
     }
 
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(sendHsmButton);
+    const line1 = `👨‍⚕️ ${doctorName}`;
+    const line2 = `${state.selectedDate} | ${state.selectedWeekday} | ${state.selectedTime}`;
+
+    return `
+      <span class="tm-main-title" style="display:block; line-height:1.35;">
+        <span class="tm-doctor-line" style="display:block;">${line1}</span>
+        <span class="tm-date-line" style="display:block;">${line2}</span>
+      </span>
+    `;
+  }
+
+  function getCopyText() {
+    const doctorName = getDoctorNameFromModal();
+    if (!doctorName || !state.selectedDate || !state.selectedWeekday || !state.selectedTime) {
+      return '';
     }
 
-    for (const btn of topRow.querySelectorAll('button')) {
-      const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
-      btn.classList.add('tm-agent-hidden');
-    }
-
-    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
-
-    finalizeAgentBootMask();
+    return `👨‍⚕️ ${doctorName}\n${state.selectedDate} | ${state.selectedWeekday} | ${state.selectedTime}`;
   }
 
-  /* ========================================================================
-   * SEÇÃO: HEADER DO TICKET
-   * Oculta a linha inferior e move o campo "Criado há" para baixo do telefone.
-   * ====================================================================== */
-  function findTicketHeaderTopRows() {
-    return Array.from(document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4'));
-  }
+  function showCopyFeedback(targetEl, message = 'Copiado') {
+    if (!targetEl) return;
 
-  function findTicketInfoRowFromTopRow(topRow) {
-    if (!topRow || !topRow.parentElement) return null;
-    const siblings = Array.from(topRow.parentElement.children);
-    const topIndex = siblings.indexOf(topRow);
+    const oldTip = document.querySelector('#tm-copy-bubble');
+    if (oldTip) oldTip.remove();
 
-    for (let i = topIndex + 1; i < siblings.length; i += 1) {
-      const el = siblings[i];
-      if (!(el instanceof HTMLElement)) continue;
-      if (
-        el.classList.contains('px-4') &&
-        el.classList.contains('py-2') &&
-        el.classList.contains('border-t') &&
-        el.classList.contains('border-border') &&
-        el.classList.contains('bg-muted/30')
-      ) {
-        return el;
-      }
-    }
+    const bubble = document.createElement('div');
+    bubble.id = 'tm-copy-bubble';
+    bubble.textContent = message;
 
-    return null;
-  }
+    bubble.style.position = 'fixed';
+    bubble.style.zIndex = '999999';
+    bubble.style.background = '#fff';
+    bubble.style.color = '#222';
+    bubble.style.border = '1px solid #111';
+    bubble.style.borderRadius = '10px';
+    bubble.style.padding = '8px 14px';
+    bubble.style.fontSize = '14px';
+    bubble.style.fontWeight = '600';
+    bubble.style.boxShadow = '0 4px 10px rgba(0,0,0,0.12)';
+    bubble.style.pointerEvents = 'none';
+    bubble.style.opacity = '0';
+    bubble.style.transition = 'opacity 0.15s ease';
 
-  function findCreatedSpan(infoRow) {
-    if (!infoRow) return null;
+    document.body.appendChild(bubble);
 
-    for (const span of infoRow.querySelectorAll('span.flex.items-center.gap-1')) {
-      if (normalizeText(span.textContent).includes('Criado há')) return span;
-    }
+    const rect = targetEl.getBoundingClientRect();
+    const bubbleRect = bubble.getBoundingClientRect();
 
-    return null;
-  }
+    const top = rect.top - bubbleRect.height - 10;
+    const left = rect.left + (rect.width / 2) - (bubbleRect.width / 2);
 
-  function findTicketInfoTarget(topRow) {
-    return topRow ? topRow.querySelector('div.min-w-0.flex-1') : null;
-  }
+    bubble.style.top = `${Math.max(8, top)}px`;
+    bubble.style.left = `${Math.max(8, left)}px`;
 
-  function findTicketAvatar(topRow) {
-    return topRow ? topRow.querySelector('div.w-10.h-10.flex-shrink-0.rounded-full') : null;
-  }
+    const arrow = document.createElement('div');
+    arrow.style.position = 'absolute';
+    arrow.style.left = '50%';
+    arrow.style.bottom = '-7px';
+    arrow.style.width = '12px';
+    arrow.style.height = '12px';
+    arrow.style.background = '#fff';
+    arrow.style.borderRight = '1px solid #111';
+    arrow.style.borderBottom = '1px solid #111';
+    arrow.style.transform = 'translateX(-50%) rotate(45deg)';
+    bubble.appendChild(arrow);
 
-  function ensureCreatedHost(targetBlock) {
-    let host = targetBlock.querySelector(`[${TICKET_CREATED_HOST_ATTR}="true"]`);
-    if (host) return host;
-
-    host = document.createElement('div');
-    host.setAttribute(TICKET_CREATED_HOST_ATTR, 'true');
-    targetBlock.appendChild(host);
-    return host;
-  }
-
-  function moveCreatedDateToHeader() {
-    for (const topRow of findTicketHeaderTopRows()) {
-      const infoRow = findTicketInfoRowFromTopRow(topRow);
-      const targetBlock = findTicketInfoTarget(topRow);
-      if (!infoRow || !targetBlock) continue;
-
-      targetBlock.setAttribute(TICKET_CONTACT_BLOCK_ATTR, 'true');
-
-      const createdSpan = findCreatedSpan(infoRow);
-      if (!createdSpan) continue;
-
-      const host = ensureCreatedHost(targetBlock);
-      if (createdSpan.parentElement !== host) {
-        createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
-        host.appendChild(createdSpan);
-      }
-
-      if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {
-        infoRow.setAttribute(TICKET_INFO_ROW_HIDDEN_ATTR, 'true');
-      }
-
-      const avatar = findTicketAvatar(topRow);
-      if (avatar && avatar.getAttribute(HIDDEN_ATTR) !== 'true') {
-        avatar.setAttribute(HIDDEN_ATTR, 'true');
-      }
-
-      if (topRow.parentElement) {
-        topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
-      }
-    }
-  }
-
-  /* ========================================================================
-   * SEÇÃO: CARDS DA FILA / TAGS / NOMES
-   * Mantém: 7, 15, 21
-   * ====================================================================== */
-  function isTicketListCard(card) {
-    if (!card || !(card instanceof HTMLElement)) return false;
-
-    const hasUser = !!card.querySelector('.lucide-user');
-    const hasQueueTag = !!Array.from(card.querySelectorAll('div.inline-flex.items-center.rounded-full')).find(el => {
-      const text = normalizeText(el.textContent).toLowerCase();
-      return (
-        text === 'clínica do sono' ||
-        text === 'clinica do sono' ||
-        text === 'samec' ||
-        text === 'confirmação' ||
-        text === 'confirmacao'
-      );
+    requestAnimationFrame(() => {
+      bubble.style.opacity = '1';
     });
-    const hasTimeInfo =
-      normalizeText(card.textContent).includes('Última atividade:') ||
-      !!card.querySelector('.lucide-clock');
 
-    return hasUser && hasQueueTag && hasTimeInfo;
+    clearTimeout(bubble._hideTimer);
+    bubble._hideTimer = setTimeout(() => {
+      bubble.style.opacity = '0';
+      setTimeout(() => bubble.remove(), 180);
+    }, 1000);
   }
 
-  function getAllTicketListCards() {
-    return Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer')).filter(isTicketListCard);
-  }
+  async function copyText(text, targetEl) {
+    if (!text) return;
 
-  function uppercaseTicketHeaderNames() {
-    for (const nameEl of document.querySelectorAll('div.px-4.py-3.flex.items-center.justify-between.gap-4 h2.font-semibold.text-card-foreground.truncate')) {
-      markUppercase(nameEl);
+    try {
+      await navigator.clipboard.writeText(text);
+      showCopyFeedback(targetEl, 'Copiado');
+    } catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      showCopyFeedback(targetEl, 'Copiado');
     }
   }
 
-  function uppercaseTicketListCardNames() {
-    for (const card of getAllTicketListCards()) {
-      const selectors = [
-        'span.flex.items-center.gap-1.text-xs.text-card-foreground > span.font-medium',
-        'h4.font-medium',
-        'span.font-medium.text-sm',
-        'div.font-medium.text-sm',
-        'div.text-sm.font-medium',
-        'span.text-sm.font-medium'
-      ];
+  function updateModalTitle() {
+    const modal = document.querySelector('#minutoModal');
+    const titleEl = document.querySelector('#minutoModal h5.modal-title');
 
-      const found = new Set();
-      for (const selector of selectors) {
-        for (const nameEl of card.querySelectorAll(selector)) {
-          found.add(nameEl);
-        }
-      }
+    if (!modal || !titleEl) return;
 
-      for (const nameEl of found) {
-        const text = normalizeText(nameEl.textContent);
-        if (!text) continue;
-        if (text.includes('Última atividade:')) continue;
-        if (text.toLowerCase() === 'clínica do sono' || text.toLowerCase() === 'clinica do sono') continue;
-        if (text.toLowerCase() === 'samec' || text.toLowerCase() === 'confirmação' || text.toLowerCase() === 'confirmacao') continue;
-        markUppercase(nameEl);
-      }
+    const doctorName = getDoctorNameFromModal();
+    const titleHtml = buildTitleHtml(doctorName);
+
+    if (!titleHtml) return;
+
+    const subtitleHtml = getSubtitleHtml(titleEl);
+    const currentMain = titleEl.querySelector('.tm-main-title');
+    const expectedText = `👨‍⚕️ ${doctorName} ${state.selectedDate} | ${state.selectedWeekday} | ${state.selectedTime}`;
+
+    if (currentMain && norm(currentMain.textContent) === norm(expectedText)) return;
+
+    titleEl.innerHTML = `${titleHtml}${subtitleHtml}`;
+  }
+
+  function applyLoginIndicator() {
+    const passwordInput = document.querySelector('input[type="password"]');
+    if (!passwordInput) return;
+
+    if (document.body.dataset.tmLoginStyled === '1') return;
+    document.body.dataset.tmLoginStyled = '1';
+
+    document.body.style.backgroundColor = '#a98787';
+
+    const btnEntrar =
+      document.querySelector('button[type="submit"]') ||
+      document.querySelector('input[type="submit"]') ||
+      [...document.querySelectorAll('button')].find(btn => /entrar/i.test((btn.textContent || '').trim()));
+
+    if (btnEntrar) {
+      btnEntrar.style.backgroundColor = '#8b0000';
+      btnEntrar.style.color = '#fff';
+      btnEntrar.style.border = 'none';
+    }
+
+    const logo = document.querySelector('img');
+    if (logo) {
+      logo.src = 'https://i.imgur.com/bY57pai.png';
+      logo.style.maxWidth = '180px';
+      logo.style.display = 'block';
+      logo.style.margin = '0 auto';
     }
   }
 
-  function applyUppercaseToCustomerNames() {
-    uppercaseTicketHeaderNames();
-    uppercaseTicketListCardNames();
-  }
+  function parsePastedBirthDate(text) {
+    const raw = norm(text);
+    if (!raw) return '';
 
-  function getQueueType(labelText) {
-    const text = normalizeText(labelText).toLowerCase();
-    if (text === 'clínica do sono' || text === 'clinica do sono') return 'clinica_do_sono';
-    if (text === 'samec') return 'samec';
-    if (text === 'confirmação' || text === 'confirmacao') return 'confirmacao';
+    const onlyDigits = raw.replace(/\D/g, '');
+
+    if (onlyDigits.length === 8) {
+      const dd = onlyDigits.slice(0, 2);
+      const mm = onlyDigits.slice(2, 4);
+      const yyyy = onlyDigits.slice(4, 8);
+
+      if (isValidDate(dd, mm, yyyy)) {
+        return `${yyyy}-${mm}-${dd}`;
+      }
+
+      const yyyy2 = onlyDigits.slice(0, 4);
+      const mm2 = onlyDigits.slice(4, 6);
+      const dd2 = onlyDigits.slice(6, 8);
+
+      if (isValidDate(dd2, mm2, yyyy2)) {
+        return `${yyyy2}-${mm2}-${dd2}`;
+      }
+    }
+
+    let m = raw.match(/^(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})$/);
+    if (m && isValidDate(m[1], m[2], m[3])) {
+      return `${m[3]}-${m[2]}-${m[1]}`;
+    }
+
+    m = raw.match(/^(\d{4})[\/.\-](\d{2})[\/.\-](\d{2})$/);
+    if (m && isValidDate(m[3], m[2], m[1])) {
+      return `${m[1]}-${m[2]}-${m[3]}`;
+    }
+
     return '';
   }
 
-  function styleQueueTagsInTicketCards() {
-    for (const card of getAllTicketListCards()) {
-      for (const badge of card.querySelectorAll('div.inline-flex.items-center.rounded-full')) {
-        if (!(badge instanceof HTMLElement)) continue;
+  function isValidDate(dd, mm, yyyy) {
+    const day = Number(dd);
+    const month = Number(mm);
+    const year = Number(yyyy);
 
-        const queueType = getQueueType(normalizeText(badge.textContent));
-        if (!queueType) continue;
+    if (!day || !month || !year) return false;
+    if (year < 1900 || year > 2100) return false;
 
-        badge.setAttribute(QUEUE_TAG_ATTR, 'true');
-        badge.setAttribute(QUEUE_TAG_TYPE_ATTR, queueType);
-        badge.style.backgroundColor = '';
-        badge.style.color = '';
-        badge.style.borderColor = '';
-        badge.style.backgroundImage = 'none';
-      }
+    const date = new Date(year, month - 1, day);
+    return (
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+    );
+  }
+
+  function setNativeInputValue(el, value) {
+    const prototype = Object.getPrototypeOf(el);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+    const setter = descriptor && descriptor.set;
+
+    if (setter) {
+      setter.call(el, value);
+    } else {
+      el.value = value;
     }
   }
 
+  function dispatchEvents(el, names) {
+    names.forEach((name) => {
+      const ev = new Event(name, { bubbles: true });
+      el.dispatchEvent(ev);
+    });
+  }
 
+  function dispatchBirthDateEvents(el) {
+    dispatchEvents(el, ['input', 'change', 'blur']);
+  }
 
-  function findUnreadBadgeElement(card) {
-    const candidates = card.querySelectorAll('span, div');
-    for (const el of candidates) {
-      if (!(el instanceof HTMLElement)) continue;
-      const text = normalizeText(el.textContent).toLowerCase();
-      if (text === 'não lida' || text === 'nao lida' || text === 'não lido' || text === 'nao lido') {
-        return el;
+  function isBirthDateInput(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (input.type !== 'date') return false;
+    if (input.name !== 'teste') return false;
+    return !!input.closest('.input-group.input-group-sm');
+  }
+
+  function handleBirthDatePaste(event) {
+    const input = event.target;
+    if (!isBirthDateInput(input)) return;
+
+    const pasted = event.clipboardData ? event.clipboardData.getData('text') : '';
+    const normalized = parsePastedBirthDate(pasted);
+    if (!normalized) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    setNativeInputValue(input, normalized);
+    dispatchBirthDateEvents(input);
+  }
+
+  function enableBirthDatePaste() {
+    const inputs = document.querySelectorAll('input[type="date"][name="teste"]');
+
+    inputs.forEach((input) => {
+      if (!isBirthDateInput(input)) return;
+      if (input.dataset.tmBirthPasteEnabled === '1') return;
+
+      input.dataset.tmBirthPasteEnabled = '1';
+      input.addEventListener('paste', handleBirthDatePaste, true);
+    });
+  }
+
+  /* =========================
+     OCULTAR ELEMENTOS (CSS)
+  ========================= */
+  function injectLayoutCSS() {
+    if (document.getElementById('tm-klingo-layout-style')) return;
+
+    const style = document.createElement('style');
+    style.id = 'tm-klingo-layout-style';
+    style.textContent = `
+      .tm-hidden-by-script {
+        display: none !important;
       }
+
+      .tm-layout-host {
+        margin-top: 8px;
+        margin-bottom: 8px;
+      }
+
+      .tm-top-layout {
+        display: grid;
+        grid-template-columns: 509px 230px;
+        column-gap: 34px;
+        row-gap: 0;
+        align-items: start;
+        max-width: 773px;
+      }
+
+      .tm-left-panel,
+      .tm-right-panel {
+        min-width: 0;
+      }
+
+      .tm-grid-row {
+        display: grid;
+        gap: 10px 12px;
+        margin-bottom: 10px;
+        align-items: end;
+      }
+
+      .tm-row-name-birth {
+        grid-template-columns: 342px 155px;
+      }
+
+      .tm-row-cpf-sexo-origem {
+        grid-template-columns: 155px 175px 155px;
+      }
+
+      .tm-row-cel-email {
+        grid-template-columns: 155px 342px;
+      }
+
+      .tm-right-panel .tm-field-slot + .tm-field-slot {
+        margin-top: 16px;
+      }
+
+      .tm-right-panel {
+        width: 230px !important;
+      }
+
+      [data-slot="carteira"] {
+        width: 230px !important;
+      }
+
+      [data-slot="validade"] {
+        width: 182px !important;
+        margin-top: -2px !important;
+      }
+
+      [data-slot="validade"] .form-control,
+      [data-slot="validade"] .input-group {
+        width: 182px !important;
+        max-width: 182px !important;
+      }
+
+      .tm-field-slot,
+      .tm-field-slot > .col,
+      .tm-field-slot > .form-group,
+      .tm-field-slot > [class*="col-"] {
+        min-width: 0;
+      }
+
+      .tm-field-slot > .col,
+      .tm-field-slot > [class*="col-"] {
+        flex: unset !important;
+        max-width: none !important;
+        width: 100% !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+
+      .tm-field-slot .form-group {
+        margin-bottom: 0 !important;
+      }
+
+      .tm-field-slot .input-group,
+      .tm-field-slot .form-control,
+      .tm-field-slot select,
+      .tm-field-slot input,
+      .tm-field-slot textarea {
+        width: 100% !important;
+      }
+
+      .tm-cell-input-group .input-group-prepend,
+      .tm-cell-input-group .dropdown {
+        display: none !important;
+      }
+
+      .tm-cell-input-group .form-control {
+        border-top-left-radius: .25rem !important;
+        border-bottom-left-radius: .25rem !important;
+      }
+
+      .tm-observation-layout {
+        display: grid;
+        grid-template-columns: 509px 230px;
+        column-gap: 34px;
+        row-gap: 0;
+        align-items: start;
+        margin-top: 6px;
+        margin-bottom: 10px;
+        max-width: 773px;
+      }
+
+      .tm-observation-layout .tm-field-slot > .col,
+      .tm-observation-layout .tm-field-slot > [class*="col-"] {
+        width: 100% !important;
+      }
+
+      .tm-observation-textarea {
+        min-height: 68px !important;
+        height: 68px !important;
+        padding: 8px 10px !important;
+        line-height: 1.35 !important;
+        resize: none !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+        white-space: pre-wrap !important;
+        overflow-y: auto !important;
+        vertical-align: top !important;
+      }
+
+      .tm-observation-layout .input-group {
+        align-items: flex-start !important;
+      }
+
+      [data-slot="observacao-select"] {
+        width: 230px !important;
+        max-width: 230px !important;
+      }
+
+      [data-slot="observacao-select"] .input-group {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+      }
+
+      [data-slot="observacao-select"] .input-group-prepend {
+        flex: 0 0 auto !important;
+        margin-right: 0 !important;
+      }
+
+      [data-slot="observacao-select"] .input-group-text {
+        width: 40px !important;
+        min-width: 40px !important;
+        justify-content: center !important;
+      }
+
+      [data-slot="observacao-select"] select.form-control {
+        width: calc(230px - 40px) !important;
+        max-width: calc(230px - 40px) !important;
+      }
+
+      .tm-observation-layout select.form-control,
+      .tm-observation-layout .input-group-text {
+        height: 38px !important;
+      }
+
+
+      .tm-klingo-root > .modal-body > div:first-child > div:first-child .list-group-item-success {
+        max-width: 773px !important;
+      }
+
+      .tm-klingo-root .tab-content > .tab-pane > .mt-3.mb-5,
+      .tm-klingo-root .tab-content > .tab-pane > div.mt-3.mb-5 {
+        max-width: 773px !important;
+      }
+
+      .tm-klingo-root input[placeholder="Adicionar procedimento..."] {
+        max-width: 773px !important;
+      }
+
+      .tm-klingo-root .modal-footer {
+        justify-content: flex-start !important;
+        padding-left: 20px !important;
+        gap: 8px !important;
+      }
+      .tm-klingo-root .form-row.tm-hidden-original-row,
+      .tm-klingo-root .row.tm-hidden-original-row,
+      .tm-klingo-root .tm-hidden-original-row {
+        display: none !important;
+      }
+
+      @media (max-width: 1200px) {
+        .tm-top-layout,
+        .tm-observation-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .tm-row-name-birth,
+        .tm-row-cpf-sexo-origem,
+        .tm-row-cel-email {
+          grid-template-columns: 1fr;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function hideElement(el) {
+    if (!el) return;
+    el.dataset.tmHiddenByScript = '1';
+    el.classList.add('tm-hidden-by-script');
+    el.style.setProperty('display', 'none', 'important');
+  }
+
+  function hideOriginalRow(el) {
+    if (!el) return;
+    el.classList.add('tm-hidden-original-row');
+    el.style.setProperty('display', 'none', 'important');
+  }
+
+  function getSchedulingModalRoot() {
+    const modalContents = document.querySelectorAll('.modal-content');
+
+    for (const modal of modalContents) {
+      const text = norm(modal.innerText || modal.textContent || '');
+      if (!text) continue;
+
+      const hasDadosPessoais = text.includes('Dados Pessoais');
+      const hasOrigemPacientes = text.includes('ORIGEM DE PACIENTES') || text.includes('Origem de Pacientes');
+      const hasConfirmar = text.includes('Confirmar');
+
+      if (hasDadosPessoais && hasOrigemPacientes && hasConfirmar) {
+        modal.classList.add('tm-klingo-root');
+        return modal;
+      }
+    }
+
+    return null;
+  }
+
+  function findTextSmall(root, labelText) {
+    const smalls = root.querySelectorAll('small');
+    for (const small of smalls) {
+      if (norm(small.textContent) === labelText) return small;
     }
     return null;
   }
 
-  function findUnreadBadgeWrapper(el, card) {
-    let node = el;
-    while (node && node !== card) {
-      if (!(node instanceof HTMLElement)) break;
-      if (
-        node.classList.contains('inline-flex') ||
-        node.classList.contains('rounded-full') ||
-        node.classList.contains('border')
-      ) {
-        return node;
-      }
-      node = node.parentElement;
-    }
-    return el;
+  function findColByLabel(root, labelText) {
+    const label = findTextSmall(root, labelText);
+    if (!label) return null;
+
+    return (
+      label.closest('.col') ||
+      label.closest('[class*="col-"]') ||
+      label.closest('.form-group') ||
+      label.parentElement
+    );
   }
 
-  function ensureUnreadIcon(card) {
-    let icon = card.querySelector(`[${UNREAD_ICON_ATTR}="true"]`);
-    if (icon) return icon;
-
-    icon = document.createElement('div');
-    icon.setAttribute(UNREAD_ICON_ATTR, 'true');
-
-    const img = document.createElement('img');
-    img.src = UNREAD_ICON_URL;
-    img.alt = 'Mensagem não lida';
-    img.draggable = false;
-
-    icon.appendChild(img);
-    card.appendChild(icon);
-    return icon;
+  function getCadTemp(root) {
+    return root.querySelector('#cadTemp');
   }
 
-  function removeUnreadIcon(card) {
-    card.removeAttribute(UNREAD_CARD_ATTR);
-    card.querySelector(`[${UNREAD_ICON_ATTR}="true"]`)?.remove();
+  function getCadTempTitleRow(root) {
+    const cadTemp = getCadTemp(root);
+    if (!cadTemp) return null;
+
+    const title = findTextSmall(cadTemp, 'Dados Pessoais');
+    return title ? title.closest('.border-bottom') : null;
   }
 
-  function applyUnreadMessageIndicators() {
-    for (const card of getAllTicketListCards()) {
-      const unreadBadge = findUnreadBadgeElement(card);
-
-      if (!unreadBadge) {
-        removeUnreadIcon(card);
-        continue;
-      }
-
-      const wrapper = findUnreadBadgeWrapper(unreadBadge, card);
-      hideElement(wrapper instanceof HTMLElement ? wrapper : unreadBadge);
-
-      card.setAttribute(UNREAD_CARD_ATTR, 'true');
-      ensureUnreadIcon(card);
-    }
+  function getObservationTitleRow(root) {
+    const title = findTextSmall(root, 'Observação');
+    return title ? title.closest('.border-bottom') : null;
   }
 
+  function getObservationFieldsRow(root) {
+    const titleRow = getObservationTitleRow(root);
+    if (!titleRow) return null;
 
-  /* ========================================================================
-   * SEÇÃO: FORMATAÇÃO DO TELEFONE EM DADOS DO ATENDIMENTO
-   * Remove o 55 e exibe no padrão (DD) 99999-9999 sem flicker.
-   * ====================================================================== */
-  function stripCountryCode55(value) {
-    const digits = String(value || '').replace(/\D/g, '');
-    if (digits.startsWith('55') && digits.length > 11) {
-      return digits.slice(2);
-    }
-    return digits;
-  }
-
-  function formatBrazilPhoneDisplay(value) {
-    const digits = stripCountryCode55(value);
-
-    if (digits.length === 11) {
-      return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-    }
-
-    if (digits.length === 10) {
-      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
-    }
-
-    return digits || String(value || '');
-  }
-
-  function formatAttendanceDataPhones() {
-    for (const card of findAttendanceDataCards()) {
-      const phoneValueEl = findValueSpanByLabel(card, 'Telefone');
-      if (!phoneValueEl) continue;
-
-      const currentText = normalizeText(phoneValueEl.textContent);
-      if (!currentText) continue;
-
-      const formatted = formatBrazilPhoneDisplay(currentText);
-      if (formatted && currentText !== formatted) {
-        phoneValueEl.textContent = formatted;
-      }
-
-      phoneValueEl.setAttribute(PHONE_FORMATTED_ATTR, 'true');
-    }
-  }
-
-  function formatBrazilCpfDisplay(value) {
-    const digits = String(value || '').replace(/\D/g, '');
-    if (digits.length !== 11) return String(value || '');
-    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
-  }
-
-  function formatAttendanceDataCpfs() {
-    for (const card of findAttendanceDataCards()) {
-      const cpfValueEl = findValueSpanByLabel(card, 'CPF');
-      if (!cpfValueEl) continue;
-
-      const currentText = normalizeText(cpfValueEl.textContent);
-      if (!currentText) continue;
-
-      const formatted = formatBrazilCpfDisplay(currentText);
-      if (formatted && currentText !== formatted) {
-        cpfValueEl.textContent = formatted;
-      }
-    }
-  }
-
-  /* ========================================================================
-   * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
-   * ====================================================================== */
-  function findAttendanceDataCards() {
-    const result = [];
-    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border, div.rounded-lg.bg-card.border.border-border')) {
-      const title = card.querySelector('h3');
-      if (title && normalizeText(title.textContent) === 'Dados do Atendimento') {
-        result.push(card);
-      }
-    }
-    return result;
-  }
-
-  function ensureCopyToast(card) {
-    let toast = card.querySelector(`[${COPY_TOAST_ATTR}="true"]`);
-    if (toast) return toast;
-
-    toast = document.createElement('div');
-    toast.setAttribute(COPY_TOAST_ATTR, 'true');
-
-    const img = document.createElement('img');
-    img.src = COPY_ICON_URL;
-    img.alt = 'Copiado';
-    img.draggable = false;
-
-    toast.appendChild(img);
-    card.appendChild(toast);
-    return toast;
-  }
-
-  function showCopyToast(card) {
-    const toast = ensureCopyToast(card);
-    if (toast._tmHideTimer) clearTimeout(toast._tmHideTimer);
-
-    toast.setAttribute(COPY_TOAST_VISIBLE_ATTR, 'true');
-    toast._tmHideTimer = setTimeout(() => {
-      toast.removeAttribute(COPY_TOAST_VISIBLE_ATTR);
-    }, 1300);
-  }
-
-  function findValueSpanByLabel(card, labelText) {
-    for (const label of card.querySelectorAll('span')) {
-      if (normalizeText(label.textContent) !== labelText) continue;
-
-      let row = label.parentElement;
-      while (row && row !== card) {
-        const valueSpan = row.querySelector('span.text-sm.text-card-foreground.break-words.min-w-0');
-        if (valueSpan) return valueSpan;
-        row = row.parentElement;
-      }
+    let current = titleRow.nextElementSibling;
+    while (current) {
+      if (current.classList && current.classList.contains('form-row')) return current;
+      current = current.nextElementSibling;
     }
     return null;
   }
 
-  function bindCopyOnClick(valueEl, card, fieldName) {
-    if (!valueEl || valueEl.getAttribute(COPY_VALUE_ATTR) === 'true') return;
-
-    valueEl.setAttribute(COPY_VALUE_ATTR, 'true');
-    valueEl.setAttribute('title', `Clique para copiar ${fieldName.toLowerCase()}`);
-
-    valueEl.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const text = normalizeText(valueEl.textContent);
-      if (!text) return;
-
-      if (await copyTextToClipboard(text)) {
-        showCopyToast(card);
-      }
-    });
+  function getOriginTitleRow(root) {
+    const title = findTextSmall(root, 'ORIGEM DE PACIENTES');
+    return title ? title.closest('.border-bottom') : null;
   }
 
-  function enableCopyOnAttendanceData() {
-    for (const card of findAttendanceDataCards()) {
-      card.setAttribute(COPY_CARD_ATTR, 'true');
-      ensureCopyToast(card);
+  function findOriginFieldBlock(root) {
+    return findColByLabel(root, 'Origem de Pacientes');
+  }
 
-      for (const [labelText, fieldName] of [
-        ['Nome', 'nome'],
-        ['Nascimento', 'nascimento'],
-        ['CPF', 'cpf'],
-        ['Telefone', 'telefone']
-      ]) {
-        const valueEl = findValueSpanByLabel(card, labelText);
-        if (valueEl) bindCopyOnClick(valueEl, card, fieldName);
-      }
+  function findMaterialBlock(root) {
+    const input = root.querySelector('input[placeholder="Incluir material, medicamento ou taxa..."]');
+    if (!input) return null;
+
+    return (
+      input.closest('.form-group.mb-3.mb-1') ||
+      input.closest('.form-group') ||
+      input.closest('.autocomplete') ||
+      input.closest('.input-group') ||
+      input.parentElement
+    );
+  }
+
+  function ensureHost(parent, id, className) {
+    let host = parent.querySelector('#' + id);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = id;
+      host.className = className;
+      parent.appendChild(host);
+    }
+    return host;
+  }
+
+  function moveToSlot(slot, block) {
+    if (!slot || !block) return;
+    slot.innerHTML = '';
+    slot.appendChild(block);
+  }
+
+  function ensureObservationTextarea(block) {
+    if (!block) return;
+
+    const input = block.querySelector('input.form-control[type="text"]');
+    if (!input) return;
+
+    let textarea = block.querySelector('textarea.tm-observation-textarea');
+    if (!textarea) {
+      textarea = document.createElement('textarea');
+      textarea.className = `${input.className} tm-observation-textarea`;
+      textarea.placeholder = input.placeholder || '';
+      textarea.autocomplete = input.autocomplete || 'off';
+      textarea.value = input.value || '';
+      textarea.rows = 4;
+      input.insertAdjacentElement('afterend', textarea);
+      input.classList.add('tm-hidden-by-script');
+      input.style.setProperty('display', 'none', 'important');
+
+      const syncToInput = () => {
+        setNativeInputValue(input, textarea.value);
+        dispatchEvents(input, ['input', 'change']);
+      };
+
+      textarea.addEventListener('input', syncToInput, true);
+      textarea.addEventListener('change', syncToInput, true);
+      textarea.addEventListener('blur', () => {
+        syncToInput();
+        dispatchEvents(input, ['blur']);
+      }, true);
+    }
+
+    if (textarea.value !== (input.value || '')) {
+      textarea.value = input.value || '';
     }
   }
 
-  /* ========================================================================
-   * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
-   * ====================================================================== */
-  function applySelectedFeatures() {
-    hideSelectedCards();
-    applyDateToMessages();
-    reorganizeAgentArea();
-    moveCreatedDateToHeader();
-    applyUppercaseToCustomerNames();
-    formatAttendanceDataPhones();
-    formatAttendanceDataCpfs();
-    enableCopyOnAttendanceData();
-    styleQueueTagsInTicketCards();
-    applyUnreadMessageIndicators();
-  }
+  function hideCellCountryButton(celularBlock) {
+    if (!celularBlock) return;
+    const inputGroup = celularBlock.querySelector('.input-group');
+    if (!inputGroup) return;
+    inputGroup.classList.add('tm-cell-input-group');
 
-  function applyFastAntiFlickerPass() {
-    hideSelectedCards();
-    moveCreatedDateToHeader();
-    applyUppercaseToCustomerNames();
-    formatAttendanceDataPhones();
-    formatAttendanceDataCpfs();
-    styleQueueTagsInTicketCards();
-    applyUnreadMessageIndicators();
-  }
-
-  function reapplyAll() {
-    applyCSS();
-    applySelectedFeatures();
-  }
-
-  /* ========================================================================
-   * SEÇÃO: INFRAESTRUTURA SPA / REAPLICAÇÃO
-   * Mantida apenas para estabilidade em re-renderizações.
-   * ====================================================================== */
-  let observer = null;
-  let tabPassTimers = [];
-
-  function scheduleTabAntiFlickerPasses() {
-    tabPassTimers.forEach(clearTimeout);
-    tabPassTimers = [];
-
-    applyFastAntiFlickerPass();
-
-    for (const delay of [0, 50, 120, 220]) {
-      tabPassTimers.push(window.setTimeout(applyFastAntiFlickerPass, delay));
+    const prepend = inputGroup.querySelector('.input-group-prepend');
+    if (prepend) {
+      prepend.classList.add('tm-hidden-by-script');
+      prepend.style.setProperty('display', 'none', 'important');
     }
   }
 
-  function isSidePanelTabTrigger(target) {
-    if (!(target instanceof Element)) return false;
+  function reorganizeSchedulingModalLayout() {
+    const root = getSchedulingModalRoot();
+    if (!root) return;
 
-    const trigger = target.closest('button, a, [role="tab"]');
-    if (!trigger) return false;
+    const cadTemp = getCadTemp(root);
+    const cadTempTitleRow = getCadTempTitleRow(root);
+    const observationTitleRow = getObservationTitleRow(root);
+    const observationFieldsRow = getObservationFieldsRow(root);
+    const originTitleRow = getOriginTitleRow(root);
 
-    const text = normalizeText(trigger.textContent).toLowerCase();
-    return ['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs'].includes(text);
-  }
+    if (!cadTemp || !cadTempTitleRow || !observationTitleRow || !observationFieldsRow) return;
 
-  function startObserver() {
-    const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
-    if (!target) return;
+    const sexoBlock = findColByLabel(cadTemp, 'Sexo');
+    const birthBlock = findColByLabel(cadTemp, 'Data de Nascimento');
+    const celularBlock = findColByLabel(cadTemp, 'Celular');
+    const emailBlock = findColByLabel(cadTemp, 'e-mail');
+    const nomeBlock = findColByLabel(cadTemp, 'Nome');
+    const cpfBlock = findColByLabel(cadTemp, 'CPF');
+    const carteiraBlock = findColByLabel(cadTemp, 'No. da Carteira do Plano');
+    const validadeBlock = findColByLabel(cadTemp, 'Validade da Carteira');
+    const origemBlock = findOriginFieldBlock(root);
 
-    if (observer) observer.disconnect();
+    const observationInputBlock = observationFieldsRow.children[0] || null;
+    const observationSelectBlock = observationFieldsRow.children[1] || null;
 
-    observer = new MutationObserver(() => {
-      applyFastAntiFlickerPass();
-      debounce(reapplyAll, 80);
+    if (
+      !sexoBlock ||
+      !birthBlock ||
+      !celularBlock ||
+      !emailBlock ||
+      !nomeBlock ||
+      !cpfBlock ||
+      !carteiraBlock ||
+      !validadeBlock ||
+      !origemBlock ||
+      !observationInputBlock ||
+      !observationSelectBlock
+    ) {
+      return;
+    }
+
+    const topLayoutHost = ensureHost(cadTemp, 'tm-top-layout-host', 'tm-layout-host');
+    cadTemp.insertBefore(topLayoutHost, cadTempTitleRow.nextSibling);
+
+    topLayoutHost.innerHTML = `
+      <div class="tm-top-layout">
+        <div class="tm-left-panel">
+          <div class="tm-grid-row tm-row-name-birth">
+            <div class="tm-field-slot" data-slot="nome"></div>
+            <div class="tm-field-slot" data-slot="nascimento"></div>
+          </div>
+          <div class="tm-grid-row tm-row-cpf-sexo-origem">
+            <div class="tm-field-slot" data-slot="cpf"></div>
+            <div class="tm-field-slot" data-slot="sexo"></div>
+            <div class="tm-field-slot" data-slot="origem"></div>
+          </div>
+          <div class="tm-grid-row tm-row-cel-email">
+            <div class="tm-field-slot" data-slot="celular"></div>
+            <div class="tm-field-slot" data-slot="email"></div>
+          </div>
+        </div>
+        <div class="tm-right-panel">
+          <div class="tm-field-slot" data-slot="carteira"></div>
+          <div class="tm-field-slot" data-slot="validade"></div>
+        </div>
+      </div>
+    `;
+
+    moveToSlot(topLayoutHost.querySelector('[data-slot="nome"]'), nomeBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="nascimento"]'), birthBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="cpf"]'), cpfBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="sexo"]'), sexoBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="origem"]'), origemBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="celular"]'), celularBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="email"]'), emailBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="carteira"]'), carteiraBlock);
+    moveToSlot(topLayoutHost.querySelector('[data-slot="validade"]'), validadeBlock);
+
+    const observationHostParent = observationTitleRow.parentElement;
+    const observationHost = ensureHost(observationHostParent, 'tm-observation-layout-host', 'tm-observation-layout');
+    if (observationTitleRow.nextSibling !== observationHost) {
+      observationHostParent.insertBefore(observationHost, observationTitleRow.nextSibling);
+    }
+
+    observationHost.innerHTML = `
+      <div class="tm-field-slot" data-slot="observacao-input"></div>
+      <div class="tm-field-slot" data-slot="observacao-select"></div>
+    `;
+
+    moveToSlot(observationHost.querySelector('[data-slot="observacao-input"]'), observationInputBlock);
+    moveToSlot(observationHost.querySelector('[data-slot="observacao-select"]'), observationSelectBlock);
+
+    cadTemp.querySelectorAll('.form-row').forEach((row) => hideOriginalRow(row));
+    hideOriginalRow(observationFieldsRow);
+
+    if (originTitleRow) {
+      const originMainRow = originTitleRow.closest('.row');
+      hideOriginalRow(originTitleRow);
+      hideOriginalRow(originMainRow);
+    }
+
+    [
+      sexoBlock,
+      birthBlock,
+      celularBlock,
+      emailBlock,
+      nomeBlock,
+      cpfBlock,
+      carteiraBlock,
+      validadeBlock,
+      origemBlock,
+      observationInputBlock,
+      observationSelectBlock
+    ].forEach((block) => {
+      block.style.setProperty('width', '100%', 'important');
+      block.style.setProperty('max-width', 'none', 'important');
+      block.style.setProperty('padding-left', '0', 'important');
+      block.style.setProperty('padding-right', '0', 'important');
+      block.style.setProperty('flex', 'unset', 'important');
     });
 
-    observer.observe(target, { childList: true, subtree: true });
-
-    document.addEventListener('click', (event) => {
-      if (!isSidePanelTabTrigger(event.target)) return;
-      scheduleTabAntiFlickerPasses();
-    }, true);
+    hideCellCountryButton(celularBlock);
+    ensureObservationTextarea(observationInputBlock);
   }
 
-  function init() {
-    applyFastAntiFlickerPass();
-    reapplyAll();
-    stopCardBootMask();
-    ensureSidebarStartsCollapsed();
-    finalizeAgentBootMask();
-    log(`iniciado v${SCRIPT_VERSION}`);
+  function hideAppointmentModalFields() {
+    const root = getSchedulingModalRoot();
+    if (!root) return;
+
+    const telefoneBlock = findColByLabel(root, 'Telefone');
+    const nomeSocialBlock = findColByLabel(root, 'Nome Social');
+    const materialBlock = findMaterialBlock(root);
+
+    hideElement(telefoneBlock);
+    hideElement(nomeSocialBlock);
+    hideElement(materialBlock);
   }
 
-  function boot() {
-    init();
-    startObserver();
+  function burstUpdateLite() {
+    updateModalTitle();
+    enableBirthDatePaste();
+    injectLayoutCSS();
+    hideAppointmentModalFields();
+    reorganizeSchedulingModalLayout();
   }
 
-  startCardBootMask();
-  startSidebarBootMask();
-  startAgentBootMask();
-  scheduleAgentBootFailsafe();
-  applyCSS();
+  function burstUpdate() {
+    burstUpdateLite();
+    setTimeout(burstUpdateLite, 100);
+    setTimeout(burstUpdateLite, 250);
+    setTimeout(burstUpdateLite, 500);
+    setTimeout(burstUpdateLite, 900);
+    setTimeout(burstUpdateLite, 1400);
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#minutoModal')) {
+      captureSelectionFromClick(e.target, false);
+    }
+    burstUpdate();
+  }, true);
+
+  document.addEventListener('focusin', () => {
+    enableBirthDatePaste();
+    hideAppointmentModalFields();
+    reorganizeSchedulingModalLayout();
+  }, true);
+
+  document.addEventListener('contextmenu', async (e) => {
+    if (!e.target.closest('#minutoModal')) return;
+
+    const targetEl = e.target.closest('button, a, div, span');
+    if (!targetEl || !isTimeButton(targetEl)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const changed = captureSelectionFromClick(e.target, true);
+    if (!changed) return;
+
+    burstUpdate();
+
+    setTimeout(async () => {
+      await copyText(getCopyText(), targetEl);
+    }, 200);
+  }, true);
+
+  const observer = new MutationObserver(() => {
+    applyLoginIndicator();
+    enableBirthDatePaste();
+    burstUpdateLite();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+
+  function initScript() {
+    applyLoginIndicator();
+    enableBirthDatePaste();
+    injectLayoutCSS();
+    hideAppointmentModalFields();
+    reorganizeSchedulingModalLayout();
+
+    burstUpdate();
+
+    setTimeout(() => {
+      enableBirthDatePaste();
+      burstUpdate();
+    }, 300);
+
+    setTimeout(() => {
+      enableBirthDatePaste();
+      burstUpdate();
+    }, 1000);
+
+    setTimeout(() => {
+      enableBirthDatePaste();
+      burstUpdate();
+    }, 2000);
+
+    console.log('[TM] script inicializado', location.href);
+  }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
+    document.addEventListener('DOMContentLoaded', initScript);
   } else {
-    boot();
+    initScript();
   }
 
-  window.addEventListener('load', init);
-  window.addEventListener('pageshow', init);
+  window.addEventListener('load', initScript);
+  window.addEventListener('pageshow', initScript);
+  window.addEventListener('focus', () => {
+    applyLoginIndicator();
+    enableBirthDatePaste();
+    burstUpdate();
+  });
+  window.addEventListener('hashchange', initScript);
+
+  setInterval(() => {
+    if (location.hostname.endsWith('klingo.app')) {
+      applyLoginIndicator();
+      enableBirthDatePaste();
+      burstUpdate();
+    }
+  }, 1500);
 })();

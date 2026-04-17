@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.3
+// @version      5.4
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.3';
+  const SCRIPT_VERSION = '5.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -184,7 +184,7 @@
       margin-left: 6px !important;
       padding: 2px 6px !important;
       border-radius: 999px !important;
-      font-size: 10px !important;
+      font-size: inherit !important;
       line-height: 1.1 !important;
       font-weight: 600 !important;
       background-color: #dbeafe !important;

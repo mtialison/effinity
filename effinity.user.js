@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.2
+// @version      5.3
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.2';
+  const SCRIPT_VERSION = '5.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -173,6 +173,25 @@
       object-fit: contain !important;
       pointer-events: none !important;
       user-select: none !important;
+    }
+
+
+    /* ── Badge de idade ao lado da data de nascimento ─────────────────── */
+    span.text-sm.text-card-foreground.break-words.min-w-0[data-tm-birth-age]::after {
+      content: attr(data-tm-birth-age);
+      display: inline-flex !important;
+      align-items: center !important;
+      margin-left: 6px !important;
+      padding: 2px 6px !important;
+      border-radius: 999px !important;
+      font-size: 10px !important;
+      line-height: 1.1 !important;
+      font-weight: 600 !important;
+      background-color: #dbeafe !important;
+      color: #1d4ed8 !important;
+      border: 1px solid #93c5fd !important;
+      white-space: nowrap !important;
+      vertical-align: middle !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */

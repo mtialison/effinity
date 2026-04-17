@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.9
-// @description  layout
-// @author       alison
+// @version      5.0
+// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
+// @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.9';
+  const SCRIPT_VERSION = '5.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -64,6 +64,18 @@
    * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
+
+    .tm-age-badge {
+      display:inline-block;
+      margin-left:6px;
+      padding:2px 6px;
+      font-size:10px;
+      border-radius:6px;
+      background: rgba(59,130,246,0.15);
+      color:#60a5fa;
+      font-weight:500;
+    }
+
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -1340,7 +1352,7 @@
 
     const yearsLabel = age === 1 ? 'ano' : 'anos';
     const baseDate = `${match[1]}/${match[2]}/${match[3]}`;
-    return `${baseDate} - ${age} ${yearsLabel}`;
+    return `${baseDate} <span class="tm-age-badge">${age} ${yearsLabel}</span>`;
   }
 
   function formatAttendanceDataBirthDates() {
@@ -1359,7 +1371,7 @@
 
       const formatted = formatBirthDateWithAgeDisplay(baseDate);
       if (formatted && currentText !== formatted) {
-        birthValueEl.textContent = formatted;
+        birthValueEl.innerHTML = formatted;
       }
     }
   }

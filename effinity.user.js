@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      5.1
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.0';
+  const SCRIPT_VERSION = '5.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -64,18 +64,27 @@
    * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
-
-    .tm-age-badge {
-      display:inline-block;
-      margin-left:6px;
-      padding:2px 6px;
-      font-size:10px;
-      border-radius:6px;
-      background: rgba(59,130,246,0.15);
-      color:#60a5fa;
-      font-weight:500;
+    /* ── Badge de idade ao lado da data de nascimento ─────────────── */
+    .tm-birthdate-wrap {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      flex-wrap: wrap !important;
     }
 
+    .tm-age-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      padding: 2px 6px !important;
+      border-radius: 999px !important;
+      font-size: 10px !important;
+      line-height: 1.1 !important;
+      font-weight: 600 !important;
+      background-color: #dbeafe !important;
+      color: #1d4ed8 !important;
+      border: 1px solid #93c5fd !important;
+      white-space: nowrap !important;
+    }
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -1342,17 +1351,21 @@
   function formatBirthDateWithAgeDisplay(value) {
     const textValue = normalizeText(value);
     const match = textValue.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-    if (!match) return textValue;
+    if (!match) return null;
 
     const day = Number(match[1]);
     const month = Number(match[2]);
     const year = Number(match[3]);
     const age = calculateAgeFromBirthDate(day, month, year);
-    if (age === null) return textValue;
+    if (age === null) return null;
 
     const yearsLabel = age === 1 ? 'ano' : 'anos';
     const baseDate = `${match[1]}/${match[2]}/${match[3]}`;
-    return `${baseDate} <span class="tm-age-badge">${age} ${yearsLabel}</span>`;
+
+    return {
+      baseDate,
+      ageText: `${age} ${yearsLabel}`
+    };
   }
 
   function formatAttendanceDataBirthDates() {
@@ -1371,7 +1384,7 @@
 
       const formatted = formatBirthDateWithAgeDisplay(baseDate);
       if (formatted && currentText !== formatted) {
-        birthValueEl.innerHTML = formatted;
+        birthValueEl.textContent = formatted;
       }
     }
   }

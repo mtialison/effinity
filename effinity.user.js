@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.1
+// @version      5.2
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,12 +18,13 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.1';
+  const SCRIPT_VERSION = '5.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
   const DATE_APPLIED_ATTR = 'data-tm-date-applied';
   const UPPERCASE_NAME_ATTR = 'data-tm-uppercase-name';
+  const BIRTH_AGE_ATTR = 'data-tm-birth-age';
   const PHONE_FORMATTED_ATTR = 'data-tm-phone-formatted';
 
   const AGENT_AREA_ATTR = 'data-tm-agent-area';
@@ -64,27 +65,6 @@
    * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
-    /* ── Badge de idade ao lado da data de nascimento ─────────────── */
-    .tm-birthdate-wrap {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 6px !important;
-      flex-wrap: wrap !important;
-    }
-
-    .tm-age-badge {
-      display: inline-flex !important;
-      align-items: center !important;
-      padding: 2px 6px !important;
-      border-radius: 999px !important;
-      font-size: 10px !important;
-      line-height: 1.1 !important;
-      font-weight: 600 !important;
-      background-color: #dbeafe !important;
-      color: #1d4ed8 !important;
-      border: 1px solid #93c5fd !important;
-      white-space: nowrap !important;
-    }
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -1373,18 +1353,17 @@
       const birthValueEl = findValueSpanByLabel(card, 'Nascimento');
       if (!birthValueEl) continue;
 
-      const currentText = normalizeText(birthValueEl.textContent);
+      const currentText = normalizeText(birthValueEl.getAttribute('data-tm-copy-raw') || birthValueEl.textContent);
       if (!currentText) continue;
 
-      const match = currentText.match(/^(\d{2}\/\d{2}\/\d{4})/);
-      if (!match) continue;
+      const formatted = formatBirthDateWithAgeDisplay(currentText);
+      if (!formatted) continue;
 
-      const baseDate = match[1];
-      birthValueEl.setAttribute('data-tm-copy-raw', baseDate);
+      birthValueEl.setAttribute('data-tm-copy-raw', formatted.baseDate);
+      birthValueEl.setAttribute(BIRTH_AGE_ATTR, formatted.ageText);
 
-      const formatted = formatBirthDateWithAgeDisplay(baseDate);
-      if (formatted && currentText !== formatted) {
-        birthValueEl.textContent = formatted;
+      if (normalizeText(birthValueEl.textContent) !== formatted.baseDate) {
+        birthValueEl.textContent = formatted.baseDate;
       }
     }
   }

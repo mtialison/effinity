@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.7
-// @description  layout envenenado
-// @author       alison
+// @version      4.8
+// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
+// @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.7';
+  const SCRIPT_VERSION = '4.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1306,6 +1306,58 @@
     }
   }
 
+  function calculateAgeFromBirthDate(day, month, year) {
+    const birthDate = new Date(year, month - 1, day);
+    if (
+      Number.isNaN(birthDate.getTime()) ||
+      birthDate.getFullYear() !== year ||
+      birthDate.getMonth() !== month - 1 ||
+      birthDate.getDate() !== day
+    ) {
+      return null;
+    }
+
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    const hasHadBirthdayThisYear =
+      today.getMonth() > (month - 1) ||
+      (today.getMonth() === (month - 1) && today.getDate() >= day);
+
+    if (!hasHadBirthdayThisYear) age -= 1;
+    return age >= 0 ? age : null;
+  }
+
+  function formatBirthDateWithAgeDisplay(value) {
+    const textValue = normalizeText(value);
+    const match = textValue.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!match) return textValue;
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const age = calculateAgeFromBirthDate(day, month, year);
+    if (age === null) return textValue;
+
+    const yearsLabel = age === 1 ? 'ano' : 'anos';
+    const baseDate = `${match[1]}/${match[2]}/${match[3]}`;
+    return `${baseDate} - ${age} ${yearsLabel}`;
+  }
+
+  function formatAttendanceDataBirthDates() {
+    for (const card of findAttendanceDataCards()) {
+      const birthValueEl = findValueSpanByLabel(card, 'Nascimento');
+      if (!birthValueEl) continue;
+
+      const currentText = normalizeText(birthValueEl.textContent);
+      if (!currentText) continue;
+
+      const formatted = formatBirthDateWithAgeDisplay(currentText);
+      if (formatted && currentText !== formatted) {
+        birthValueEl.textContent = formatted;
+      }
+    }
+  }
+
   /* ========================================================================
    * SEÇÃO: COPIAR DADOS DO ATENDIMENTO + TOAST (18 + 19 mescladas)
    * ====================================================================== */
@@ -1408,6 +1460,7 @@
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
     formatAttendanceDataCpfs();
+    formatAttendanceDataBirthDates();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
@@ -1419,6 +1472,7 @@
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
     formatAttendanceDataCpfs();
+    formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
   }

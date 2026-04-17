@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      4.8
-// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
-// @author       Alison + ChatGPT
+// @version      4.9
+// @description  layout
+// @author       alison
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '4.8';
+  const SCRIPT_VERSION = '4.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1351,7 +1351,13 @@
       const currentText = normalizeText(birthValueEl.textContent);
       if (!currentText) continue;
 
-      const formatted = formatBirthDateWithAgeDisplay(currentText);
+      const match = currentText.match(/^(\d{2}\/\d{2}\/\d{4})/);
+      if (!match) continue;
+
+      const baseDate = match[1];
+      birthValueEl.setAttribute('data-tm-copy-raw', baseDate);
+
+      const formatted = formatBirthDateWithAgeDisplay(baseDate);
       if (formatted && currentText !== formatted) {
         birthValueEl.textContent = formatted;
       }
@@ -1423,7 +1429,7 @@
       event.preventDefault();
       event.stopPropagation();
 
-      const text = normalizeText(valueEl.textContent);
+      const text = normalizeText(valueEl.getAttribute('data-tm-copy-raw') || valueEl.textContent);
       if (!text) return;
 
       if (await copyTextToClipboard(text)) {

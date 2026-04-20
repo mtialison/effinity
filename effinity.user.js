@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.5
-// @description  layout update
-// @author       alison
+// @version      5.6
+// @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
+// @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.5';
+  const SCRIPT_VERSION = '5.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1372,16 +1372,31 @@
       const birthValueEl = findValueSpanByLabel(card, 'Nascimento');
       if (!birthValueEl) continue;
 
-      const currentText = normalizeText(birthValueEl.getAttribute('data-tm-copy-raw') || birthValueEl.textContent);
-      if (!currentText) continue;
+      const visibleText = normalizeText(birthValueEl.textContent);
+      const visibleMatch = visibleText.match(/^(\d{2}\/\d{2}\/\d{4})/);
+      const rawAttr = normalizeText(birthValueEl.getAttribute('data-tm-copy-raw') || '');
+      const sourceDate = visibleMatch ? visibleMatch[1] : rawAttr;
 
-      const formatted = formatBirthDateWithAgeDisplay(currentText);
-      if (!formatted) continue;
+      if (!sourceDate) {
+        birthValueEl.removeAttribute(BIRTH_AGE_ATTR);
+        birthValueEl.removeAttribute('data-tm-copy-raw');
+        continue;
+      }
+
+      const formatted = formatBirthDateWithAgeDisplay(sourceDate);
+      if (!formatted) {
+        birthValueEl.removeAttribute(BIRTH_AGE_ATTR);
+        birthValueEl.setAttribute('data-tm-copy-raw', sourceDate);
+        if (visibleText !== sourceDate) {
+          birthValueEl.textContent = sourceDate;
+        }
+        continue;
+      }
 
       birthValueEl.setAttribute('data-tm-copy-raw', formatted.baseDate);
       birthValueEl.setAttribute(BIRTH_AGE_ATTR, formatted.ageText);
 
-      if (normalizeText(birthValueEl.textContent) !== formatted.baseDate) {
+      if (visibleText !== formatted.baseDate) {
         birthValueEl.textContent = formatted.baseDate;
       }
     }

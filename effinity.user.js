@@ -1,9 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.8
+// @version      5.9
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -14,21 +13,11 @@
 (function () {
   'use strict';
 
-  const IS_AGENT_ROUTE = location.pathname.startsWith('/whatsapp/agent');
-  if (!IS_AGENT_ROUTE) {
-    window.addEventListener('popstate', () => {
-      if (location.pathname.startsWith('/whatsapp/agent')) {
-        location.reload();
-      }
-    });
-    return;
-  }
-
   /* ========================================================================
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.8';
+  const SCRIPT_VERSION = '5.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';

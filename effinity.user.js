@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      7.4
+// @version      7.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '7.4';
+  const SCRIPT_VERSION = '7.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -226,7 +226,7 @@
       font-size: 18px !important;
       line-height: 1 !important;
       font-weight: 700 !important;
-      opacity: 0.24 !important;
+      opacity: 0 !important;
       cursor: pointer !important;
       z-index: 8 !important;
       transition: opacity 0.16s ease, transform 0.16s ease !important;

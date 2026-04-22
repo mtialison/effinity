@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      7.7
+// @version      7.8
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/*
+// @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '7.7';
+  const SCRIPT_VERSION = '7.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -244,6 +244,20 @@
     div.p-2.border.rounded.cursor-pointer[${FAVORITE_ACTIVE_ATTR}="true"]:hover [${FAVORITE_STAR_ATTR}="true"] {
       opacity: 1 !important;
       transform: scale(1) !important;
+    }
+
+    
+    /* ── Ajuste fino badge idade ─────────────────────────────────────── */
+    [data-tm-birthdate] {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+
+    [data-tm-birthdate] span:last-child {
+      display: inline-flex !important;
+      align-items: center !important;
+      line-height: 1 !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */

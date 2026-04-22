@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.6
+// @version      5.7
 // @description  Layout otimizado e funções selecionadas para o painel WhatsApp Agent
 // @author       Alison + ChatGPT
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.6';
+  const SCRIPT_VERSION = '5.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1311,6 +1311,29 @@
     return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
   }
 
+  
+
+  function formatAttendanceDataEmails() {
+    for (const card of findAttendanceDataCards()) {
+      const emailValueEl = findValueSpanByLabel(card, 'E-mail');
+      if (!emailValueEl) continue;
+
+      const currentText = normalizeText(emailValueEl.textContent);
+      if (!currentText) continue;
+
+      const upper = currentText.toUpperCase();
+
+      // valor original para cópia
+      emailValueEl.setAttribute('data-tm-copy-raw', currentText);
+
+      if (currentText !== upper) {
+        emailValueEl.textContent = upper;
+      }
+
+      bindCopyOnClick(emailValueEl, 'email');
+    }
+  }
+
   function formatAttendanceDataCpfs() {
     for (const card of findAttendanceDataCards()) {
       const cpfValueEl = findValueSpanByLabel(card, 'CPF');
@@ -1503,7 +1526,9 @@
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
+    formatAttendanceDataEmails();
     formatAttendanceDataCpfs();
+    formatAttendanceDataEmails();
     formatAttendanceDataBirthDates();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
@@ -1515,7 +1540,9 @@
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
     formatAttendanceDataPhones();
+    formatAttendanceDataEmails();
     formatAttendanceDataCpfs();
+    formatAttendanceDataEmails();
     formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();

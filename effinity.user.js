@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      7.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '7.0';
+  const SCRIPT_VERSION = '7.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -35,6 +35,8 @@
   const AGENT_TOP_ATTR = 'data-tm-agent-top-row';
   const AGENT_BOTTOM_ATTR = 'data-tm-agent-bottom-row';
   const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
+  const AGENT_ACTIONS_MIRROR_ATTR = 'data-tm-agent-actions-mirror';
+  const AGENT_PROXY_ATTR = 'data-tm-agent-proxy';
 
   const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
   const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
@@ -222,6 +224,56 @@
 
     [${AGENT_TOP_ATTR}="true"] {
       display: none !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: nowrap !important;
+      gap: 24px !important;
+      min-height: 40px !important;
+      margin: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
+      display: flex !important;
+      align-items: center !important;
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      flex-wrap: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
+      margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 16px !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] > * {
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_PROXY_ATTR}="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
 
     [${AGENT_BOTTOM_ATTR}="true"] {
@@ -989,7 +1041,109 @@
     stopAgentBootMask();
   }
 
+  function createAgentProxyButton(sourceButton, proxyType) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute(AGENT_PROXY_ATTR, 'true');
+    button.setAttribute('data-tm-agent-proxy-type', proxyType);
+    button.className = sourceButton.className || '';
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      sourceButton.click();
+    }, true);
+
+    return button;
+  }
+
+  function ensureAgentActionsMirror(bottomRow) {
+    let mirror = bottomRow.querySelector(`[${AGENT_ACTIONS_MIRROR_ATTR}="true"]`);
+    if (!mirror) {
+      mirror = document.createElement('div');
+      mirror.setAttribute(AGENT_ACTIONS_MIRROR_ATTR, 'true');
+      bottomRow.appendChild(mirror);
+    }
+    return mirror;
+  }
+
+  function ensureAgentLeftWrapperSafe(bottomRow) {
+    let left = bottomRow.querySelector(':scope > .tm-agent-left');
+    if (!left) {
+      left = document.createElement('div');
+      left.className = 'tm-agent-left';
+      const nodes = Array.from(bottomRow.childNodes);
+      for (const node of nodes) {
+        if (
+          node.nodeType === Node.ELEMENT_NODE &&
+          node.getAttribute &&
+          (
+            node.getAttribute(AGENT_ACTIONS_MIRROR_ATTR) === 'true' ||
+            node.classList?.contains('tm-agent-left')
+          )
+        ) {
+          continue;
+        }
+        left.appendChild(node);
+      }
+      bottomRow.insertBefore(left, bottomRow.firstChild);
+    }
+    return left;
+  }
+
+  function syncAgentProxyButton(mirror, sourceButton, proxyType) {
+    if (!sourceButton) return;
+
+    let proxy = mirror.querySelector(`[data-tm-agent-proxy-type="${proxyType}"]`);
+    if (!proxy) {
+      proxy = createAgentProxyButton(sourceButton, proxyType);
+      mirror.appendChild(proxy);
+    }
+
+    if (proxy.className !== sourceButton.className) {
+      proxy.className = sourceButton.className;
+    }
+
+    const sourceHtml = sourceButton.innerHTML;
+    if (proxy.innerHTML !== sourceHtml) {
+      proxy.innerHTML = sourceHtml;
+    }
+
+    proxy.setAttribute('title', sourceButton.getAttribute('title') || '');
+    proxy.setAttribute('aria-label', sourceButton.getAttribute('aria-label') || sourceButton.textContent.trim() || proxyType);
+    proxy.disabled = !!sourceButton.disabled;
+  }
+
   function reorganizeAgentArea() {
+    const agentContainer = findAgentAreaContainer();
+    if (!agentContainer) return;
+
+    const topRow = findTopRow(agentContainer);
+    const bottomRow = findBottomRow(agentContainer, topRow);
+    if (!topRow || !bottomRow) {
+      finalizeAgentBootMask();
+      return;
+    }
+
+    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
+    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
+    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
+
+    ensureAgentLeftWrapperSafe(bottomRow);
+    const mirror = ensureAgentActionsMirror(bottomRow);
+
+    const offlineControl = findOfflineControl(topRow);
+    const offlineButton = offlineControl?.querySelector?.('button') || (offlineControl?.tagName === 'BUTTON' ? offlineControl : null);
+    const sendHsmButton = findSendHsmButton(topRow);
+
+    if (offlineButton) {
+      syncAgentProxyButton(mirror, offlineButton, 'status');
+    }
+
+    if (sendHsmButton) {
+      syncAgentProxyButton(mirror, sendHsmButton, 'hsm');
+    }
+
     finalizeAgentBootMask();
   }
 

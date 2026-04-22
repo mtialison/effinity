@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      5.9
+// @version      6.9
 // @author       alison
+// @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -13,11 +14,15 @@
 (function () {
   'use strict';
 
+  if (!location.pathname.startsWith('/whatsapp/agent')) {
+    return;
+  }
+
   /* ========================================================================
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '5.9';
+  const SCRIPT_VERSION = '6.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1076,9 +1081,12 @@
       if (!createdSpan) continue;
 
       const host = ensureCreatedHost(targetBlock);
-      if (createdSpan.parentElement !== host) {
-        createdSpan.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
-        host.appendChild(createdSpan);
+      const createdSignature = normalizeText(createdSpan.textContent);
+
+      if (host.getAttribute('data-tm-created-signature') !== createdSignature) {
+        host.innerHTML = createdSpan.innerHTML;
+        host.setAttribute('data-tm-created-signature', createdSignature);
+        host.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
       }
 
       if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {

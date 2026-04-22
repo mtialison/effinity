@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      7.5
+// @version      7.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '7.5';
+  const SCRIPT_VERSION = '7.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -235,9 +235,14 @@
       -webkit-user-select: none !important;
     }
 
-    div.p-2.border.rounded.cursor-pointer:hover [${FAVORITE_STAR_ATTR}="true"],
+    div.p-2.border.rounded.cursor-pointer:hover [${FAVORITE_STAR_ATTR}="true"] {
+      opacity: 0.55 !important;
+      transform: scale(0.95) !important;
+    }
+
     [${FAVORITE_ACTIVE_ATTR}="true"] [${FAVORITE_STAR_ATTR}="true"] {
       opacity: 1 !important;
+      transform: scale(1) !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */

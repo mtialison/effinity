@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.2
+// @version      6.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.2';
+  const SCRIPT_VERSION = '6.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -789,11 +789,7 @@
     button.setAttribute(FAVORITE_STAR_ATTR, 'true');
     button.setAttribute('aria-label', 'Favoritar ticket');
     button.setAttribute('title', 'Favoritar ticket');
-    button.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 3.6l2.56 5.19 5.73.83-4.15 4.05.98 5.71L12 16.7l-5.12 2.68.98-5.71L3.71 9.62l5.73-.83L12 3.6z"></path>
-      </svg>
-    `;
+    button.textContent = '☆';
     return button;
   }
 
@@ -808,6 +804,7 @@
     if (star) {
       star.setAttribute('aria-pressed', isActive ? 'true' : 'false');
       star.setAttribute('title', isActive ? 'Remover favorito' : 'Favoritar ticket');
+      star.textContent = isActive ? '★' : '☆';
     }
   }
 

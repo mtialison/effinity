@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      7.7
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/
+// @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js

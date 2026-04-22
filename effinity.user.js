@@ -1,9 +1,8 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.4
+// @version      6.5
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -18,7 +17,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.4';
+  const SCRIPT_VERSION = '6.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -45,11 +44,6 @@
 
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
-
-  const FAVORITE_STORAGE_KEY = 'tm-effinity-favorites';
-  const FAVORITE_ATTR = 'data-tm-favorite';
-  const FAVORITE_ACTIVE_ATTR = 'data-tm-favorite-active';
-  const FAVORITE_STAR_ATTR = 'data-tm-favorite-star';
 
   const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
   const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
@@ -729,116 +723,6 @@
         console.error(`[${SCRIPT_NAME}] falha ao copiar`, fallbackError);
         return false;
       }
-    }
-  }
-
-
-  function loadFavoriteTickets() {
-    try {
-      const raw = localStorage.getItem(FAVORITE_STORAGE_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ler favoritos`, error);
-      return {};
-    }
-  }
-
-  function saveFavoriteTickets(map) {
-    try {
-      localStorage.setItem(FAVORITE_STORAGE_KEY, JSON.stringify(map));
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao salvar favoritos`, error);
-    }
-  }
-
-  function getTicketProtocol(card) {
-    if (!card) return '';
-
-    for (const el of card.querySelectorAll('span')) {
-      const text = normalizeText(el.textContent);
-      if (/^CS\d+/i.test(text)) return text;
-    }
-
-    return '';
-  }
-
-  function isFavoriteTicket(protocol) {
-    if (!protocol) return false;
-    const favorites = loadFavoriteTickets();
-    return !!favorites[protocol];
-  }
-
-  function setFavoriteTicket(protocol, isActive) {
-    if (!protocol) return;
-    const favorites = loadFavoriteTickets();
-
-    if (isActive) {
-      favorites[protocol] = true;
-    } else {
-      delete favorites[protocol];
-    }
-
-    saveFavoriteTickets(favorites);
-  }
-
-  function createFavoriteStar() {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute(FAVORITE_STAR_ATTR, 'true');
-    button.setAttribute('aria-label', 'Favoritar ticket');
-    button.setAttribute('title', 'Favoritar ticket');
-    button.textContent = '☆';
-    return button;
-  }
-
-  function updateFavoriteCardState(card, protocol) {
-    if (!card || !protocol) return;
-
-    const isActive = isFavoriteTicket(protocol);
-    card.setAttribute(FAVORITE_ATTR, protocol);
-    card.setAttribute(FAVORITE_ACTIVE_ATTR, isActive ? 'true' : 'false');
-
-    const star = card.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
-    if (star) {
-      star.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-      star.setAttribute('title', isActive ? 'Remover favorito' : 'Favoritar ticket');
-      star.textContent = isActive ? '★' : '☆';
-    }
-  }
-
-  function ensureFavoriteStar(card) {
-    const protocol = getTicketProtocol(card);
-    if (!protocol) return;
-
-    const topRow = card.querySelector(':scope > div.flex.items-center.justify-between.mb-1');
-    if (!topRow) return;
-
-    let star = topRow.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
-    if (!star) {
-      star = createFavoriteStar();
-      topRow.appendChild(star);
-
-      star.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const currentProtocol = card.getAttribute(FAVORITE_ATTR) || getTicketProtocol(card);
-        if (!currentProtocol) return;
-
-        const nextState = !isFavoriteTicket(currentProtocol);
-        setFavoriteTicket(currentProtocol, nextState);
-        updateFavoriteCardState(card, currentProtocol);
-      }, true);
-    }
-
-    updateFavoriteCardState(card, protocol);
-  }
-
-  function applyFavoriteStarsToTickets() {
-    for (const card of getAllTicketListCards()) {
-      ensureFavoriteStar(card);
     }
   }
 
@@ -1648,7 +1532,6 @@
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
-    applyFavoriteStarsToTickets();
   }
 
   function applyFastAntiFlickerPass() {
@@ -1662,7 +1545,6 @@
     formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
-    applyFavoriteStarsToTickets();
   }
 
   function reapplyAll() {

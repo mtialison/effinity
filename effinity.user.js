@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.9
+// @version      7.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.9';
+  const SCRIPT_VERSION = '7.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -354,6 +354,23 @@
     }
 
     [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
+      width: 12px !important;
+      height: 12px !important;
+      flex-shrink: 0 !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] span.flex.items-center.gap-1 {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin: 0 !important;
+      color: inherit !important;
+      font-size: inherit !important;
+      line-height: inherit !important;
+      white-space: nowrap !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] svg {
       width: 12px !important;
       height: 12px !important;
       flex-shrink: 0 !important;
@@ -973,41 +990,6 @@
   }
 
   function reorganizeAgentArea() {
-
-    const agentContainer = findAgentAreaContainer();
-    if (!agentContainer) return;
-
-    agentContainer.setAttribute(AGENT_AREA_ATTR, 'true');
-
-    const topRow = findTopRow(agentContainer);
-    const bottomRow = findBottomRow(agentContainer, topRow);
-    if (!topRow || !bottomRow) return;
-
-    topRow.setAttribute(AGENT_TOP_ATTR, 'true');
-    bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
-
-    const offlineControl = findOfflineControl(topRow);
-    const sendHsmButton = findSendHsmButton(topRow);
-    const actionsWrapper = ensureAgentActionsWrapper(bottomRow);
-
-    ensureAgentLeftWrapper(bottomRow);
-
-    if (offlineControl && offlineControl.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(offlineControl);
-    }
-
-    if (sendHsmButton && sendHsmButton.parentElement !== actionsWrapper) {
-      actionsWrapper.appendChild(sendHsmButton);
-    }
-
-    for (const btn of topRow.querySelectorAll('button')) {
-      const text = normalizeText(btn.textContent);
-      if (text.includes('Enviar HSM') || text.includes('Offline') || text.includes('Online')) continue;
-      btn.classList.add('tm-agent-hidden');
-    }
-
-    topRow.querySelectorAll('.w-px').forEach(el => el.classList.add('tm-agent-hidden'));
-
     finalizeAgentBootMask();
   }
 
@@ -1084,9 +1066,11 @@
       const createdSignature = normalizeText(createdSpan.textContent);
 
       if (host.getAttribute('data-tm-created-signature') !== createdSignature) {
-        host.innerHTML = createdSpan.innerHTML;
+        host.innerHTML = '';
+        const clone = createdSpan.cloneNode(true);
+        clone.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
+        host.appendChild(clone);
         host.setAttribute('data-tm-created-signature', createdSignature);
-        host.setAttribute(TICKET_CREATED_MOVED_ATTR, 'true');
       }
 
       if (infoRow.getAttribute(TICKET_INFO_ROW_HIDDEN_ATTR) !== 'true') {

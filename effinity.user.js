@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.1
+// @version      6.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -18,7 +18,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.1';
+  const SCRIPT_VERSION = '6.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -815,10 +815,13 @@
     const protocol = getTicketProtocol(card);
     if (!protocol) return;
 
-    let star = card.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
+    const topRow = card.querySelector(':scope > div.flex.items-center.justify-between.mb-1');
+    if (!topRow) return;
+
+    let star = topRow.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
     if (!star) {
       star = createFavoriteStar();
-      card.appendChild(star);
+      topRow.appendChild(star);
 
       star.addEventListener('click', (event) => {
         event.preventDefault();

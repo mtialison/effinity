@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      6.7
+// @version      6.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -14,11 +14,21 @@
 (function () {
   'use strict';
 
+  const IS_AGENT_ROUTE = location.pathname.startsWith('/whatsapp/agent');
+  if (!IS_AGENT_ROUTE) {
+    window.addEventListener('popstate', () => {
+      if (location.pathname.startsWith('/whatsapp/agent')) {
+        location.reload();
+      }
+    });
+    return;
+  }
+
   /* ========================================================================
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '6.7';
+  const SCRIPT_VERSION = '6.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -59,21 +69,6 @@
   const CARD_BOOT_ATTR = 'data-tm-card-booting';
   const AGENT_BOOT_STYLE_ID = 'tm-effinity-agent-boot-style';
   const AGENT_BOOT_ATTR = 'data-tm-agent-booting';
-
-  const ROOT_MATCH_PATH = '/';
-  const AGENT_MATCH_PREFIX = '/whatsapp/agent';
-
-  function isAgentRoute() {
-    return window.location.pathname.startsWith(AGENT_MATCH_PREFIX);
-  }
-
-  function isRootRoute() {
-    return window.location.pathname === ROOT_MATCH_PATH;
-  }
-
-  function shouldRunEnhancementsNow() {
-    return isAgentRoute();
-  }
 
   /* ========================================================================
    * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
@@ -1629,69 +1624,18 @@
     startObserver();
   }
 
-  let tmStartedForAgentRoute = false;
+  startCardBootMask();
+  startSidebarBootMask();
+  startAgentBootMask();
+  scheduleAgentBootFailsafe();
+  applyCSS();
 
-  function startForAgentRoute() {
-    if (!shouldRunEnhancementsNow() || tmStartedForAgentRoute) return;
-    tmStartedForAgentRoute = true;
-
-    startCardBootMask();
-    startSidebarBootMask();
-    startAgentBootMask();
-    scheduleAgentBootFailsafe();
-    applyCSS();
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', boot, { once: true });
-    } else {
-      boot();
-    }
-
-    window.addEventListener('load', init);
-    window.addEventListener('pageshow', init);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
   }
 
-  function watchRouteUntilAgent() {
-    if (shouldRunEnhancementsNow()) {
-      startForAgentRoute();
-      return;
-    }
-
-    let lastPath = window.location.pathname;
-    const check = () => {
-      const currentPath = window.location.pathname;
-      if (currentPath !== lastPath) {
-        lastPath = currentPath;
-        if (shouldRunEnhancementsNow()) {
-          startForAgentRoute();
-        }
-      }
-    };
-
-    const originalPushState = history.pushState;
-    history.pushState = function (...args) {
-      const result = originalPushState.apply(this, args);
-      check();
-      return result;
-    };
-
-    const originalReplaceState = history.replaceState;
-    history.replaceState = function (...args) {
-      const result = originalReplaceState.apply(this, args);
-      check();
-      return result;
-    };
-
-    window.addEventListener('popstate', check);
-    window.addEventListener('hashchange', check);
-
-    const routeInterval = window.setInterval(() => {
-      check();
-      if (tmStartedForAgentRoute) {
-        clearInterval(routeInterval);
-      }
-    }, 300);
-  }
-
-  watchRouteUntilAgent();
+  window.addEventListener('load', init);
+  window.addEventListener('pageshow', init);
 })();

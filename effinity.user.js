@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         effinity 5.8
+// @name         effinity
 // @namespace    http://tampermonkey.net/
 // @version      5.8
 // @author       alison

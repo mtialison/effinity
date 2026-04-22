@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      7.2
+// @version      7.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '7.2';
+  const SCRIPT_VERSION = '7.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -37,10 +37,6 @@
   const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
   const AGENT_ACTIONS_MIRROR_ATTR = 'data-tm-agent-actions-mirror';
   const AGENT_PROXY_ATTR = 'data-tm-agent-proxy';
-  const FAVORITE_STORAGE_KEY = 'tm-effinity-favorites';
-  const FAVORITE_ATTR = 'data-tm-favorite';
-  const FAVORITE_ACTIVE_ATTR = 'data-tm-favorite-active';
-  const FAVORITE_STAR_ATTR = 'data-tm-favorite-star';
 
   const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
   const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
@@ -202,42 +198,6 @@
       border: 1px solid #93c5fd !important;
       white-space: nowrap !important;
       vertical-align: middle !important;
-    }
-
-    /* ── Favoritos (estrela) ───────────────────────────────────────────── */
-    div.p-2.border.rounded.cursor-pointer {
-      position: relative !important;
-    }
-
-    [${FAVORITE_STAR_ATTR}="true"] {
-      position: absolute !important;
-      top: 8px !important;
-      right: 8px !important;
-      width: 22px !important;
-      height: 22px !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      background: transparent !important;
-      border: 0 !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      color: #facc15 !important;
-      font-size: 18px !important;
-      line-height: 1 !important;
-      font-weight: 700 !important;
-      opacity: 0.18 !important;
-      cursor: pointer !important;
-      z-index: 8 !important;
-      transition: opacity 0.16s ease, transform 0.16s ease !important;
-      transform: scale(1) !important;
-      user-select: none !important;
-      -webkit-user-select: none !important;
-    }
-
-    div.p-2.border.rounded.cursor-pointer:hover [${FAVORITE_STAR_ATTR}="true"],
-    [${FAVORITE_ACTIVE_ATTR}="true"] [${FAVORITE_STAR_ATTR}="true"] {
-      opacity: 1 !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -853,114 +813,6 @@
       node = node.parentElement;
     }
     return null;
-  }
-
-
-  function loadFavoriteTickets() {
-    try {
-      const raw = localStorage.getItem(FAVORITE_STORAGE_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ler favoritos`, error);
-      return {};
-    }
-  }
-
-  function saveFavoriteTickets(favorites) {
-    try {
-      localStorage.setItem(FAVORITE_STORAGE_KEY, JSON.stringify(favorites));
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao salvar favoritos`, error);
-    }
-  }
-
-  function getTicketProtocol(card) {
-    if (!card) return '';
-
-    for (const el of card.querySelectorAll('span')) {
-      const text = normalizeText(el.textContent);
-      if (/^CS\d+/i.test(text)) return text;
-    }
-
-    return '';
-  }
-
-  function isFavoriteTicket(protocol) {
-    if (!protocol) return false;
-    const favorites = loadFavoriteTickets();
-    return !!favorites[protocol];
-  }
-
-  function setFavoriteTicket(protocol, isActive) {
-    if (!protocol) return;
-    const favorites = loadFavoriteTickets();
-
-    if (isActive) {
-      favorites[protocol] = true;
-    } else {
-      delete favorites[protocol];
-    }
-
-    saveFavoriteTickets(favorites);
-  }
-
-  function createFavoriteStarButton() {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute(FAVORITE_STAR_ATTR, 'true');
-    button.setAttribute('aria-label', 'Favoritar ticket');
-    button.setAttribute('title', 'Favoritar ticket');
-    button.textContent = '☆';
-    return button;
-  }
-
-  function updateFavoriteCardState(card, protocol) {
-    if (!card || !protocol) return;
-
-    const isActive = isFavoriteTicket(protocol);
-    card.setAttribute(FAVORITE_ATTR, protocol);
-    card.setAttribute(FAVORITE_ACTIVE_ATTR, isActive ? 'true' : 'false');
-
-    const star = card.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
-    if (!star) return;
-
-    star.textContent = isActive ? '★' : '☆';
-    star.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    star.setAttribute('title', isActive ? 'Remover favorito' : 'Favoritar ticket');
-    star.setAttribute('aria-label', isActive ? 'Remover favorito' : 'Favoritar ticket');
-  }
-
-  function ensureFavoriteStar(card) {
-    const protocol = getTicketProtocol(card);
-    if (!protocol) return;
-
-    let star = card.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
-    if (!star) {
-      star = createFavoriteStarButton();
-      card.appendChild(star);
-
-      star.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const currentProtocol = card.getAttribute(FAVORITE_ATTR) || getTicketProtocol(card);
-        if (!currentProtocol) return;
-
-        const nextState = !isFavoriteTicket(currentProtocol);
-        setFavoriteTicket(currentProtocol, nextState);
-        updateFavoriteCardState(card, currentProtocol);
-      }, true);
-    }
-
-    updateFavoriteCardState(card, protocol);
-  }
-
-  function applyFavoriteStarsToTickets() {
-    for (const card of getAllTicketListCards()) {
-      ensureFavoriteStar(card);
-    }
   }
 
   /* ========================================================================

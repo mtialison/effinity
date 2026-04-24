@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.2
+// @version      8.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.2';
+  const SCRIPT_VERSION = '8.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1054,79 +1054,74 @@
   /* ========================================================================
    * SEÇÃO: DATA NAS MENSAGENS DO CHAT (23)
    * ====================================================================== */
+  function getTodayDateLabel() {
+    return new Date().toLocaleDateString('pt-BR');
+  }
+
+  function getYesterdayDateLabel() {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return date.toLocaleDateString('pt-BR');
+  }
+
+  function normalizeMessageTimeText(text) {
+    return normalizeText(text).replace(/\s+/g, ' ');
+  }
+
+  function getMessageDatePrefixForDisplay(originalText) {
+    const text = normalizeMessageTimeText(originalText);
+    const today = getTodayDateLabel();
+    const yesterday = getYesterdayDateLabel();
+
+    if (!text) return '';
+
+    if (/^Hoje\s+\d{1,2}:\d{2}$/i.test(text)) return 'Hoje';
+    if (/^Ontem\s+\d{1,2}:\d{2}$/i.test(text)) return 'Ontem';
+
+    const fullDateMatch = text.match(/^(\d{2}\/\d{2}\/\d{4})\s+\d{1,2}:\d{2}$/);
+    if (fullDateMatch) {
+      if (fullDateMatch[1] === today) return 'Hoje';
+      if (fullDateMatch[1] === yesterday) return 'Ontem';
+      return fullDateMatch[1];
+    }
+
+    return 'Hoje';
+  }
+
+  function formatMessageTimestampDisplay(originalText) {
+    const text = normalizeMessageTimeText(originalText);
+    if (!text) return '';
+
+    const timeMatch = text.match(/(\d{1,2}:\d{2})$/);
+    if (!timeMatch) return text;
+
+    const time = timeMatch[1];
+    const prefix = getMessageDatePrefixForDisplay(text);
+
+    return prefix ? `${prefix} ${time}` : time;
+  }
+
   function applyDateToMessages() {
-    const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
-    if (!chatContainer) return;
+    const candidates = Array.from(document.querySelectorAll('span, div')).filter(el => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el.children.length > 0) return false;
 
-    const currentYear = new Date().getFullYear();
-    const monthMap = {
-      janeiro: 0, fevereiro: 1, março: 2, marco: 2,
-      abril: 3, maio: 4, junho: 5, julho: 6,
-      agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
-    };
+      const text = normalizeMessageTimeText(el.textContent);
+      return (
+        /^\d{1,2}:\d{2}$/.test(text) ||
+        /^Hoje\s+\d{1,2}:\d{2}$/i.test(text) ||
+        /^Ontem\s+\d{1,2}:\d{2}$/i.test(text) ||
+        /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(text)
+      );
+    });
 
-    function parseDaySeparator(text) {
-      const normalized = normalizeText(text).toLowerCase();
-      const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
-      if (!match) return null;
+    for (const el of candidates) {
+      const currentText = normalizeMessageTimeText(el.textContent);
+      const formatted = formatMessageTimestampDisplay(currentText);
 
-      const day = Number(match[1]);
-      const monthIndex = monthMap[match[2]];
-      if (Number.isNaN(day) || monthIndex === undefined) return null;
-      return new Date(currentYear, monthIndex, day);
-    }
+      if (!formatted || currentText === formatted) continue;
 
-    function formatDate(date) {
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      return `${day}/${month}/${date.getFullYear()}`;
-    }
-
-    function timeToMinutes(timeText) {
-      const match = timeText.match(/^(\d{2}):(\d{2})$/);
-      if (!match) return null;
-      return Number(match[1]) * 60 + Number(match[2]);
-    }
-
-    let activeDate = null;
-    let lastMinutes = null;
-
-    for (const child of Array.from(chatContainer.children)) {
-      if (!(child instanceof HTMLElement)) continue;
-
-      const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
-      if (daySeparator) {
-        const parsedDate = parseDaySeparator(daySeparator.textContent);
-        if (parsedDate) {
-          activeDate = parsedDate;
-          lastMinutes = null;
-        }
-        continue;
-      }
-
-      const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
-      if (!timeSpan) continue;
-
-      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
-      if (!timeMatch) continue;
-
-      const timeText = timeMatch[1];
-      const minutes = timeToMinutes(timeText);
-      if (minutes === null) continue;
-
-      if (!activeDate) {
-        activeDate = new Date();
-        activeDate.setHours(0, 0, 0, 0);
-      }
-
-      if (lastMinutes !== null && minutes < lastMinutes) {
-        activeDate = new Date(activeDate);
-        activeDate.setDate(activeDate.getDate() + 1);
-      }
-
-      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
-      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
-      lastMinutes = minutes;
+      el.textContent = formatted;
     }
   }
 

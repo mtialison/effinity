@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.6
+// @version      8.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.6';
+  const SCRIPT_VERSION = '8.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -37,6 +37,7 @@
   const AGENT_ACTIONS_ATTR = 'data-tm-agent-actions-row';
   const AGENT_ACTIONS_MIRROR_ATTR = 'data-tm-agent-actions-mirror';
   const AGENT_PROXY_ATTR = 'data-tm-agent-proxy';
+  const AGENT_VERSION_ATTR = 'data-tm-agent-version';
   const FAVORITE_STORAGE_KEY = 'tm-effinity-favorites';
   const FAVORITE_ATTR = 'data-tm-favorite';
   const FAVORITE_ACTIVE_ATTR = 'data-tm-favorite-active';
@@ -513,6 +514,23 @@
     [${AGENT_ACTIONS_MIRROR_ATTR}="true"] {
       order: 99 !important;
       margin-left: auto !important;
+    }
+
+    [${AGENT_VERSION_ATTR}="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: 0.75rem !important;
+      line-height: 1rem !important;
+      font-weight: 600 !important;
+      color: rgb(134 239 172) !important;
+      white-space: nowrap !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      pointer-events: none !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
     }
 
     [${AGENT_PROXY_ATTR}="true"] {
@@ -1530,6 +1548,22 @@
     proxy.disabled = !!sourceButton.disabled;
   }
 
+  function ensureAgentVersionBadge(agentContainer, bottomRow, mirror) {
+    if (!agentContainer || !bottomRow) return;
+
+    let badge = bottomRow.querySelector(`[${AGENT_VERSION_ATTR}="true"]`);
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.setAttribute(AGENT_VERSION_ATTR, 'true');
+      bottomRow.insertBefore(badge, mirror || null);
+    }
+
+    const versionText = `🧪 V${SCRIPT_VERSION}`;
+    if (badge.textContent !== versionText) {
+      badge.textContent = versionText;
+    }
+  }
+
   function reorganizeAgentArea() {
     const agentContainer = findAgentAreaContainer();
     if (!agentContainer) return;
@@ -1546,6 +1580,7 @@
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
 
     const mirror = ensureAgentActionsMirror(bottomRow);
+    ensureAgentVersionBadge(agentContainer, bottomRow, mirror);
 
     const offlineControl = findOfflineControl(topRow);
     const offlineButton = offlineControl?.querySelector?.('button') || (offlineControl?.tagName === 'BUTTON' ? offlineControl : null);

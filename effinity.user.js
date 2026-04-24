@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.1
+// @version      8.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.1';
+  const SCRIPT_VERSION = '8.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -318,6 +318,21 @@
 
     [${AGENT_ACTIONS_MIRROR_ATTR}="true"] > * {
       flex-shrink: 0 !important;
+    }
+
+
+    /* ── Área do Agente: ordem visual fixa sem mover nós do app ───────── */
+    [${AGENT_BOTTOM_ATTR}="true"] > span.text-xs.text-muted-foreground.mr-2 {
+      order: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > div:not([${AGENT_ACTIONS_MIRROR_ATTR}="true"]) {
+      order: 1 !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] {
+      order: 99 !important;
+      margin-left: auto !important;
     }
 
     [${AGENT_PROXY_ATTR}="true"] {

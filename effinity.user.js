@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.3
+// @version      8.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.3';
+  const SCRIPT_VERSION = '8.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1054,51 +1054,8 @@
   /* ========================================================================
    * SEÇÃO: DATA NAS MENSAGENS DO CHAT (23)
    * ====================================================================== */
-  function getTodayDateLabel() {
-    return new Date().toLocaleDateString('pt-BR');
-  }
-
-  function getYesterdayDateLabel() {
-    const date = new Date();
-    date.setDate(date.getDate() - 1);
-    return date.toLocaleDateString('pt-BR');
-  }
-
   function normalizeMessageTimeText(text) {
     return normalizeText(text).replace(/\s+/g, ' ');
-  }
-
-  function getMessageDatePrefixForDisplay(originalText) {
-    const text = normalizeMessageTimeText(originalText);
-    const today = getTodayDateLabel();
-    const yesterday = getYesterdayDateLabel();
-
-    if (!text) return '';
-
-    if (/^Hoje\s+\d{1,2}:\d{2}$/i.test(text)) return 'Hoje';
-    if (/^Ontem\s+\d{1,2}:\d{2}$/i.test(text)) return 'Ontem';
-
-    const fullDateMatch = text.match(/^(\d{2}\/\d{2}\/\d{4})\s+\d{1,2}:\d{2}$/);
-    if (fullDateMatch) {
-      if (fullDateMatch[1] === today) return 'Hoje';
-      if (fullDateMatch[1] === yesterday) return 'Ontem';
-      return fullDateMatch[1];
-    }
-
-    return 'Hoje';
-  }
-
-  function formatMessageTimestampDisplay(originalText) {
-    const text = normalizeMessageTimeText(originalText);
-    if (!text) return '';
-
-    const timeMatch = text.match(/(\d{1,2}:\d{2})$/);
-    if (!timeMatch) return text;
-
-    const time = timeMatch[1];
-    const prefix = getMessageDatePrefixForDisplay(text);
-
-    return prefix ? `${prefix} ${time}` : time;
   }
 
   function applyDateToMessages() {
@@ -1107,8 +1064,8 @@
       if (el.children.length > 0) return false;
 
       const text = normalizeMessageTimeText(el.textContent);
+
       return (
-        /^\d{1,2}:\d{2}$/.test(text) ||
         /^Hoje\s+\d{1,2}:\d{2}$/i.test(text) ||
         /^Ontem\s+\d{1,2}:\d{2}$/i.test(text) ||
         /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(text)
@@ -1117,11 +1074,10 @@
 
     for (const el of candidates) {
       const currentText = normalizeMessageTimeText(el.textContent);
-      const formatted = formatMessageTimestampDisplay(currentText);
 
-      if (!formatted || currentText === formatted) continue;
-
-      el.textContent = formatted;
+      if (/^Hoje\s+\d{1,2}:\d{2}$/i.test(currentText)) continue;
+      if (/^Ontem\s+\d{1,2}:\d{2}$/i.test(currentText)) continue;
+      if (/^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(currentText)) continue;
     }
   }
 

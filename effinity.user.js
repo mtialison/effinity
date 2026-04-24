@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.4
+// @version      8.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.4';
+  const SCRIPT_VERSION = '8.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1058,26 +1058,94 @@
     return normalizeText(text).replace(/\s+/g, ' ');
   }
 
-  function applyDateToMessages() {
-    const candidates = Array.from(document.querySelectorAll('span, div')).filter(el => {
+  function parseMessageTimeToMinutes(text) {
+    const match = normalizeMessageTimeText(text).match(/^(?:Hoje\s+|Ontem\s+|\d{2}\/\d{2}\/\d{4}\s+)?(\d{1,2}):(\d{2})$/i);
+    if (!match) return null;
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+    return hours * 60 + minutes;
+  }
+
+  function formatMessageDateLabel(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const target = new Date(date);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+
+    if (diffDays === 0) return 'Hoje';
+    if (diffDays === 1) return 'Ontem';
+
+    return target.toLocaleDateString('pt-BR');
+  }
+
+  function findMessageBubbleFromTime(timeEl) {
+    return timeEl.closest('.max-w-\\[75\\%\\].rounded-2xl') ||
+      timeEl.closest('div.max-w-\\[75\\%\\]') ||
+      timeEl.closest('div.rounded-2xl');
+  }
+
+  function getVisibleMessageBubbles() {
+    const timeNodes = Array.from(document.querySelectorAll('span.text-\\[10px\\].opacity-60')).filter(el => {
       if (!(el instanceof HTMLElement)) return false;
-      if (el.children.length > 0) return false;
-
       const text = normalizeMessageTimeText(el.textContent);
-
-      return (
-        /^Hoje\s+\d{1,2}:\d{2}$/i.test(text) ||
-        /^Ontem\s+\d{1,2}:\d{2}$/i.test(text) ||
-        /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(text)
-      );
+      return /^(?:Hoje\s+|Ontem\s+|\d{2}\/\d{2}\/\d{4}\s+)?\d{1,2}:\d{2}$/.test(text);
     });
 
-    for (const el of candidates) {
-      const currentText = normalizeMessageTimeText(el.textContent);
+    const bubbles = [];
 
-      if (/^Hoje\s+\d{1,2}:\d{2}$/i.test(currentText)) continue;
-      if (/^Ontem\s+\d{1,2}:\d{2}$/i.test(currentText)) continue;
-      if (/^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(currentText)) continue;
+    for (const timeEl of timeNodes) {
+      const bubble = findMessageBubbleFromTime(timeEl);
+      if (!bubble) continue;
+
+      bubbles.push({ bubble, timeEl });
+    }
+
+    return bubbles;
+  }
+
+  function applyDateToMessages() {
+    const messages = getVisibleMessageBubbles();
+    if (messages.length === 0) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let currentDate = new Date(today);
+    let previousMinutes = null;
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const { timeEl } = messages[index];
+
+      const rawText = normalizeMessageTimeText(timeEl.getAttribute('data-tm-original-time') || timeEl.textContent);
+      const minutes = parseMessageTimeToMinutes(rawText);
+
+      if (minutes === null) continue;
+
+      if (previousMinutes !== null && minutes > previousMinutes) {
+        currentDate.setDate(currentDate.getDate() - 1);
+      }
+
+      const originalTimeMatch = rawText.match(/(\d{1,2}:\d{2})$/);
+      if (!originalTimeMatch) continue;
+
+      const originalTime = originalTimeMatch[1];
+      const label = formatMessageDateLabel(currentDate);
+      const formatted = `${label} ${originalTime}`;
+
+      timeEl.setAttribute('data-tm-original-time', originalTime);
+
+      if (normalizeMessageTimeText(timeEl.textContent) !== formatted) {
+        timeEl.textContent = formatted;
+      }
+
+      previousMinutes = minutes;
     }
   }
 

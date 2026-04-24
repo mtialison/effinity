@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.5
+// @version      8.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.5';
+  const SCRIPT_VERSION = '8.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -69,6 +69,186 @@
   const CARD_BOOT_ATTR = 'data-tm-card-booting';
   const AGENT_BOOT_STYLE_ID = 'tm-effinity-agent-boot-style';
   const AGENT_BOOT_ATTR = 'data-tm-agent-booting';
+
+  const MESSAGE_API_CACHE = new Map();
+  const MESSAGE_API_CACHE_LIMIT = 1200;
+
+  function normalizeApiMessageText(value) {
+    return String(value || '')
+      .replace(/\r/g, '\n')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+\|\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function getMessageTimestamp(message) {
+    return (
+      message?.sentAt ||
+      message?.receivedAt ||
+      message?.createdAt ||
+      message?.deliveredAt ||
+      message?.updatedAt ||
+      null
+    );
+  }
+
+  function parseApiDate(value) {
+    if (!value) return null;
+    const normalized = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T');
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function formatApiTime(date) {
+    return date.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  }
+
+  function getApiDateLabel(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const target = new Date(date);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+
+    if (diffDays === 0) return 'Hoje';
+    if (diffDays === 1) return 'Ontem';
+
+    return target.toLocaleDateString('pt-BR');
+  }
+
+  function compactForMatch(value) {
+    return normalizeApiMessageText(value)
+      .replace(/^alison:\s*/i, '')
+      .replace(/[^\p{L}\p{N}@._-]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function cacheApiMessage(message) {
+    if (!message || typeof message !== 'object') return;
+
+    const timestampValue = getMessageTimestamp(message);
+    const date = parseApiDate(timestampValue);
+    if (!date) return;
+
+    const content = message.content || message.mediaCaption || '';
+    const id = message.id || message.gupshupMessageId || `${message.ticketId || ''}-${timestampValue}-${content}`;
+
+    MESSAGE_API_CACHE.set(String(id), {
+      id: String(id),
+      ticketId: message.ticketId || null,
+      direction: String(message.direction || '').toUpperCase(),
+      content: String(content || ''),
+      contentNorm: compactForMatch(content || ''),
+      time: formatApiTime(date),
+      dateLabel: getApiDateLabel(date),
+      timestamp: date.getTime()
+    });
+
+    if (MESSAGE_API_CACHE.size > MESSAGE_API_CACHE_LIMIT) {
+      const overflow = MESSAGE_API_CACHE.size - MESSAGE_API_CACHE_LIMIT;
+      const keys = Array.from(MESSAGE_API_CACHE.keys()).slice(0, overflow);
+      keys.forEach(key => MESSAGE_API_CACHE.delete(key));
+    }
+  }
+
+  function extractApiMessages(payload) {
+    if (!payload) return;
+
+    if (Array.isArray(payload)) {
+      payload.forEach(extractApiMessages);
+      return;
+    }
+
+    if (typeof payload !== 'object') return;
+
+    if (
+      payload.createdAt &&
+      payload.direction &&
+      (
+        Object.prototype.hasOwnProperty.call(payload, 'content') ||
+        Object.prototype.hasOwnProperty.call(payload, 'mediaCaption') ||
+        Object.prototype.hasOwnProperty.call(payload, 'messageType')
+      )
+    ) {
+      cacheApiMessage(payload);
+    }
+
+    if (Array.isArray(payload.content)) payload.content.forEach(extractApiMessages);
+    if (Array.isArray(payload.data)) payload.data.forEach(extractApiMessages);
+    if (payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) extractApiMessages(payload.data);
+    if (payload.result && typeof payload.result === 'object') extractApiMessages(payload.result);
+  }
+
+  function processApiPayload(payload) {
+    try {
+      extractApiMessages(payload);
+      window.setTimeout(() => {
+        try {
+          applyDateToMessages();
+        } catch (error) {
+          console.error(`[${SCRIPT_NAME}] falha ao reaplicar datas das mensagens`, error);
+        }
+      }, 80);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao processar cache de mensagens`, error);
+    }
+  }
+
+  function installMessageApiInterceptors() {
+    if (window.__tmEffinityMessageInterceptorsInstalled) return;
+    window.__tmEffinityMessageInterceptorsInstalled = true;
+
+    const nativeFetch = window.fetch;
+    if (typeof nativeFetch === 'function') {
+      window.fetch = async function tmEffinityFetchProxy(...args) {
+        const response = await nativeFetch.apply(this, args);
+
+        try {
+          const clone = response.clone();
+          const contentType = clone.headers?.get?.('content-type') || '';
+          if (contentType.includes('application/json')) {
+            clone.json().then(processApiPayload).catch(() => {});
+          }
+        } catch (_) {}
+
+        return response;
+      };
+    }
+
+    const NativeXHR = window.XMLHttpRequest;
+    if (typeof NativeXHR === 'function') {
+      const nativeOpen = NativeXHR.prototype.open;
+      const nativeSend = NativeXHR.prototype.send;
+
+      NativeXHR.prototype.open = function tmEffinityXhrOpen(...args) {
+        this.__tmEffinityUrl = args[1];
+        return nativeOpen.apply(this, args);
+      };
+
+      NativeXHR.prototype.send = function tmEffinityXhrSend(...args) {
+        this.addEventListener('load', function tmEffinityXhrLoad() {
+          try {
+            const contentType = this.getResponseHeader?.('content-type') || '';
+            if (!contentType.includes('application/json')) return;
+
+            const payload = JSON.parse(this.responseText);
+            processApiPayload(payload);
+          } catch (_) {}
+        });
+
+        return nativeSend.apply(this, args);
+      };
+    }
+  }
+
 
   /* ========================================================================
    * SEÇÃO: ESTILOS / ELEMENTOS OCULTOS / AJUSTES VISUAIS
@@ -1058,31 +1238,15 @@
     return normalizeText(text).replace(/\s+/g, ' ');
   }
 
-  function parseMessageTimeToMinutes(text) {
-    const match = normalizeMessageTimeText(text).match(/^(?:Hoje\s+|Ontem\s+|\d{2}\/\d{2}\/\d{4}\s+)?(\d{1,2}):(\d{2})$/i);
-    if (!match) return null;
+  function getRawMessageTime(timeEl) {
+    const current = normalizeMessageTimeText(timeEl.textContent);
+    const attr = normalizeMessageTimeText(timeEl.getAttribute('data-tm-original-time') || '');
 
-    const hours = Number(match[1]);
-    const minutes = Number(match[2]);
+    const attrMatch = attr.match(/(\d{1,2}:\d{2})$/);
+    if (attrMatch) return attrMatch[1];
 
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
-    return hours * 60 + minutes;
-  }
-
-  function formatMessageDateLabel(date) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const target = new Date(date);
-    target.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-
-    if (diffDays === 0) return 'Hoje';
-    if (diffDays === 1) return 'Ontem';
-
-    return target.toLocaleDateString('pt-BR');
+    const currentMatch = current.match(/(\d{1,2}:\d{2})$/);
+    return currentMatch ? currentMatch[1] : '';
   }
 
   function findMessageBubbleFromTime(timeEl) {
@@ -1091,61 +1255,101 @@
       timeEl.closest('div.rounded-2xl');
   }
 
-  function getVisibleMessageBubbles() {
+  function getBubbleTextForMatch(bubble, timeEl) {
+    const contentParts = [];
+
+    for (const el of bubble.querySelectorAll('p.whitespace-pre-wrap, p.text-xs.font-semibold, span')) {
+      if (el === timeEl) continue;
+      const text = normalizeMessageTimeText(el.textContent);
+      if (!text) continue;
+      if (/^(?:Hoje\s+|Ontem\s+|\d{2}\/\d{2}\/\d{4}\s+)?\d{1,2}:\d{2}$/i.test(text)) continue;
+      if (text === '✓' || text === '✓✓') continue;
+      contentParts.push(text);
+    }
+
+    return compactForMatch(contentParts.join(' '));
+  }
+
+  function getBubbleDirection(bubble) {
+    const cls = String(bubble.className || '');
+    if (cls.includes('bg-blue-500') || cls.includes('bg-blue-600') || cls.includes('text-white')) {
+      return 'OUTBOUND';
+    }
+    return 'INBOUND';
+  }
+
+  function scoreApiMessageMatch(apiMessage, bubbleText, direction, time) {
+    if (!apiMessage || apiMessage.time !== time) return -1;
+
+    let score = 0;
+
+    if (apiMessage.direction === direction) score += 40;
+
+    if (apiMessage.contentNorm && bubbleText) {
+      if (apiMessage.contentNorm === bubbleText) {
+        score += 80;
+      } else if (apiMessage.contentNorm.includes(bubbleText) || bubbleText.includes(apiMessage.contentNorm)) {
+        score += 55;
+      } else {
+        const bubbleWords = bubbleText.split(' ').filter(word => word.length >= 3);
+        const matchCount = bubbleWords.filter(word => apiMessage.contentNorm.includes(word)).length;
+        if (matchCount > 0) score += Math.min(35, matchCount * 7);
+      }
+    }
+
+    return score;
+  }
+
+  function findApiMessageForBubble(bubble, timeEl) {
+    const time = getRawMessageTime(timeEl);
+    if (!time) return null;
+
+    const bubbleText = getBubbleTextForMatch(bubble, timeEl);
+    const direction = getBubbleDirection(bubble);
+
+    let best = null;
+    let bestScore = -1;
+
+    for (const message of MESSAGE_API_CACHE.values()) {
+      const score = scoreApiMessageMatch(message, bubbleText, direction, time);
+      if (score > bestScore) {
+        best = message;
+        bestScore = score;
+      }
+    }
+
+    return bestScore >= 40 ? best : null;
+  }
+
+  function applyDateToMessages() {
     const timeNodes = Array.from(document.querySelectorAll('span.text-\\[10px\\].opacity-60')).filter(el => {
       if (!(el instanceof HTMLElement)) return false;
+
       const text = normalizeMessageTimeText(el.textContent);
       return /^(?:Hoje\s+|Ontem\s+|\d{2}\/\d{2}\/\d{4}\s+)?\d{1,2}:\d{2}$/.test(text);
     });
-
-    const bubbles = [];
 
     for (const timeEl of timeNodes) {
       const bubble = findMessageBubbleFromTime(timeEl);
       if (!bubble) continue;
 
-      bubbles.push({ bubble, timeEl });
-    }
+      const rawTime = getRawMessageTime(timeEl);
+      if (!rawTime) continue;
 
-    return bubbles;
-  }
+      timeEl.setAttribute('data-tm-original-time', rawTime);
 
-  function applyDateToMessages() {
-    const messages = getVisibleMessageBubbles();
-    if (messages.length === 0) return;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    let currentDate = new Date(today);
-    let previousMinutes = null;
-
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const { timeEl } = messages[index];
-
-      const rawText = normalizeMessageTimeText(timeEl.getAttribute('data-tm-original-time') || timeEl.textContent);
-      const minutes = parseMessageTimeToMinutes(rawText);
-
-      if (minutes === null) continue;
-
-      if (previousMinutes !== null && minutes > previousMinutes) {
-        currentDate.setDate(currentDate.getDate() - 1);
+      const apiMessage = findApiMessageForBubble(bubble, timeEl);
+      if (!apiMessage) {
+        if (normalizeMessageTimeText(timeEl.textContent) !== rawTime) {
+          timeEl.textContent = rawTime;
+        }
+        continue;
       }
 
-      const originalTimeMatch = rawText.match(/(\d{1,2}:\d{2})$/);
-      if (!originalTimeMatch) continue;
-
-      const originalTime = originalTimeMatch[1];
-      const label = formatMessageDateLabel(currentDate);
-      const formatted = `${label} ${originalTime}`;
-
-      timeEl.setAttribute('data-tm-original-time', originalTime);
-
+      const formatted = `${apiMessage.dateLabel} ${rawTime}`;
       if (normalizeMessageTimeText(timeEl.textContent) !== formatted) {
         timeEl.textContent = formatted;
       }
-
-      previousMinutes = minutes;
     }
   }
 
@@ -1971,6 +2175,8 @@
     startObserver();
     startFavoriteLayer();
   }
+
+  installMessageApiInterceptors();
 
   startCardBootMask();
   startSidebarBootMask();

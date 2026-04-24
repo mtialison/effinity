@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      8.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.0';
+  const SCRIPT_VERSION = '8.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -297,23 +297,12 @@
       margin: 0 !important;
     }
 
-    [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
-      display: flex !important;
-      align-items: center !important;
-      flex: 1 1 auto !important;
-      min-width: 0 !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
-      display: flex !important;
-      align-items: center !important;
-      gap: 12px !important;
-      flex-wrap: nowrap !important;
-      min-width: 0 !important;
-    }
-
-    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
+    [${AGENT_BOTTOM_ATTR}="true"] > span.text-xs.text-muted-foreground.mr-2 {
       margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > div:not([${AGENT_ACTIONS_MIRROR_ATTR}="true"]) {
       flex-shrink: 0 !important;
     }
 
@@ -999,6 +988,8 @@
     favoriteApplyTimer = window.setTimeout(applyFavoriteStarsToTicketsSafe, delay);
   }
 
+  let favoriteClickListenerStarted = false;
+
   function startFavoriteLayer() {
     scheduleFavoriteLayer(700);
 
@@ -1010,15 +1001,19 @@
       applyFavoriteStarsToTicketsSafe();
     }, 1500);
 
-    document.addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
+    if (!favoriteClickListenerStarted) {
+      favoriteClickListenerStarted = true;
 
-      const trigger = target.closest('button, a, [role="tab"], div.p-2.border.rounded.cursor-pointer');
-      if (!trigger) return;
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
 
-      scheduleFavoriteLayer(450);
-    }, true);
+        const trigger = target.closest('button, a, [role="tab"], div.p-2.border.rounded.cursor-pointer');
+        if (!trigger) return;
+
+        scheduleFavoriteLayer(450);
+      }, true);
+    }
   }
 
   /* ========================================================================
@@ -1044,75 +1039,79 @@
   /* ========================================================================
    * SEÇÃO: DATA NAS MENSAGENS DO CHAT (23)
    * ====================================================================== */
-  function getTodayDateLabel() {
-    const now = new Date();
-    return now.toLocaleDateString('pt-BR');
-  }
+  function applyDateToMessages() {
+    const chatContainer = document.querySelector('.flex-1.overflow-y-auto.p-4.space-y-1.scroll-smooth.min-h-0');
+    if (!chatContainer) return;
 
-  function getYesterdayDateLabel() {
-    const date = new Date();
-    date.setDate(date.getDate() - 1);
-    return date.toLocaleDateString('pt-BR');
-  }
+    const currentYear = new Date().getFullYear();
+    const monthMap = {
+      janeiro: 0, fevereiro: 1, março: 2, marco: 2,
+      abril: 3, maio: 4, junho: 5, julho: 6,
+      agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
+    };
 
-  function normalizeMessageTimeText(text) {
-    return normalizeText(text).replace(/\s+/g, ' ');
-  }
+    function parseDaySeparator(text) {
+      const normalized = normalizeText(text).toLowerCase();
+      const match = normalized.match(/^(\d{1,2})\s+de\s+([a-zçãé]+)/i);
+      if (!match) return null;
 
-  function getMessageDatePrefixForDisplay(originalText) {
-    const text = normalizeMessageTimeText(originalText);
-    const today = getTodayDateLabel();
-    const yesterday = getYesterdayDateLabel();
-
-    if (!text) return '';
-
-    if (/^Hoje\s+\d{1,2}:\d{2}$/i.test(text)) return 'Hoje';
-    if (/^Ontem\s+\d{1,2}:\d{2}$/i.test(text)) return 'Ontem';
-
-    const fullDateMatch = text.match(/^(\d{2}\/\d{2}\/\d{4})\s+\d{1,2}:\d{2}$/);
-    if (fullDateMatch) {
-      if (fullDateMatch[1] === today) return 'Hoje';
-      if (fullDateMatch[1] === yesterday) return 'Ontem';
-      return fullDateMatch[1];
+      const day = Number(match[1]);
+      const monthIndex = monthMap[match[2]];
+      if (Number.isNaN(day) || monthIndex === undefined) return null;
+      return new Date(currentYear, monthIndex, day);
     }
 
-    return 'Hoje';
-  }
+    function formatDate(date) {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      return `${day}/${month}/${date.getFullYear()}`;
+    }
 
-  function formatMessageTimestampDisplay(originalText) {
-    const text = normalizeMessageTimeText(originalText);
-    if (!text) return '';
+    function timeToMinutes(timeText) {
+      const match = timeText.match(/^(\d{2}):(\d{2})$/);
+      if (!match) return null;
+      return Number(match[1]) * 60 + Number(match[2]);
+    }
 
-    const timeMatch = text.match(/(\d{1,2}:\d{2})$/);
-    if (!timeMatch) return text;
+    let activeDate = null;
+    let lastMinutes = null;
 
-    const time = timeMatch[1];
-    const prefix = getMessageDatePrefixForDisplay(text);
+    for (const child of Array.from(chatContainer.children)) {
+      if (!(child instanceof HTMLElement)) continue;
 
-    return prefix ? `${prefix} ${time}` : time;
-  }
+      const daySeparator = child.querySelector('span.text-xs.text-muted-foreground.bg-muted\\/50.px-3.py-1.rounded-full');
+      if (daySeparator) {
+        const parsedDate = parseDaySeparator(daySeparator.textContent);
+        if (parsedDate) {
+          activeDate = parsedDate;
+          lastMinutes = null;
+        }
+        continue;
+      }
 
-  function applyDateToMessages() {
-    const candidates = Array.from(document.querySelectorAll('span, div')).filter(el => {
-      if (!(el instanceof HTMLElement)) return false;
-      if (el.children.length > 0) return false;
+      const timeSpan = child.querySelector('.flex.items-center.gap-1\\.5.mt-1\\.5 span.text-\\[10px\\].opacity-60');
+      if (!timeSpan) continue;
 
-      const text = normalizeMessageTimeText(el.textContent);
-      return (
-        /^\d{1,2}:\d{2}$/.test(text) ||
-        /^Hoje\s+\d{1,2}:\d{2}$/i.test(text) ||
-        /^Ontem\s+\d{1,2}:\d{2}$/i.test(text) ||
-        /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}$/.test(text)
-      );
-    });
+      const timeMatch = normalizeText(timeSpan.textContent).match(/(\d{2}:\d{2})$/);
+      if (!timeMatch) continue;
 
-    for (const el of candidates) {
-      const currentText = normalizeMessageTimeText(el.textContent);
-      const formatted = formatMessageTimestampDisplay(currentText);
+      const timeText = timeMatch[1];
+      const minutes = timeToMinutes(timeText);
+      if (minutes === null) continue;
 
-      if (!formatted || currentText === formatted) continue;
+      if (!activeDate) {
+        activeDate = new Date();
+        activeDate.setHours(0, 0, 0, 0);
+      }
 
-      el.textContent = formatted;
+      if (lastMinutes !== null && minutes < lastMinutes) {
+        activeDate = new Date(activeDate);
+        activeDate.setDate(activeDate.getDate() + 1);
+      }
+
+      timeSpan.textContent = `${formatDate(activeDate)} ${timeText}`;
+      timeSpan.setAttribute(DATE_APPLIED_ATTR, 'true');
+      lastMinutes = minutes;
     }
   }
 
@@ -1269,29 +1268,6 @@
     return mirror;
   }
 
-  function ensureAgentLeftWrapperSafe(bottomRow) {
-    let left = bottomRow.querySelector(':scope > .tm-agent-left');
-    if (!left) {
-      left = document.createElement('div');
-      left.className = 'tm-agent-left';
-      const nodes = Array.from(bottomRow.childNodes);
-      for (const node of nodes) {
-        if (
-          node.nodeType === Node.ELEMENT_NODE &&
-          node.getAttribute &&
-          (
-            node.getAttribute(AGENT_ACTIONS_MIRROR_ATTR) === 'true' ||
-            node.classList?.contains('tm-agent-left')
-          )
-        ) {
-          continue;
-        }
-        left.appendChild(node);
-      }
-      bottomRow.insertBefore(left, bottomRow.firstChild);
-    }
-    return left;
-  }
 
   function syncAgentProxyButton(mirror, sourceButton, proxyType) {
     if (!sourceButton) return;
@@ -1331,7 +1307,6 @@
     topRow.setAttribute(AGENT_TOP_ATTR, 'true');
     bottomRow.setAttribute(AGENT_BOTTOM_ATTR, 'true');
 
-    ensureAgentLeftWrapperSafe(bottomRow);
     const mirror = ensureAgentActionsMirror(bottomRow);
 
     const offlineControl = findOfflineControl(topRow);

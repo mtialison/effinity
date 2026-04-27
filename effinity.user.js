@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.2
+// @version      13.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.2';
+  const SCRIPT_VERSION = '13.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -611,7 +611,11 @@
       background: #020617 !important;
       padding: 10px !important;
       overflow: hidden !important;
-      cursor: default !important;
+      cursor: grab !important;
+    }
+
+    [data-tm-image-popup-body="true"][data-tm-panning="true"] {
+      cursor: grabbing !important;
     }
 
     [data-tm-image-popup-body="true"] img {
@@ -2684,14 +2688,26 @@
     }
   }
 
-  function sideSetPopupImageZoom(popup, nextZoom) {
+  function sideApplyPopupImageTransform(popup) {
     try {
       const img = popup.querySelector('[data-tm-image-popup-body="true"] img');
       if (!img) return;
 
+      const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
+      const panX = Number(popup.dataset.tmImagePanX || '0') || 0;
+      const panY = Number(popup.dataset.tmImagePanY || '0') || 0;
+
+      img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);
+    }
+  }
+
+  function sideSetPopupImageZoom(popup, nextZoom) {
+    try {
       const zoom = Math.max(0.25, Math.min(5, Number(nextZoom) || 1));
       popup.dataset.tmImageZoom = String(zoom);
-      img.style.transform = `scale(${zoom})`;
+      sideApplyPopupImageTransform(popup);
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar zoom`, error);
     }
@@ -2746,6 +2762,55 @@
     }, true);
   }
 
+
+  function sideInstallImagePan(popup, body) {
+    let panning = false;
+    let startX = 0;
+    let startY = 0;
+    let startPanX = 0;
+    let startPanY = 0;
+
+    body.addEventListener('mousedown', (event) => {
+      try {
+        if (event.button !== 0) return;
+        if (event.target.closest('button')) return;
+
+        panning = true;
+        body.setAttribute('data-tm-panning', 'true');
+
+        startX = event.clientX;
+        startY = event.clientY;
+        startPanX = Number(popup.dataset.tmImagePanX || '0') || 0;
+        startPanY = Number(popup.dataset.tmImagePanY || '0') || 0;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mousemove', (event) => {
+      if (!panning) return;
+
+      try {
+        popup.dataset.tmImagePanX = String(startPanX + (event.clientX - startX));
+        popup.dataset.tmImagePanY = String(startPanY + (event.clientY - startY));
+        sideApplyPopupImageTransform(popup);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      if (!panning) return;
+      panning = false;
+      body.removeAttribute('data-tm-panning');
+    }, true);
+  }
+
   function sideOpenImagePopup(file) {
     try {
       if (!sideIsPreviewableImage(file)) {
@@ -2759,6 +2824,8 @@
       const popup = document.createElement('div');
       popup.setAttribute('data-tm-image-popup', 'true');
       popup.dataset.tmImageZoom = '1';
+      popup.dataset.tmImagePanX = '0';
+      popup.dataset.tmImagePanY = '0';
       popup.style.left = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
       popup.style.top = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
       popup.style.zIndex = String(imagePopupZIndex);
@@ -2849,6 +2916,8 @@
 
           img.style.width = `${naturalW}px`;
           img.style.height = `${naturalH}px`;
+          popup.dataset.tmImagePanX = '0';
+          popup.dataset.tmImagePanY = '0';
           sideSetPopupImageZoom(popup, fit);
         } catch (_) {
           sideSetPopupImageZoom(popup, 1);
@@ -2867,6 +2936,8 @@
           console.error(`[${SCRIPT_NAME}] falha no zoom por scroll`, error);
         }
       }, { passive: false, capture: true });
+
+      sideInstallImagePan(popup, body);
 
       body.appendChild(img);
       popup.appendChild(header);

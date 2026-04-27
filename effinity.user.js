@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.6
+// @version      10.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.6';
+  const SCRIPT_VERSION = '10.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -564,6 +564,32 @@
 
 
     html[data-tm-virtual-notes-mode="true"] [data-tm-virtual-notes-hidden="true"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+
+    /* ── v10.7: modo Notas estrito ──────────────────────────────────────
+       Quando a aba Notas está ativa virtualmente, qualquer card que não seja
+       o card real de Notas Internas fica invisível, incluindo arquivos API. */
+    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-role="file"],
+    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-role="file-original"],
+    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-role="file-empty"],
+    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-source="api-files"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    html:not([data-tm-virtual-notes-mode="true"]) .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-role="notes"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
@@ -2786,7 +2812,9 @@
       hideElement(notesCard);
     }
 
-    syncApiFilesToGeneral(host);
+    if (!(isVirtualNotesMode && isVirtualNotesMode())) {
+      syncApiFilesToGeneral(host);
+    }
   }
 
   function appendCachedNotesToFiles(host) {
@@ -2846,7 +2874,7 @@
 
       if (isVirtualNotesMode && isVirtualNotesMode()) {
         paintVirtualNotesTabButton();
-        applyVirtualNotesInlineVisibility();
+        enforceVirtualNotesViewStrict();
         return;
       }
 
@@ -2974,39 +3002,7 @@
   }
 
   function applyVirtualNotesInlineVisibility() {
-    try {
-      const { generalHost } = getSidePanelShellAndHost();
-      if (!generalHost) return false;
-
-      const notesCard = findNotesCardIn(generalHost);
-      if (!notesCard) return false;
-
-      for (const child of Array.from(generalHost.children)) {
-        if (!(child instanceof HTMLElement)) continue;
-
-        if (child === notesCard || findNotesCardIn(child)) {
-          child.removeAttribute(VIRTUAL_NOTES_HIDDEN_ATTR);
-          showElement(child);
-          child.style.display = '';
-          child.style.visibility = '';
-          child.style.opacity = '';
-          child.style.pointerEvents = 'auto';
-          child.style.position = child.style.position || 'relative';
-          child.style.zIndex = child.style.zIndex || '25';
-          bindNotesCardInteractionSafety(child);
-          continue;
-        }
-
-        child.setAttribute(VIRTUAL_NOTES_HIDDEN_ATTR, 'true');
-        child.setAttribute(HIDDEN_ATTR, 'true');
-        child.style.pointerEvents = 'none';
-      }
-
-      return true;
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao aplicar modo Notas visual`, error);
-      return false;
-    }
+    return enforceVirtualNotesViewStrict();
   }
 
   function clearVirtualNotesInlineVisibility() {
@@ -3018,8 +3014,6 @@
         node.style.pointerEvents = '';
       }
 
-      // v10.6: ao sair da aba Notas, o próprio card de Notas deve voltar
-      // a ficar oculto na Geral.
       for (const notes of document.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
         if (!(notes instanceof HTMLElement)) continue;
         hideElement(notes);
@@ -3090,6 +3084,7 @@
       setVirtualNotesMode(true);
       clickNativeGeneralTabSafely();
       applyVirtualNotesInlineVisibility();
+      scheduleStrictSideViewPasses();
 
       for (const delay of [0, 20, 60, 140, 300, 700]) {
         window.setTimeout(() => {
@@ -3113,18 +3108,8 @@
       if (!isVirtualNotesMode()) return;
       setVirtualNotesMode(false);
       clearVirtualNotesInlineVisibility();
-
-      const { generalHost } = getSidePanelShellAndHost();
-      if (generalHost) {
-        const notesCard = findNotesCardIn(generalHost);
-        if (notesCard) {
-          notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
-          notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-          hideElement(notesCard);
-        }
-        syncApiFilesToGeneral(generalHost);
-      }
-
+      enforceGeneralTabViewStrict();
+      scheduleStrictSideViewPasses();
       scheduleGeneralFilesNotesSwap();
     } catch (_) {}
   }
@@ -3151,6 +3136,7 @@
 
         if (isVirtualNotesMode()) {
           deactivateVirtualNotesTab();
+          scheduleStrictSideViewPasses();
         }
       } catch (error) {
         console.error(`[${SCRIPT_NAME}] falha no clique virtual da aba Notas`, error);
@@ -3227,6 +3213,7 @@
     renameFilesTabLabelToNotes();
     refreshSideActiveTabAttribute();
     paintVirtualNotesTabButton();
+    scheduleStrictSideViewPasses();
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.6
+// @version      11.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.6';
+  const SCRIPT_VERSION = '11.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3125,21 +3125,26 @@
 
   function setReactTextareaValue(textarea, value) {
     try {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-      if (nativeSetter) {
-        nativeSetter.call(textarea, value);
-      } else {
-        textarea.value = value;
-      }
+      const lastValue = textarea.value;
 
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      textarea.value = value;
+
+      const event = new Event('input', { bubbles: true });
+      const tracker = textarea._valueTracker;
+      if (tracker) {
+        tracker.setValue(lastValue);
+      }
+      textarea.dispatchEvent(event);
+
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }));
+      textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
 
       return true;
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao preencher textarea nativo`, error);
+      console.error(`[${SCRIPT_NAME}] erro ao setar valor react`, error);
       return false;
     }
+  }
   }
 
   function clickNativeNotesButtonWithContent(content) {

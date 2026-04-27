@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.3
+// @version      9.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.3';
+  const SCRIPT_VERSION = '9.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -449,9 +449,10 @@
 
 
     /* ── Troca Geral ↔ Arquivos: máscara discreta durante pré-carga ───── */
-    html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 .relative.overflow-hidden.flex-1 {
+    html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 {
       opacity: 0 !important;
-      transition: opacity 0.08s ease !important;
+      transition: opacity 0.06s ease !important;
+      pointer-events: none !important;
     }
 
     /* ── Troca Geral ↔ Arquivos: anti-stale imediato ao trocar ticket ─── */
@@ -2146,6 +2147,7 @@
   let activeTabSwapTicketKey = '';
   let lastAutoPrimedTicketKey = '';
   let tabSwapPrimeTimer = null;
+  let tabSwapPrimeRunning = false;
   let tabSwapTicketSwitchTimer = null;
 
   function ensureTabSwapDepot() {
@@ -2511,9 +2513,19 @@
       .find(isNodeForCurrentTicket) || null;
   }
 
-  function getCachedFileNodes() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`))
+  function getCachedRealFileNodes() {
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_SOURCE_ATTR}="arquivos"]`))
       .filter(isNodeForCurrentTicket);
+  }
+
+  function getCachedGeneratedFileNodes() {
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_SOURCE_ATTR}="documentos-geral"]`))
+      .filter(isNodeForCurrentTicket);
+  }
+
+  function getCachedFileNodes() {
+    const realFiles = getCachedRealFileNodes();
+    return realFiles.length ? realFiles : getCachedGeneratedFileNodes();
   }
 
   function appendCachedFilesToGeneral(host) {
@@ -2522,7 +2534,16 @@
 
     ensureGeneratedDocumentFilesForGeneral(host);
 
-    const files = getCachedFileNodes();
+    const realFiles = getCachedRealFileNodes();
+    const generatedFiles = getCachedGeneratedFileNodes();
+    const files = realFiles.length ? realFiles : generatedFiles;
+
+    if (realFiles.length) {
+      for (const generatedNode of generatedFiles) {
+        hideElement(generatedNode);
+        ensureTabSwapDepot().appendChild(generatedNode);
+      }
+    }
 
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
@@ -2590,7 +2611,7 @@
 
       if (tab === 'geral') {
         appendCachedFilesToGeneral(host);
-        // v9.3: sem clique automático; conteúdo antigo fica mascarado durante a troca de ticket.
+        scheduleAutoPrimeFilesForGeneral(panel);
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
@@ -2609,10 +2630,90 @@
     return null;
   }
 
+  function setTabSwapPriming(isPriming) {
+    const root = document.documentElement;
+    if (!root) return;
+
+    if (isPriming) {
+      root.setAttribute(TAB_SWAP_PRIMING_ATTR, 'true');
+      clearTimeout(tabSwapPrimeTimer);
+      tabSwapPrimeTimer = window.setTimeout(() => {
+        tabSwapPrimeRunning = false;
+        setTabSwapPriming(false);
+      }, 1800);
+      return;
+    }
+
+    root.removeAttribute(TAB_SWAP_PRIMING_ATTR);
+    clearTimeout(tabSwapPrimeTimer);
+    tabSwapPrimeTimer = null;
+  }
+
   function scheduleAutoPrimeFilesForGeneral(panel) {
-    // v9.2: desativado de propósito.
-    // Não clica automaticamente em Arquivos/Geral, evitando flicker ao trocar tickets.
-    return;
+    try {
+      ensureTabSwapTicketContext();
+
+      if (!panel || tabSwapPrimeRunning) return;
+      if (findActiveSideTabName(panel) !== 'geral') return;
+      if (!activeTabSwapTicketKey || lastAutoPrimedTicketKey === activeTabSwapTicketKey) return;
+      if (getCachedRealFileNodes().length) return;
+
+      const filesButton = findSideTabButton(panel, 'arquivos');
+      const generalButton = findSideTabButton(panel, 'geral');
+      if (!filesButton || !generalButton) return;
+
+      const primedTicketKey = activeTabSwapTicketKey;
+      lastAutoPrimedTicketKey = primedTicketKey;
+      tabSwapPrimeRunning = true;
+      setTabSwapPriming(true);
+
+      window.setTimeout(() => {
+        try {
+          if (activeTabSwapTicketKey !== primedTicketKey) return;
+
+          cacheCurrentTabBeforeSwap();
+          filesButton.click();
+
+          window.setTimeout(() => {
+            try {
+              if (activeTabSwapTicketKey !== primedTicketKey) return;
+
+              const currentPanel = findSidePanelWithTabs();
+              const filesHost = getCurrentTabContentHost(currentPanel);
+              if (findActiveSideTabName(currentPanel) === 'arquivos') {
+                cacheFileNodesFromHost(filesHost);
+              }
+
+              const currentGeneralButton = findSideTabButton(currentPanel, 'geral') || generalButton;
+              currentGeneralButton.click();
+
+              window.setTimeout(() => {
+                try {
+                  if (activeTabSwapTicketKey === primedTicketKey) {
+                    applyGeneralFilesNotesSwap();
+                  }
+                } finally {
+                  tabSwapPrimeRunning = false;
+                  setTabSwapPriming(false);
+                }
+              }, 90);
+            } catch (error) {
+              tabSwapPrimeRunning = false;
+              setTabSwapPriming(false);
+              console.error(`[${SCRIPT_NAME}] falha ao finalizar pré-carga de arquivos`, error);
+            }
+          }, 140);
+        } catch (error) {
+          tabSwapPrimeRunning = false;
+          setTabSwapPriming(false);
+          console.error(`[${SCRIPT_NAME}] falha ao pré-carregar arquivos`, error);
+        }
+      }, 30);
+    } catch (error) {
+      tabSwapPrimeRunning = false;
+      setTabSwapPriming(false);
+      console.error(`[${SCRIPT_NAME}] falha ao agendar pré-carga de arquivos`, error);
+    }
   }
 
   let tabSwapTimers = [];

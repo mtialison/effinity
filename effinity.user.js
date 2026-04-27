@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.0
+// @version      13.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.0';
+  const SCRIPT_VERSION = '13.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -489,6 +489,100 @@
       color: hsl(var(--foreground)) !important;
       box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
       font-weight: 600 !important;
+    }
+
+
+    /* ── Visualizador flutuante de imagens dos arquivos ──────────────── */
+    [data-tm-image-popup="true"] {
+      position: fixed !important;
+      width: 420px !important;
+      height: 520px !important;
+      max-width: calc(100vw - 40px) !important;
+      max-height: calc(100vh - 40px) !important;
+      background: #111827 !important;
+      border: 1px solid rgba(148, 163, 184, 0.35) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45) !important;
+      overflow: hidden !important;
+      z-index: 99990 !important;
+      color: #f9fafb !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] {
+      left: 16px !important;
+      top: 16px !important;
+      width: calc(100vw - 32px) !important;
+      height: calc(100vh - 32px) !important;
+    }
+
+    [data-tm-image-popup-header="true"] {
+      height: 42px !important;
+      display: grid !important;
+      grid-template-columns: 1fr auto 1fr !important;
+      align-items: center !important;
+      gap: 8px !important;
+      padding: 0 10px 0 12px !important;
+      background: rgba(15, 23, 42, 0.98) !important;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25) !important;
+      user-select: none !important;
+    }
+
+    [data-tm-image-popup-title="true"] {
+      min-width: 0 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      color: #e5e7eb !important;
+    }
+
+    [data-tm-image-popup-actions-center="true"],
+    [data-tm-image-popup-actions-right="true"] {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+
+    [data-tm-image-popup-actions-right="true"] {
+      justify-content: flex-end !important;
+    }
+
+    [data-tm-image-popup-button="true"] {
+      width: 28px !important;
+      height: 28px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border: 1px solid rgba(148, 163, 184, 0.35) !important;
+      border-radius: 8px !important;
+      background: rgba(30, 41, 59, 0.72) !important;
+      color: #f9fafb !important;
+      cursor: pointer !important;
+      font-size: 14px !important;
+      line-height: 1 !important;
+      padding: 0 !important;
+    }
+
+    [data-tm-image-popup-button="true"]:hover {
+      background: rgba(51, 65, 85, 0.95) !important;
+    }
+
+    [data-tm-image-popup-body="true"] {
+      height: calc(100% - 42px) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: #020617 !important;
+      padding: 10px !important;
+      overflow: auto !important;
+    }
+
+    [data-tm-image-popup-body="true"] img {
+      max-width: 100% !important;
+      max-height: 100% !important;
+      object-fit: contain !important;
+      border-radius: 6px !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2515,6 +2609,143 @@
     return box;
   }
 
+
+  let imagePopupCounter = 0;
+  let imagePopupZIndex = 99990;
+
+  function sideIsPreviewableImage(file) {
+    const mimeType = String(file?.mimeType || '').toLowerCase();
+    const fileName = String(file?.fileName || '').toLowerCase();
+    const icon = String(file?.icon || '').toLowerCase();
+
+    return mimeType.startsWith('image/') ||
+      icon === 'image' ||
+      /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(fileName);
+  }
+
+  function sideDownloadFile(url, fileName) {
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || 'imagem';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => {
+        try { link.remove(); } catch (_) {}
+      }, 0);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao baixar imagem`, error);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  function sideOpenImagePopup(file) {
+    try {
+      if (!sideIsPreviewableImage(file)) {
+        window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      imagePopupCounter += 1;
+      imagePopupZIndex += 1;
+
+      const popup = document.createElement('div');
+      popup.setAttribute('data-tm-image-popup', 'true');
+      popup.style.left = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
+      popup.style.top = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
+      popup.style.zIndex = String(imagePopupZIndex);
+
+      const header = document.createElement('div');
+      header.setAttribute('data-tm-image-popup-header', 'true');
+
+      const title = document.createElement('div');
+      title.setAttribute('data-tm-image-popup-title', 'true');
+      title.title = file.fileName || 'Imagem';
+      title.textContent = file.fileName || 'Imagem';
+
+      const center = document.createElement('div');
+      center.setAttribute('data-tm-image-popup-actions-center', 'true');
+
+      const download = document.createElement('button');
+      download.type = 'button';
+      download.setAttribute('data-tm-image-popup-button', 'true');
+      download.title = 'Download';
+      download.textContent = '↓';
+      download.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        sideDownloadFile(file.downloadUrl, file.fileName);
+      }, true);
+
+      center.appendChild(download);
+
+      const right = document.createElement('div');
+      right.setAttribute('data-tm-image-popup-actions-right', 'true');
+
+      const maximize = document.createElement('button');
+      maximize.type = 'button';
+      maximize.setAttribute('data-tm-image-popup-button', 'true');
+      maximize.title = 'Maximizar';
+      maximize.textContent = '□';
+      maximize.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const isMax = popup.getAttribute('data-tm-maximized') === 'true';
+        if (isMax) {
+          popup.removeAttribute('data-tm-maximized');
+          maximize.textContent = '□';
+          maximize.title = 'Maximizar';
+        } else {
+          popup.setAttribute('data-tm-maximized', 'true');
+          maximize.textContent = '❐';
+          maximize.title = 'Restaurar';
+        }
+      }, true);
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.setAttribute('data-tm-image-popup-button', 'true');
+      close.title = 'Fechar';
+      close.textContent = '×';
+      close.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        popup.remove();
+      }, true);
+
+      right.appendChild(maximize);
+      right.appendChild(close);
+
+      header.appendChild(title);
+      header.appendChild(center);
+      header.appendChild(right);
+
+      const body = document.createElement('div');
+      body.setAttribute('data-tm-image-popup-body', 'true');
+
+      const img = document.createElement('img');
+      img.src = file.downloadUrl;
+      img.alt = file.fileName || 'Imagem';
+      img.draggable = false;
+
+      body.appendChild(img);
+      popup.appendChild(header);
+      popup.appendChild(body);
+
+      popup.addEventListener('mousedown', () => {
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+      }, true);
+
+      document.body.appendChild(popup);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao abrir visualizador de imagem`, error);
+      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+
   function sideCreateFileCard(file) {
     const card = document.createElement('div');
     card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
@@ -2569,6 +2800,12 @@
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+
+      if (sideIsPreviewableImage(file)) {
+        sideOpenImagePopup(file);
+        return;
+      }
+
       window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
     }, true);
 

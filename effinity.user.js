@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.4
+// @version      9.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.4';
+  const SCRIPT_VERSION = '9.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -188,9 +188,10 @@
     if (payload.result && typeof payload.result === 'object') extractApiMessages(payload.result);
   }
 
-  function processApiPayload(payload) {
+  function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
         try {
           applyDateToMessages();
@@ -216,7 +217,7 @@
           const clone = response.clone();
           const contentType = clone.headers?.get?.('content-type') || '';
           if (contentType.includes('application/json')) {
-            clone.json().then(processApiPayload).catch(() => {});
+            clone.json().then(payload => processApiPayload(payload, String(args?.[0]?.url || args?.[0] || ''))).catch(() => {});
           }
         } catch (_) {}
 
@@ -241,7 +242,7 @@
             if (!contentType.includes('application/json')) return;
 
             const payload = JSON.parse(this.responseText);
-            processApiPayload(payload);
+            processApiPayload(payload, String(this.__tmEffinityUrl || ''));
           } catch (_) {}
         });
 
@@ -2133,22 +2134,21 @@
   /* ========================================================================
    * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
    * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia SPA-safe: cache em depósito oculto, appendChild, delays curtos,
-   * validações e flags dataset. Não usa removeChild nem observer dedicado.
+   * Estratégia v9.5: arquivos renderizados direto da API /tickets/{id}/files.
+   * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
+   * da aba Arquivos para montar a aba Geral.
    * ====================================================================== */
   const TAB_SWAP_DEPOT_ID = 'tm-effinity-tab-swap-depot';
   const TAB_SWAP_READY_ATTR = 'data-tm-tab-swap-ready';
   const TAB_SWAP_ROLE_ATTR = 'data-tm-tab-swap-role';
   const TAB_SWAP_SOURCE_ATTR = 'data-tm-tab-swap-source';
   const TAB_SWAP_TICKET_ATTR = 'data-tm-tab-swap-ticket';
-  const TAB_SWAP_PRIMING_ATTR = 'data-tm-tab-swap-priming';
-  const TAB_SWAP_TICKET_SWITCHING_ATTR = 'data-tm-tab-swap-ticket-switching';
+  const TAB_SWAP_API_FILE_ID_ATTR = 'data-tm-api-file-id';
+
+  const TICKET_FILES_BY_KEY = new Map();
+  const TICKET_FILES_CACHE_LIMIT = 80;
 
   let activeTabSwapTicketKey = '';
-  let lastAutoPrimedTicketKey = '';
-  let tabSwapPrimeTimer = null;
-  let tabSwapPrimeRunning = false;
-  let tabSwapTicketSwitchTimer = null;
 
   function ensureTabSwapDepot() {
     let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
@@ -2189,57 +2189,16 @@
     }
   }
 
-  function isNodeForCurrentTicket(node) {
-    if (!(node instanceof HTMLElement)) return false;
-    const key = node.getAttribute(TAB_SWAP_TICKET_ATTR);
-    return !!key && key === activeTabSwapTicketKey;
-  }
-
   function ensureTabSwapTicketContext() {
     const key = getCurrentTicketSwapKey();
     if (key === activeTabSwapTicketKey) return;
-
     activeTabSwapTicketKey = key;
-    lastAutoPrimedTicketKey = '';
-
-    const depot = ensureTabSwapDepot();
-    for (const node of depot.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}]`)) {
-      if (!(node instanceof HTMLElement)) continue;
-      node.setAttribute('data-tm-tab-swap-stale', 'true');
-    }
-  }
-
-  function setTabSwapTicketSwitching(isSwitching) {
-    const root = document.documentElement;
-    if (!root) return;
-
-    if (isSwitching) {
-      root.setAttribute(TAB_SWAP_TICKET_SWITCHING_ATTR, 'true');
-      clearTimeout(tabSwapTicketSwitchTimer);
-      tabSwapTicketSwitchTimer = window.setTimeout(() => setTabSwapTicketSwitching(false), 1200);
-      return;
-    }
-
-    root.removeAttribute(TAB_SWAP_TICKET_SWITCHING_ATTR);
-    clearTimeout(tabSwapTicketSwitchTimer);
-    tabSwapTicketSwitchTimer = null;
-  }
-
-  function hideVisibleTabSwapNodesNow() {
-    const panel = findSidePanelWithTabs();
-    if (!panel) return;
-
-    for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
-      if (!(node instanceof HTMLElement)) continue;
-      hideElement(node);
-    }
+    hideVisibleTabSwapNodesNow();
   }
 
   function beginTicketSwapRefresh() {
     try {
-      setTabSwapTicketSwitching(true);
       activeTabSwapTicketKey = '';
-      lastAutoPrimedTicketKey = '';
       hideVisibleTabSwapNodesNow();
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao iniciar troca visual de ticket`, error);
@@ -2366,105 +2325,213 @@
     return hasOpenButton && hasFileMarker;
   }
 
-
-  function getDocumentLinksFromAttendanceCard(host) {
-    const links = [];
-    if (!host) return links;
-
-    const attendanceCard = findCardByHeading(host, 'Dados do Atendimento');
-    if (!attendanceCard) return links;
-
-    for (const link of attendanceCard.querySelectorAll('a[href]')) {
-      const href = link.getAttribute('href') || '';
-      if (!href || !href.includes('/public/files/')) continue;
-
-      const row = link.closest('.flex.items-baseline.gap-2') || link.parentElement;
-      const label = normalizeText(row?.querySelector('span.text-xs.text-muted-foreground')?.textContent || link.textContent || 'Arquivo');
-      links.push({ href, label: label || 'Arquivo' });
-    }
-
-    return links;
-  }
-
-  function extractFileNameFromUrl(href, label) {
-    try {
-      const url = new URL(href, location.origin);
-      const filename = url.searchParams.get('filename');
-      return filename || label || 'Arquivo';
-    } catch (_) {
-      return label || 'Arquivo';
-    }
-  }
-
-  function createDocumentFileCard(fileInfo) {
-    const card = document.createElement('div');
-    card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
-    card.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
-    card.setAttribute(TAB_SWAP_SOURCE_ATTR, 'documentos-geral');
-    card.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-    card.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-    card.setAttribute('data-tm-tab-swap-generated', 'true');
-
-    const fileName = extractFileNameFromUrl(fileInfo.href, fileInfo.label);
-    const label = fileInfo.label || 'Arquivo';
-
-    card.innerHTML = `
-      <div class="p-4">
-        <div class="flex items-start gap-3">
-          <div class="shrink-0"><div class="relative h-12 w-12 rounded overflow-hidden bg-muted flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file h-6 w-6 text-muted-foreground"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-          </div></div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-start justify-between gap-2 mb-1"><p class="text-sm font-medium truncate"></p></div>
-            <p class="text-xs text-muted-foreground mb-1 line-clamp-1"></p>
-            <div class="flex items-center gap-2 flex-wrap"><div class="inline-flex items-center rounded-full border px-2.5 py-0.5 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-card text-card-foreground hover:bg-muted text-xs">Documento</div></div>
-          </div>
-          <button class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold ring-offset-background transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-95 transform-gpu border-2 border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow-md focus-visible:ring-gray-500 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600 dark:active:bg-gray-700 dark:focus-visible:ring-gray-400 h-8 px-3 text-sm shrink-0" type="button">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-external-link h-4 w-4 mr-1.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" x2="21" y1="14" y2="3"></line></svg>Abrir
-          </button>
-        </div>
-      </div>`;
-
-    const title = card.querySelector('p.text-sm.font-medium');
-    const desc = card.querySelector('p.text-xs.text-muted-foreground');
-    const button = card.querySelector('button');
-
-    if (title) title.textContent = fileName;
-    if (desc) desc.textContent = label;
-    if (button) {
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        window.open(fileInfo.href, '_blank', 'noopener,noreferrer');
-      }, true);
-    }
-
-    return card;
-  }
-
-  function ensureGeneratedDocumentFilesForGeneral(host) {
-    if (!host || getCachedFileNodes().length) return;
-
-    const links = getDocumentLinksFromAttendanceCard(host);
-    if (!links.length) return;
-
-    const depot = ensureTabSwapDepot();
-    const seen = new Set();
-
-    for (const fileInfo of links) {
-      if (!fileInfo.href || seen.has(fileInfo.href)) continue;
-      seen.add(fileInfo.href);
-      depot.appendChild(createDocumentFileCard(fileInfo));
-    }
-  }
-
-  function hideStaleVisibleSwapNodes(panel) {
+  function hideVisibleTabSwapNodesNow() {
+    const panel = findSidePanelWithTabs();
     if (!panel) return;
 
     for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
       if (!(node instanceof HTMLElement)) continue;
-      const nodeTicket = node.getAttribute(TAB_SWAP_TICKET_ATTR);
-      if (nodeTicket && nodeTicket !== activeTabSwapTicketKey) hideElement(node);
+      hideElement(node);
+    }
+  }
+
+  function normalizeTicketFile(file) {
+    if (!file || typeof file !== 'object') return null;
+
+    const id = file.id || file.fileId || file.downloadUrl || file.fileName;
+    const downloadUrl = String(file.downloadUrl || file.url || file.publicUrl || '').trim();
+    const fileName = String(file.fileName || file.filename || file.name || file.filePath || 'Arquivo').trim();
+
+    if (!id || !downloadUrl) return null;
+
+    return {
+      id: String(id),
+      ticketId: file.ticketId || null,
+      fileName,
+      description: String(file.description || 'Arquivo recebido via WhatsApp').trim(),
+      category: String(file.category || '').trim(),
+      mimeType: String(file.mimeType || '').trim(),
+      thumbnailUrl: String(file.thumbnailUrl || '').trim(),
+      downloadUrl,
+      createdAt: file.createdAt || null,
+      formattedSize: String(file.formattedSize || '').trim(),
+      icon: String(file.icon || '').trim()
+    };
+  }
+
+  function processTicketFilesPayload(payload, requestUrl = '') {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+      if (!Array.isArray(payload.files) && !String(requestUrl || '').includes('/files')) return;
+
+      const files = Array.isArray(payload.files)
+        ? payload.files.map(normalizeTicketFile).filter(Boolean)
+        : [];
+
+      const currentKey = getCurrentTicketSwapKey();
+      if (!currentKey) return;
+
+      TICKET_FILES_BY_KEY.set(currentKey, files);
+
+      if (TICKET_FILES_BY_KEY.size > TICKET_FILES_CACHE_LIMIT) {
+        const overflow = TICKET_FILES_BY_KEY.size - TICKET_FILES_CACHE_LIMIT;
+        Array.from(TICKET_FILES_BY_KEY.keys()).slice(0, overflow).forEach(key => TICKET_FILES_BY_KEY.delete(key));
+      }
+
+      scheduleGeneralFilesNotesSwap();
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao processar arquivos do ticket`, error);
+    }
+  }
+
+  function formatTicketFileDate(value) {
+    const date = parseApiDate(value);
+    if (!date) return '';
+    return `${date.toLocaleDateString('pt-BR')} às ${formatApiTime(date)}`;
+  }
+
+  function getTicketFileBadge(file) {
+    const category = String(file?.category || '').toUpperCase();
+    const mimeType = String(file?.mimeType || '').toLowerCase();
+
+    if (category === 'WHATSAPP_MEDIA') return 'Mídia WhatsApp';
+    if (category) return category;
+    if (mimeType.startsWith('image/')) return 'IMAGE';
+    if (mimeType.includes('pdf')) return 'PDF';
+    return 'Documento';
+  }
+
+  function isImageTicketFile(file) {
+    const mimeType = String(file?.mimeType || '').toLowerCase();
+    const icon = String(file?.icon || '').toLowerCase();
+    return mimeType.startsWith('image/') || icon === 'image';
+  }
+
+  function buildFileThumb(file) {
+    const box = document.createElement('div');
+    box.className = 'relative h-12 w-12 rounded overflow-hidden bg-muted group flex items-center justify-center';
+
+    if (isImageTicketFile(file) && file.thumbnailUrl) {
+      const img = document.createElement('img');
+      img.src = file.thumbnailUrl;
+      img.alt = file.fileName;
+      img.className = 'h-full w-full object-cover';
+      img.loading = 'lazy';
+      box.appendChild(img);
+      return box;
+    }
+
+    const icon = document.createElement('span');
+    icon.className = 'text-muted-foreground text-xl leading-none';
+    icon.textContent = '▯';
+    box.appendChild(icon);
+    return box;
+  }
+
+  function createApiFileCard(file) {
+    const card = document.createElement('div');
+    card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
+    card.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
+    card.setAttribute(TAB_SWAP_SOURCE_ATTR, 'api-files');
+    card.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
+    card.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+    card.setAttribute(TAB_SWAP_API_FILE_ID_ATTR, file.id);
+
+    const outer = document.createElement('div');
+    outer.className = 'p-4';
+
+    const row = document.createElement('div');
+    row.className = 'flex items-start gap-3';
+
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'shrink-0';
+    thumbWrap.appendChild(buildFileThumb(file));
+
+    const info = document.createElement('div');
+    info.className = 'flex-1 min-w-0';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'flex items-start justify-between gap-2 mb-1';
+
+    const title = document.createElement('p');
+    title.className = 'text-sm font-medium truncate';
+    title.textContent = file.fileName || 'Arquivo';
+    titleRow.appendChild(title);
+
+    const description = document.createElement('p');
+    description.className = 'text-xs text-muted-foreground mb-1 line-clamp-1';
+    description.textContent = file.description || 'Arquivo recebido via WhatsApp';
+
+    const meta = document.createElement('div');
+    meta.className = 'flex items-center gap-2 flex-wrap';
+
+    const badge = document.createElement('div');
+    badge.className = 'inline-flex items-center rounded-full border px-2.5 py-0.5 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-card text-card-foreground hover:bg-muted text-xs';
+    badge.textContent = getTicketFileBadge(file);
+    meta.appendChild(badge);
+
+    const dateText = formatTicketFileDate(file.createdAt);
+    if (dateText) {
+      const date = document.createElement('span');
+      date.className = 'text-xs text-muted-foreground';
+      date.textContent = dateText;
+      meta.appendChild(date);
+    }
+
+    info.appendChild(titleRow);
+    info.appendChild(description);
+    info.appendChild(meta);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold ring-offset-background transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-95 transform-gpu border-2 border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow-md focus-visible:ring-gray-500 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600 dark:active:bg-gray-700 dark:focus-visible:ring-gray-400 h-8 px-3 text-sm shrink-0';
+    button.textContent = '↗ Abrir';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+    }, true);
+
+    row.appendChild(thumbWrap);
+    row.appendChild(info);
+    row.appendChild(button);
+    outer.appendChild(row);
+    card.appendChild(outer);
+
+    return card;
+  }
+
+  function getCurrentApiFiles() {
+    ensureTabSwapTicketContext();
+    return TICKET_FILES_BY_KEY.get(activeTabSwapTicketKey) || [];
+  }
+
+  function findApiFileCard(fileId) {
+    const selector = `[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_API_FILE_ID_ATTR}="${CSS.escape(String(fileId))}"]`;
+    return Array.from(document.querySelectorAll(selector))
+      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
+  }
+
+  function syncApiFilesToGeneral(host) {
+    if (!host) return;
+    const files = getCurrentApiFiles();
+    const wanted = new Set(files.map(file => file.id));
+
+    for (const node of host.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`)) {
+      if (!(node instanceof HTMLElement)) continue;
+      const id = node.getAttribute(TAB_SWAP_API_FILE_ID_ATTR) || '';
+      const ticket = node.getAttribute(TAB_SWAP_TICKET_ATTR) || '';
+      if (ticket !== activeTabSwapTicketKey || !wanted.has(id)) {
+        hideElement(node);
+        ensureTabSwapDepot().appendChild(node);
+      }
+    }
+
+    for (const file of files) {
+      let card = findApiFileCard(file.id);
+      if (!card) card = createApiFileCard(file);
+      showElement(card);
+      host.appendChild(card);
     }
   }
 
@@ -2494,56 +2561,26 @@
       const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
 
       for (const node of fileNodes) {
-        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
-        node.setAttribute(TAB_SWAP_SOURCE_ATTR, 'arquivos');
-        node.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-        showElement(node);
+        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-original');
+        hideElement(node);
         depot.appendChild(node);
       }
 
       return fileNodes;
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao guardar Arquivos`, error);
+      console.error(`[${SCRIPT_NAME}] falha ao guardar Arquivos originais`, error);
       return [];
     }
   }
 
   function getCachedNotesCard() {
     return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
-      .find(isNodeForCurrentTicket) || null;
+      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
   }
 
-  function getCachedRealFileNodes() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_SOURCE_ATTR}="arquivos"]`))
-      .filter(isNodeForCurrentTicket);
-  }
-
-  function getCachedGeneratedFileNodes() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_SOURCE_ATTR}="documentos-geral"]`))
-      .filter(isNodeForCurrentTicket);
-  }
-
-  function getCachedFileNodes() {
-    const realFiles = getCachedRealFileNodes();
-    return realFiles.length ? realFiles : getCachedGeneratedFileNodes();
-  }
-
-  function appendCachedFilesToGeneral(host) {
+  function appendApiFilesToGeneral(host) {
     if (!host) return;
     ensureTabSwapTicketContext();
-
-    ensureGeneratedDocumentFilesForGeneral(host);
-
-    const realFiles = getCachedRealFileNodes();
-    const generatedFiles = getCachedGeneratedFileNodes();
-    const files = realFiles.length ? realFiles : generatedFiles;
-
-    if (realFiles.length) {
-      for (const generatedNode of generatedFiles) {
-        hideElement(generatedNode);
-        ensureTabSwapDepot().appendChild(generatedNode);
-      }
-    }
 
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
@@ -2553,13 +2590,7 @@
       cacheNotesCardFromHost(host);
     }
 
-    if (!files.length) return;
-
-    for (const fileNode of files) {
-      showElement(fileNode);
-      fileNode.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-      host.appendChild(fileNode);
-    }
+    syncApiFilesToGeneral(host);
   }
 
   function appendCachedNotesToFiles(host) {
@@ -2581,8 +2612,6 @@
       const panel = findSidePanelWithTabs();
       if (!panel) return;
 
-      hideStaleVisibleSwapNodes(panel);
-
       const tab = findActiveSideTabName(panel);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
@@ -2603,116 +2632,17 @@
       const panel = findSidePanelWithTabs();
       if (!panel) return;
 
-      hideStaleVisibleSwapNodes(panel);
-
       const tab = findActiveSideTabName(panel);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
 
       if (tab === 'geral') {
-        appendCachedFilesToGeneral(host);
-        scheduleAutoPrimeFilesForGeneral(panel);
+        appendApiFilesToGeneral(host);
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
-
-      setTabSwapTicketSwitching(false);
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
-    }
-  }
-
-  function findSideTabButton(panel, tabName) {
-    if (!panel) return null;
-    for (const button of panel.querySelectorAll('button')) {
-      if (getButtonText(button) === tabName) return button;
-    }
-    return null;
-  }
-
-  function setTabSwapPriming(isPriming) {
-    const root = document.documentElement;
-    if (!root) return;
-
-    if (isPriming) {
-      root.setAttribute(TAB_SWAP_PRIMING_ATTR, 'true');
-      clearTimeout(tabSwapPrimeTimer);
-      tabSwapPrimeTimer = window.setTimeout(() => {
-        tabSwapPrimeRunning = false;
-        setTabSwapPriming(false);
-      }, 1800);
-      return;
-    }
-
-    root.removeAttribute(TAB_SWAP_PRIMING_ATTR);
-    clearTimeout(tabSwapPrimeTimer);
-    tabSwapPrimeTimer = null;
-  }
-
-  function scheduleAutoPrimeFilesForGeneral(panel) {
-    try {
-      ensureTabSwapTicketContext();
-
-      if (!panel || tabSwapPrimeRunning) return;
-      if (findActiveSideTabName(panel) !== 'geral') return;
-      if (!activeTabSwapTicketKey || lastAutoPrimedTicketKey === activeTabSwapTicketKey) return;
-      if (getCachedRealFileNodes().length) return;
-
-      const filesButton = findSideTabButton(panel, 'arquivos');
-      const generalButton = findSideTabButton(panel, 'geral');
-      if (!filesButton || !generalButton) return;
-
-      const primedTicketKey = activeTabSwapTicketKey;
-      lastAutoPrimedTicketKey = primedTicketKey;
-      tabSwapPrimeRunning = true;
-      setTabSwapPriming(true);
-
-      window.setTimeout(() => {
-        try {
-          if (activeTabSwapTicketKey !== primedTicketKey) return;
-
-          cacheCurrentTabBeforeSwap();
-          filesButton.click();
-
-          window.setTimeout(() => {
-            try {
-              if (activeTabSwapTicketKey !== primedTicketKey) return;
-
-              const currentPanel = findSidePanelWithTabs();
-              const filesHost = getCurrentTabContentHost(currentPanel);
-              if (findActiveSideTabName(currentPanel) === 'arquivos') {
-                cacheFileNodesFromHost(filesHost);
-              }
-
-              const currentGeneralButton = findSideTabButton(currentPanel, 'geral') || generalButton;
-              currentGeneralButton.click();
-
-              window.setTimeout(() => {
-                try {
-                  if (activeTabSwapTicketKey === primedTicketKey) {
-                    applyGeneralFilesNotesSwap();
-                  }
-                } finally {
-                  tabSwapPrimeRunning = false;
-                  setTabSwapPriming(false);
-                }
-              }, 90);
-            } catch (error) {
-              tabSwapPrimeRunning = false;
-              setTabSwapPriming(false);
-              console.error(`[${SCRIPT_NAME}] falha ao finalizar pré-carga de arquivos`, error);
-            }
-          }, 140);
-        } catch (error) {
-          tabSwapPrimeRunning = false;
-          setTabSwapPriming(false);
-          console.error(`[${SCRIPT_NAME}] falha ao pré-carregar arquivos`, error);
-        }
-      }, 30);
-    } catch (error) {
-      tabSwapPrimeRunning = false;
-      setTabSwapPriming(false);
-      console.error(`[${SCRIPT_NAME}] falha ao agendar pré-carga de arquivos`, error);
     }
   }
 
@@ -2721,7 +2651,7 @@
     tabSwapTimers.forEach(clearTimeout);
     tabSwapTimers = [];
 
-    for (const delay of [20, 60, 120, 240, 420, 700]) {
+    for (const delay of [0, 40, 100, 220, 420]) {
       tabSwapTimers.push(window.setTimeout(applyGeneralFilesNotesSwap, delay));
     }
   }

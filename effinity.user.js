@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.2
+// @version      12.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.2';
+  const SCRIPT_VERSION = '12.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -280,10 +280,7 @@
     }
 
 
-    /* ── v12.2: destaque real da aba Notas virtual ─────────────────────
-       A label Notas é renderizada por ::after; por isso o destaque precisa
-       atingir diretamente o botão com ícone de arquivo quando o modo Notas
-       está ativo. */
+    
     html[data-tm-notes-mode="true"]
       button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) {
       background: hsl(var(--background)) !important;
@@ -2362,7 +2359,26 @@
 
     // v12.0: como a aba Notas é virtual, sincronizamos só o destaque visual
     // dos botões. Não muda a aba real do React nem move conteúdo.
+    
+    // v12.3: highlight direto via JS (sem depender de CSS moderno)
     if (geral && notas) {
+      if (sideNotesMode) {
+        notas.style.color = 'hsl(var(--foreground))';
+        notas.style.fontWeight = '700';
+        notas.style.background = 'hsl(var(--background))';
+        notas.style.boxShadow = '0 1px 2px 0 rgb(0 0 0 / 0.05)';
+
+        geral.style.color = 'hsl(var(--muted-foreground))';
+        geral.style.fontWeight = '500';
+        geral.style.background = 'transparent';
+        geral.style.boxShadow = 'none';
+      } else {
+        notas.style.color = '';
+        notas.style.fontWeight = '';
+        notas.style.background = '';
+        notas.style.boxShadow = '';
+      }
+
       if (sideNotesMode) {
         geral.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
         if (!geral.classList.contains('hover:bg-background/50')) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.7
+// @version      12.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.7';
+  const SCRIPT_VERSION = '12.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2356,20 +2356,26 @@
 
       notas.style.removeProperty('color');
       notas.style.removeProperty('font-weight');
+      notas.style.removeProperty('color');
+      notas.style.removeProperty('font-weight');
       notas.style.removeProperty('background');
       notas.style.removeProperty('background-color');
       notas.style.removeProperty('box-shadow');
+      notas.style.removeProperty('transition');
 
       const notasSvg = notas.querySelector('svg');
       if (notasSvg) {
         notasSvg.style.removeProperty('color');
         notasSvg.style.removeProperty('stroke');
+        notasSvg.style.removeProperty('transition');
       }
 
       geral.style.removeProperty('color');
       geral.style.removeProperty('font-weight');
       geral.style.removeProperty('background');
+      geral.style.removeProperty('background-color');
       geral.style.removeProperty('box-shadow');
+      geral.style.removeProperty('transition');
     }
   }
 
@@ -2660,7 +2666,7 @@
             return;
           }
 
-          if (text === 'geral') {
+          if (['geral', 'timeline', 'histórico', 'historico', 'msgs'].includes(text)) {
             sideSetNotesMode(false);
             return;
           }

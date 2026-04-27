@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.5
+// @version      10.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.5';
+  const SCRIPT_VERSION = '10.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2730,16 +2730,20 @@
       const notesCard = findNotesCardIn(host);
       if (!notesCard) return null;
 
-      const depot = ensureTabSwapDepot();
+      // v10.6: nunca mover o card nativo de Notas Internas para fora do local
+      // controlado pelo React. Apenas marca e oculta/exibe visualmente.
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
       notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
       notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      showElement(notesCard);
       bindNotesCardInteractionSafety(notesCard);
-      depot.appendChild(notesCard);
+
+      if (!isVirtualNotesMode || !isVirtualNotesMode()) {
+        hideElement(notesCard);
+      }
+
       return notesCard;
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao guardar Notas Internas`, error);
+      console.error(`[${SCRIPT_NAME}] falha ao preparar Notas Internas`, error);
       return null;
     }
   }
@@ -2764,7 +2768,7 @@
   }
 
   function getCachedNotesCard() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
+    return Array.from(document.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
       .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
   }
 
@@ -2772,66 +2776,17 @@
     if (!host) return;
     ensureTabSwapTicketContext();
 
+    // v10.6: Geral deve exibir Dados do Atendimento + arquivos.
+    // Notas Internas permanece no DOM nativo, mas fica oculto.
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
       notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
+      bindNotesCardInteractionSafety(notesCard);
       hideElement(notesCard);
-      cacheNotesCardFromHost(host);
     }
 
     syncApiFilesToGeneral(host);
-  }
-
-
-  function bindNotesCardInteractionSafety(notesCard) {
-    try {
-      if (!notesCard || !(notesCard instanceof HTMLElement)) return;
-
-      notesCard.style.pointerEvents = 'auto';
-      notesCard.style.position = notesCard.style.position || 'relative';
-      notesCard.style.zIndex = notesCard.style.zIndex || '20';
-
-      if (notesCard.getAttribute('data-tm-notes-interaction-bound') === 'true') {
-        return;
-      }
-
-      notesCard.setAttribute('data-tm-notes-interaction-bound', 'true');
-
-      const syncButtonState = () => {
-        try {
-          const textarea = notesCard.querySelector('textarea');
-          const button = Array.from(notesCard.querySelectorAll('button')).find(btn =>
-            normalizeText(btn.textContent).includes('Adicionar Nota')
-          );
-
-          if (!textarea || !button) return;
-
-          if (normalizeText(textarea.value).length > 0) {
-            button.style.pointerEvents = 'auto';
-          }
-        } catch (_) {}
-      };
-
-      notesCard.addEventListener('input', syncButtonState, true);
-      notesCard.addEventListener('keyup', syncButtonState, true);
-      notesCard.addEventListener('focusin', syncButtonState, true);
-
-      // v10.3: após mover o card entre abas, mantém os eventos dentro do root React
-      // e reemite input/change só quando o usuário digita, para o React atualizar
-      // o estado do botão de forma nativa.
-      notesCard.addEventListener('input', (event) => {
-        try {
-          if (!(event.target instanceof HTMLTextAreaElement)) return;
-          window.setTimeout(syncButtonState, 0);
-        } catch (_) {}
-      }, true);
-
-      window.setTimeout(syncButtonState, 0);
-      window.setTimeout(syncButtonState, 120);
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao proteger interação das notas`, error);
-    }
   }
 
   function appendCachedNotesToFiles(host) {
@@ -3023,16 +2978,7 @@
       const { generalHost } = getSidePanelShellAndHost();
       if (!generalHost) return false;
 
-      let notesCard = findNotesCardIn(generalHost);
-      if (!notesCard) {
-        const cached = getCachedNotesCard?.();
-        if (cached) {
-          showElement(cached);
-          generalHost.appendChild(cached);
-          notesCard = cached;
-        }
-      }
-
+      const notesCard = findNotesCardIn(generalHost);
       if (!notesCard) return false;
 
       for (const child of Array.from(generalHost.children)) {
@@ -3070,6 +3016,13 @@
         node.removeAttribute(VIRTUAL_NOTES_HIDDEN_ATTR);
         node.removeAttribute(HIDDEN_ATTR);
         node.style.pointerEvents = '';
+      }
+
+      // v10.6: ao sair da aba Notas, o próprio card de Notas deve voltar
+      // a ficar oculto na Geral.
+      for (const notes of document.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
+        if (!(notes instanceof HTMLElement)) continue;
+        hideElement(notes);
       }
     } catch (_) {}
   }
@@ -3160,6 +3113,18 @@
       if (!isVirtualNotesMode()) return;
       setVirtualNotesMode(false);
       clearVirtualNotesInlineVisibility();
+
+      const { generalHost } = getSidePanelShellAndHost();
+      if (generalHost) {
+        const notesCard = findNotesCardIn(generalHost);
+        if (notesCard) {
+          notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
+          notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
+          hideElement(notesCard);
+        }
+        syncApiFilesToGeneral(generalHost);
+      }
+
       scheduleGeneralFilesNotesSwap();
     } catch (_) {}
   }

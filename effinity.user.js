@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.9
+// @version      9.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.9';
+  const SCRIPT_VERSION = '9.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -445,6 +445,13 @@
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
+    }
+
+
+    /* ── Troca Geral ↔ Arquivos: máscara discreta durante pré-carga ───── */
+    html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 .relative.overflow-hidden.flex-1 {
+      opacity: 0 !important;
+      transition: opacity 0.08s ease !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2124,6 +2131,12 @@
   const TAB_SWAP_READY_ATTR = 'data-tm-tab-swap-ready';
   const TAB_SWAP_ROLE_ATTR = 'data-tm-tab-swap-role';
   const TAB_SWAP_SOURCE_ATTR = 'data-tm-tab-swap-source';
+  const TAB_SWAP_TICKET_ATTR = 'data-tm-tab-swap-ticket';
+  const TAB_SWAP_PRIMING_ATTR = 'data-tm-tab-swap-priming';
+
+  let activeTabSwapTicketKey = '';
+  let lastAutoPrimedTicketKey = '';
+  let tabSwapPrimeTimer = null;
 
   function ensureTabSwapDepot() {
     let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
@@ -2147,6 +2160,41 @@
   function showElement(el) {
     if (!el || !(el instanceof HTMLElement)) return;
     el.removeAttribute(HIDDEN_ATTR);
+  }
+
+  function getCurrentTicketSwapKey() {
+    try {
+      const header = document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4');
+      const name = normalizeText(header?.querySelector('h2')?.textContent || '');
+      const phone = normalizeText(header?.querySelector('a[href^="tel:"]')?.getAttribute('href') || '');
+      const selectedCard = document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500');
+      const protocol = normalizeText(selectedCard?.textContent || '').slice(0, 120);
+      const key = [name, phone, protocol].filter(Boolean).join('|');
+      return key || location.pathname;
+    } catch (_) {
+      return location.pathname;
+    }
+  }
+
+  function isNodeForCurrentTicket(node) {
+    if (!(node instanceof HTMLElement)) return false;
+    const key = node.getAttribute(TAB_SWAP_TICKET_ATTR);
+    return !!key && key === activeTabSwapTicketKey;
+  }
+
+  function ensureTabSwapTicketContext() {
+    const key = getCurrentTicketSwapKey();
+    if (key === activeTabSwapTicketKey) return;
+
+    activeTabSwapTicketKey = key;
+    lastAutoPrimedTicketKey = '';
+
+    const depot = ensureTabSwapDepot();
+    for (const node of depot.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}]`)) {
+      if (!(node instanceof HTMLElement)) continue;
+      node.setAttribute('data-tm-tab-swap-stale', 'true');
+    }
   }
 
   function getButtonText(button) {
@@ -2277,6 +2325,7 @@
       const depot = ensureTabSwapDepot();
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
       notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
+      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
       showElement(notesCard);
       depot.appendChild(notesCard);
       return notesCard;
@@ -2296,6 +2345,7 @@
       for (const node of fileNodes) {
         node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
         node.setAttribute(TAB_SWAP_SOURCE_ATTR, 'arquivos');
+        node.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
         showElement(node);
         depot.appendChild(node);
       }
@@ -2308,15 +2358,18 @@
   }
 
   function getCachedNotesCard() {
-    return ensureTabSwapDepot().querySelector(`[${TAB_SWAP_ROLE_ATTR}="notes"]`);
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
+      .find(isNodeForCurrentTicket) || null;
   }
 
   function getCachedFileNodes() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`));
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`))
+      .filter(isNodeForCurrentTicket);
   }
 
   function appendCachedFilesToGeneral(host) {
     if (!host) return;
+    ensureTabSwapTicketContext();
 
     const files = getCachedFileNodes();
     if (!files.length) return;
@@ -2324,6 +2377,7 @@
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
+      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
       hideElement(notesCard);
       cacheNotesCardFromHost(host);
     }
@@ -2337,6 +2391,7 @@
 
   function appendCachedNotesToFiles(host) {
     if (!host) return;
+    ensureTabSwapTicketContext();
 
     cacheFileNodesFromHost(host);
 
@@ -2369,6 +2424,7 @@
 
   function applyGeneralFilesNotesSwap() {
     try {
+      ensureTabSwapTicketContext();
       const panel = findSidePanelWithTabs();
       if (!panel) return;
 
@@ -2378,12 +2434,70 @@
 
       if (tab === 'geral') {
         appendCachedFilesToGeneral(host);
+        scheduleAutoPrimeFilesForGeneral(panel);
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
     }
+  }
+
+  function findSideTabButton(panel, tabName) {
+    if (!panel) return null;
+    for (const button of panel.querySelectorAll('button')) {
+      if (getButtonText(button) === tabName) return button;
+    }
+    return null;
+  }
+
+  function scheduleAutoPrimeFilesForGeneral(panel) {
+    if (!panel || !activeTabSwapTicketKey) return;
+    if (lastAutoPrimedTicketKey === activeTabSwapTicketKey) return;
+    if (getCachedFileNodes().length) return;
+
+    const generalButton = findSideTabButton(panel, 'geral');
+    const filesButton = findSideTabButton(panel, 'arquivos');
+    if (!generalButton || !filesButton) return;
+
+    lastAutoPrimedTicketKey = activeTabSwapTicketKey;
+    clearTimeout(tabSwapPrimeTimer);
+    document.documentElement.setAttribute(TAB_SWAP_PRIMING_ATTR, 'true');
+
+    tabSwapPrimeTimer = window.setTimeout(() => {
+      try {
+        if (findActiveSideTabName(panel) !== 'geral') {
+          document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
+          return;
+        }
+
+        cacheCurrentTabBeforeSwap();
+        filesButton.click();
+
+        window.setTimeout(() => {
+          try {
+            ensureTabSwapTicketContext();
+            const freshPanel = findSidePanelWithTabs();
+            const freshHost = getCurrentTabContentHost(freshPanel);
+            cacheFileNodesFromHost(freshHost);
+
+            const freshGeneralButton = findSideTabButton(freshPanel, 'geral');
+            if (freshGeneralButton) freshGeneralButton.click();
+
+            window.setTimeout(() => {
+              document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
+              applyGeneralFilesNotesSwap();
+            }, 160);
+          } catch (error) {
+            document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
+            console.error(`[${SCRIPT_NAME}] falha ao capturar Arquivos na pré-carga`, error);
+          }
+        }, 220);
+      } catch (error) {
+        document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
+        console.error(`[${SCRIPT_NAME}] falha na pré-carga de Arquivos`, error);
+      }
+    }, 180);
   }
 
   let tabSwapTimers = [];
@@ -2477,7 +2591,17 @@
     observer.observe(target, { childList: true, subtree: true });
 
     document.addEventListener('click', (event) => {
-      if (!isSidePanelTabTrigger(event.target)) return;
+      const target = event.target;
+
+      if (target instanceof Element && target.closest('div.p-2.border.rounded.cursor-pointer')) {
+        window.setTimeout(() => {
+          ensureTabSwapTicketContext();
+          scheduleTabAntiFlickerPasses();
+          scheduleGeneralFilesNotesSwap();
+        }, 180);
+      }
+
+      if (!isSidePanelTabTrigger(target)) return;
       cacheCurrentTabBeforeSwap();
       scheduleTabAntiFlickerPasses();
       scheduleGeneralFilesNotesSwap();

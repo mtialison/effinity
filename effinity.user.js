@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.2
+// @version      9.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.2';
+  const SCRIPT_VERSION = '9.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -452,6 +452,14 @@
     html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 .relative.overflow-hidden.flex-1 {
       opacity: 0 !important;
       transition: opacity 0.08s ease !important;
+    }
+
+    /* ── Troca Geral ↔ Arquivos: anti-stale imediato ao trocar ticket ─── */
+    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="file"],
+    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="notes"] {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2133,10 +2141,12 @@
   const TAB_SWAP_SOURCE_ATTR = 'data-tm-tab-swap-source';
   const TAB_SWAP_TICKET_ATTR = 'data-tm-tab-swap-ticket';
   const TAB_SWAP_PRIMING_ATTR = 'data-tm-tab-swap-priming';
+  const TAB_SWAP_TICKET_SWITCHING_ATTR = 'data-tm-tab-swap-ticket-switching';
 
   let activeTabSwapTicketKey = '';
   let lastAutoPrimedTicketKey = '';
   let tabSwapPrimeTimer = null;
+  let tabSwapTicketSwitchTimer = null;
 
   function ensureTabSwapDepot() {
     let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
@@ -2194,6 +2204,43 @@
     for (const node of depot.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}]`)) {
       if (!(node instanceof HTMLElement)) continue;
       node.setAttribute('data-tm-tab-swap-stale', 'true');
+    }
+  }
+
+  function setTabSwapTicketSwitching(isSwitching) {
+    const root = document.documentElement;
+    if (!root) return;
+
+    if (isSwitching) {
+      root.setAttribute(TAB_SWAP_TICKET_SWITCHING_ATTR, 'true');
+      clearTimeout(tabSwapTicketSwitchTimer);
+      tabSwapTicketSwitchTimer = window.setTimeout(() => setTabSwapTicketSwitching(false), 1200);
+      return;
+    }
+
+    root.removeAttribute(TAB_SWAP_TICKET_SWITCHING_ATTR);
+    clearTimeout(tabSwapTicketSwitchTimer);
+    tabSwapTicketSwitchTimer = null;
+  }
+
+  function hideVisibleTabSwapNodesNow() {
+    const panel = findSidePanelWithTabs();
+    if (!panel) return;
+
+    for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
+      if (!(node instanceof HTMLElement)) continue;
+      hideElement(node);
+    }
+  }
+
+  function beginTicketSwapRefresh() {
+    try {
+      setTabSwapTicketSwitching(true);
+      activeTabSwapTicketKey = '';
+      lastAutoPrimedTicketKey = '';
+      hideVisibleTabSwapNodesNow();
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao iniciar troca visual de ticket`, error);
     }
   }
 
@@ -2543,10 +2590,12 @@
 
       if (tab === 'geral') {
         appendCachedFilesToGeneral(host);
-        // v9.2: sem clique automático e sem troca dentro do observer para evitar travamento.
+        // v9.3: sem clique automático; conteúdo antigo fica mascarado durante a troca de ticket.
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
+
+      setTabSwapTicketSwitching(false);
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
     }
@@ -2571,7 +2620,7 @@
     tabSwapTimers.forEach(clearTimeout);
     tabSwapTimers = [];
 
-    for (const delay of [80, 180, 350, 650]) {
+    for (const delay of [20, 60, 120, 240, 420, 700]) {
       tabSwapTimers.push(window.setTimeout(applyGeneralFilesNotesSwap, delay));
     }
   }
@@ -2658,11 +2707,14 @@
       const target = event.target;
 
       if (target instanceof Element && target.closest('div.p-2.border.rounded.cursor-pointer')) {
+        beginTicketSwapRefresh();
+        scheduleTabAntiFlickerPasses();
+
         window.setTimeout(() => {
           ensureTabSwapTicketContext();
           scheduleTabAntiFlickerPasses();
           scheduleGeneralFilesNotesSwap();
-        }, 180);
+        }, 40);
       }
 
       if (!isSidePanelTabTrigger(target)) return;

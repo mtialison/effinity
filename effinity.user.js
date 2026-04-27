@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.1
+// @version      12.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.1';
+  const SCRIPT_VERSION = '12.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -277,6 +277,41 @@
       width: 0.75rem !important;
       height: 0.75rem !important;
       flex-shrink: 0 !important;
+    }
+
+
+    /* ── v12.2: destaque real da aba Notas virtual ─────────────────────
+       A label Notas é renderizada por ::after; por isso o destaque precisa
+       atingir diretamente o botão com ícone de arquivo quando o modo Notas
+       está ativo. */
+    html[data-tm-notes-mode="true"]
+      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) {
+      background: hsl(var(--background)) !important;
+      color: hsl(var(--foreground)) !important;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+      font-weight: 700 !important;
+    }
+
+    html[data-tm-notes-mode="true"]
+      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0)::after {
+      color: hsl(var(--foreground)) !important;
+      font-weight: 700 !important;
+      opacity: 1 !important;
+    }
+
+    html[data-tm-notes-mode="true"]
+      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) svg {
+      color: hsl(var(--foreground)) !important;
+      stroke: currentColor !important;
+      opacity: 1 !important;
+    }
+
+    html[data-tm-notes-mode="true"]
+      button:has(svg.lucide-user.h-3.w-3.flex-shrink-0) {
+      background: transparent !important;
+      box-shadow: none !important;
+      color: hsl(var(--muted-foreground)) !important;
+      font-weight: 500 !important;
     }
 
     /* ── 2. Layout geral ───────────────────────────────────────────────── */

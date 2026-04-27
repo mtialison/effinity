@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.6
+// @version      9.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.6';
+  const SCRIPT_VERSION = '9.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -459,6 +459,23 @@
     /* ── Troca Geral ↔ Arquivos: anti-stale imediato ao trocar ticket ─── */
     html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="file"],
     html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="notes"] {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+
+
+    /* ── Troca Geral ↔ Arquivos: anti-flicker da aba Arquivos ───────────
+       Enquanto Arquivos está ativa, os cards nativos de arquivo do SPA ficam
+       ocultos no primeiro paint; o script insere apenas o card de Notas. */
+    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
+      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
+    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
+      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
+    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
+      [data-tm-tab-swap-role="file-original"] {
+      display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
@@ -2134,7 +2151,7 @@
   /* ========================================================================
    * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
    * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia v9.6: arquivos renderizados direto da API /tickets/{id}/files.
+   * Estratégia v9.7: arquivos renderizados direto da API /tickets/{id}/files.
    * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
    * da aba Arquivos para montar a aba Geral.
    * ====================================================================== */
@@ -2242,6 +2259,22 @@
     }
 
     return '';
+  }
+
+  function syncSideActiveTabAttribute(tabName) {
+    try {
+      const normalized = String(tabName || '').toLowerCase();
+      if (normalized) {
+        document.documentElement.setAttribute('data-tm-side-active-tab', normalized);
+      } else {
+        document.documentElement.removeAttribute('data-tm-side-active-tab');
+      }
+    } catch (_) {}
+  }
+
+  function refreshSideActiveTabAttribute() {
+    const panel = findSidePanelWithTabs();
+    syncSideActiveTabAttribute(findActiveSideTabName(panel));
   }
 
   function findSidePanelContentShell(panel) {
@@ -2595,7 +2628,7 @@
     if (!host) return;
     ensureTabSwapTicketContext();
 
-    // v9.6: nunca remove/move os arquivos nativos da aba Arquivos.
+    // v9.7: nunca remove/move os arquivos nativos da aba Arquivos.
     // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
     // ao trocar de ticket com a aba Arquivos aberta.
     cacheFileNodesFromHost(host);
@@ -2618,6 +2651,7 @@
       if (!panel) return;
 
       const tab = findActiveSideTabName(panel);
+      syncSideActiveTabAttribute(tab);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
 
@@ -2638,6 +2672,7 @@
       if (!panel) return;
 
       const tab = findActiveSideTabName(panel);
+      syncSideActiveTabAttribute(tab);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
 
@@ -2743,10 +2778,11 @@
       const target = event.target;
 
       if (target instanceof Element && target.closest('div.p-2.border.rounded.cursor-pointer')) {
+        refreshSideActiveTabAttribute();
         beginTicketSwapRefresh();
         scheduleTabAntiFlickerPasses();
 
-        // v9.6: se a troca de ticket acontecer com Arquivos aberto, não forçamos
+        // v9.7: se a troca de ticket acontecer com Arquivos aberto, não forçamos
         // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
         // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {
@@ -2757,6 +2793,10 @@
       }
 
       if (!isSidePanelTabTrigger(target)) return;
+
+      const clickedTab = normalizeText(target.closest('button, a, [role="tab"]')?.textContent || '').toLowerCase();
+      if (clickedTab) syncSideActiveTabAttribute(clickedTab === 'historico' ? 'histórico' : clickedTab);
+
       cacheCurrentTabBeforeSwap();
       scheduleTabAntiFlickerPasses();
       scheduleGeneralFilesNotesSwap();
@@ -2764,6 +2804,7 @@
   }
 
   function init() {
+    refreshSideActiveTabAttribute();
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();

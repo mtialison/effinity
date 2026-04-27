@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.7
+// @version      9.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.7';
+  const SCRIPT_VERSION = '9.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -475,6 +475,21 @@
       .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
     html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
       [data-tm-tab-swap-role="file-original"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+
+
+    /* ── Troca Geral ↔ Arquivos: ocultar estado vazio nativo em Arquivos ──
+       O card de Notas Internas é o conteúdo desejado nessa aba. O estado
+       "Nenhum arquivo anexado" do SPA não deve aparecer junto com ele. */
+    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
+      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3,
+    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
+      .h-full.w-full.overflow-auto > .p-3 > [data-tm-tab-swap-role="file-empty"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
@@ -2151,7 +2166,7 @@
   /* ========================================================================
    * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
    * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia v9.7: arquivos renderizados direto da API /tickets/{id}/files.
+   * Estratégia v9.8: arquivos renderizados direto da API /tickets/{id}/files.
    * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
    * da aba Arquivos para montar a aba Geral.
    * ====================================================================== */
@@ -2356,6 +2371,30 @@
     const hasFileMarker = text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || !!node.querySelector('img');
 
     return hasOpenButton && hasFileMarker;
+  }
+
+
+  function isNativeFilesEmptyState(node) {
+    if (!(node instanceof HTMLElement)) return false;
+    if (findNotesCardIn(node)) return false;
+
+    const text = normalizeText(node.textContent);
+    return text.includes('Nenhum arquivo anexado') ||
+      text.includes('Arquivos enviados durante o atendimento aparecerão aqui');
+  }
+
+  function hideNativeFilesEmptyState(host) {
+    try {
+      if (!host) return;
+
+      for (const node of Array.from(host.children)) {
+        if (!isNativeFilesEmptyState(node)) continue;
+        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-empty');
+        hideElement(node);
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao ocultar estado vazio de Arquivos`, error);
+    }
   }
 
   function hideVisibleTabSwapNodesNow() {
@@ -2590,6 +2629,7 @@
     try {
       if (!host) return [];
 
+      hideNativeFilesEmptyState(host);
       const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
 
       for (const node of fileNodes) {
@@ -2627,8 +2667,9 @@
   function appendCachedNotesToFiles(host) {
     if (!host) return;
     ensureTabSwapTicketContext();
+    hideNativeFilesEmptyState(host);
 
-    // v9.7: nunca remove/move os arquivos nativos da aba Arquivos.
+    // v9.8: nunca remove/move os arquivos nativos da aba Arquivos.
     // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
     // ao trocar de ticket com a aba Arquivos aberta.
     cacheFileNodesFromHost(host);
@@ -2782,7 +2823,7 @@
         beginTicketSwapRefresh();
         scheduleTabAntiFlickerPasses();
 
-        // v9.7: se a troca de ticket acontecer com Arquivos aberto, não forçamos
+        // v9.8: se a troca de ticket acontecer com Arquivos aberto, não forçamos
         // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
         // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {

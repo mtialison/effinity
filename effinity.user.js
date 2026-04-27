@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.8
+// @version      10.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.8';
+  const SCRIPT_VERSION = '10.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -471,66 +471,48 @@
     }
 
 
-    /* ── Troca Geral ↔ Arquivos: máscara discreta durante pré-carga ───── */
-    html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 {
-      opacity: 0 !important;
-      transition: opacity 0.06s ease !important;
-      pointer-events: none !important;
-    }
 
-    /* ── Troca Geral ↔ Arquivos: anti-stale imediato ao trocar ticket ─── */
-    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="file"],
-    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="notes"] {
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-
-
-    /* ── Troca Geral ↔ Arquivos: anti-flicker da aba Arquivos ───────────
-       Enquanto Arquivos está ativa, os cards nativos de arquivo do SPA ficam
-       ocultos no primeiro paint; o script insere apenas o card de Notas. */
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="file-original"] {
+    /* ── Aba Notas limpa v10.9 ──────────────────────────────────────────
+       Não move nem clona o card de Notas Internas. O card fica no DOM
+       original do React; o script apenas alterna visibilidade por atributos. */
+    [data-tm-clean-side-view="geral"][data-tm-clean-role="notes"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
     }
 
-
-
-    /* ── Troca Geral ↔ Arquivos: bloqueio total do conteúdo nativo da aba Arquivos ──
-       v9.9: regra independente da aba ativa. Isso impede o primeiro paint dos
-       arquivos/estado vazio nativos antes do JS atualizar data-tm-side-active-tab. */
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3 {
+    [data-tm-clean-side-view="notas"][data-tm-clean-role="general"],
+    [data-tm-clean-side-view="notas"][data-tm-clean-role="api-file"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
     }
 
-    /* ── Troca Geral ↔ Arquivos: ocultar estado vazio nativo em Arquivos ──
-       O card de Notas Internas é o conteúdo desejado nessa aba. O estado
-       "Nenhum arquivo anexado" do SPA não deve aparecer junto com ele. */
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3,
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > [data-tm-tab-swap-role="file-empty"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
+    [data-tm-clean-side-view="notas"][data-tm-clean-role="notes"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      position: relative !important;
+      z-index: 20 !important;
+    }
+
+    [data-tm-clean-side-view="notas"][data-tm-clean-role="notes"] * {
+      pointer-events: auto !important;
+    }
+
+    html[data-tm-clean-notes-active="true"] button[data-tm-clean-tab="geral"] {
+      background: transparent !important;
+      box-shadow: none !important;
+      color: hsl(var(--muted-foreground)) !important;
+    }
+
+    html[data-tm-clean-notes-active="true"] button[data-tm-clean-tab="notas"] {
+      background: hsl(var(--background)) !important;
+      color: hsl(var(--foreground)) !important;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2200,89 +2182,44 @@
 
 
 
+
   /* ========================================================================
-   * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
-   * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia v9.9: arquivos renderizados direto da API /tickets/{id}/files.
-   * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
-   * da aba Arquivos para montar a aba Geral.
+   * SEÇÃO: ABA GERAL ↔ NOTAS LIMPA (v10.9)
+   * Regra principal: nunca mover/clonar o card nativo de Notas Internas.
+   * - Geral: Dados do Atendimento + arquivos renderizados pela API.
+   * - Notas: somente o card nativo de Notas Internas, no DOM original React.
    * ====================================================================== */
-  const TAB_SWAP_DEPOT_ID = 'tm-effinity-tab-swap-depot';
-  const TAB_SWAP_READY_ATTR = 'data-tm-tab-swap-ready';
-  const TAB_SWAP_ROLE_ATTR = 'data-tm-tab-swap-role';
-  const TAB_SWAP_SOURCE_ATTR = 'data-tm-tab-swap-source';
-  const TAB_SWAP_TICKET_ATTR = 'data-tm-tab-swap-ticket';
-  const TAB_SWAP_API_FILE_ID_ATTR = 'data-tm-api-file-id';
+  const CLEAN_SIDE_VIEW_ATTR = 'data-tm-clean-side-view';
+  const CLEAN_ROLE_ATTR = 'data-tm-clean-role';
+  const CLEAN_TAB_ATTR = 'data-tm-clean-tab';
+  const CLEAN_NOTES_ACTIVE_ATTR = 'data-tm-clean-notes-active';
+  const CLEAN_API_FILE_ID_ATTR = 'data-tm-clean-api-file-id';
+  const CLEAN_FILES_CACHE_LIMIT = 80;
 
-  const TICKET_FILES_BY_KEY = new Map();
-  const TICKET_FILES_CACHE_LIMIT = 80;
+  const CLEAN_TICKET_FILES_BY_KEY = new Map();
+  let cleanActiveTicketKey = '';
+  let cleanNotesMode = false;
+  let cleanTimers = [];
 
-  let activeTabSwapTicketKey = '';
-
-  function ensureTabSwapDepot() {
-    let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
-    if (depot) return depot;
-
-    depot = document.createElement('div');
-    depot.id = TAB_SWAP_DEPOT_ID;
-    depot.setAttribute('aria-hidden', 'true');
-    depot.style.display = 'none';
-    depot.style.position = 'fixed';
-    depot.style.width = '0';
-    depot.style.height = '0';
-    depot.style.overflow = 'hidden';
-    depot.style.pointerEvents = 'none';
-
-    const parent = document.body || document.documentElement;
-    parent.appendChild(depot);
-    return depot;
-  }
-
-  function showElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    el.removeAttribute(HIDDEN_ATTR);
-  }
-
-  function getCurrentTicketSwapKey() {
-    try {
-      const header = document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4');
-      const name = normalizeText(header?.querySelector('h2')?.textContent || '');
-      const phone = normalizeText(header?.querySelector('a[href^="tel:"]')?.getAttribute('href') || '');
-      const selectedCard = document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
-        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500');
-      const protocol = normalizeText(selectedCard?.textContent || '').slice(0, 120);
-      const key = [name, phone, protocol].filter(Boolean).join('|');
-      return key || location.pathname;
-    } catch (_) {
-      return location.pathname;
+  function cleanSetNotesMode(active) {
+    cleanNotesMode = !!active;
+    if (cleanNotesMode) {
+      document.documentElement.setAttribute(CLEAN_NOTES_ACTIVE_ATTR, 'true');
+    } else {
+      document.documentElement.removeAttribute(CLEAN_NOTES_ACTIVE_ATTR);
     }
   }
 
-  function ensureTabSwapTicketContext() {
-    const key = getCurrentTicketSwapKey();
-    if (key === activeTabSwapTicketKey) return;
-    activeTabSwapTicketKey = key;
-    hideVisibleTabSwapNodesNow();
-  }
-
-  function beginTicketSwapRefresh() {
-    try {
-      activeTabSwapTicketKey = '';
-      hideVisibleTabSwapNodesNow();
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao iniciar troca visual de ticket`, error);
-    }
-  }
-
-  function getButtonText(button) {
+  function cleanGetButtonText(button) {
     const text = normalizeText(button?.textContent || '').toLowerCase();
-    if (text === 'notas') return 'arquivos';
+    if (text === 'arquivos' || text === 'notas') return text;
     return text;
   }
 
-  function findSidePanelWithTabs() {
+  function cleanFindSidePanel() {
     for (const button of document.querySelectorAll('button')) {
-      if (getButtonText(button) !== 'geral') continue;
+      const text = cleanGetButtonText(button);
+      if (text !== 'geral') continue;
 
       const panel = button.closest('.flex.flex-col.h-full.min-h-0') ||
         button.closest('.hidden.xl\\:flex') ||
@@ -2290,53 +2227,53 @@
 
       if (!panel) continue;
 
-      const labels = Array.from(panel.querySelectorAll('button')).map(getButtonText);
-      if (labels.includes('geral') && labels.includes('arquivos')) return panel;
+      const labels = Array.from(panel.querySelectorAll('button')).map(cleanGetButtonText);
+      if (labels.includes('geral') && (labels.includes('arquivos') || labels.includes('notas'))) {
+        return panel;
+      }
     }
 
     return null;
   }
 
-  function findActiveSideTabName(panel) {
-    if (!panel) return '';
+  function cleanFindTabButton(name) {
+    const panel = cleanFindSidePanel();
+    if (!panel) return null;
 
     for (const button of panel.querySelectorAll('button')) {
-      const text = getButtonText(button);
-      if (!['geral', 'arquivos', 'timeline', 'histórico', 'historico', 'msgs'].includes(text)) continue;
-
-      const isActive =
-        button.classList.contains('bg-background') &&
-        button.classList.contains('text-foreground') &&
-        button.classList.contains('shadow-sm');
-
-      if (isActive) return text === 'historico' ? 'histórico' : text;
+      const text = cleanGetButtonText(button);
+      if (name === 'notas' && (text === 'notas' || text === 'arquivos')) return button;
+      if (text === name) return button;
     }
 
-    return '';
+    return null;
   }
 
-  function syncSideActiveTabAttribute(tabName) {
-    try {
-      const normalized = String(tabName || '').toLowerCase();
-      if (normalized) {
-        document.documentElement.setAttribute('data-tm-side-active-tab', normalized);
-      } else {
-        document.documentElement.removeAttribute('data-tm-side-active-tab');
+  function cleanMarkTabButtons() {
+    const geral = cleanFindTabButton('geral');
+    const notas = cleanFindTabButton('notas');
+
+    if (geral) geral.setAttribute(CLEAN_TAB_ATTR, 'geral');
+    if (notas) {
+      notas.setAttribute(CLEAN_TAB_ATTR, 'notas');
+      notas.setAttribute('aria-label', 'Notas');
+      notas.setAttribute('title', 'Notas');
+
+      for (const node of Array.from(notas.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue).toLowerCase() === 'arquivos') {
+          node.nodeValue = 'Notas';
+        }
       }
-    } catch (_) {}
+    }
   }
 
-  function refreshSideActiveTabAttribute() {
-    const panel = findSidePanelWithTabs();
-    syncSideActiveTabAttribute(findActiveSideTabName(panel));
-  }
-
-  function findSidePanelContentShell(panel) {
+  function cleanFindShell() {
+    const panel = cleanFindSidePanel();
     if (!panel) return null;
 
     for (const child of Array.from(panel.children)) {
-      if (!(child instanceof HTMLElement)) continue;
       if (
+        child instanceof HTMLElement &&
         child.classList.contains('relative') &&
         child.classList.contains('overflow-hidden') &&
         child.classList.contains('flex-1')
@@ -2348,10 +2285,13 @@
     return panel.querySelector('.relative.overflow-hidden.flex-1');
   }
 
-  function findGeneralContentHost(shell) {
+  function cleanFindGeneralHost() {
+    const shell = cleanFindShell();
     if (!shell) return null;
 
-    for (const host of shell.querySelectorAll('div.flex.flex-col.gap-4.p-3')) {
+    const hosts = Array.from(shell.querySelectorAll('div.flex.flex-col.gap-4.p-3'));
+    for (const host of hosts) {
+      if (!(host instanceof HTMLElement)) continue;
       if (findNotesCardIn(host) || normalizeText(host.textContent).includes('Dados do Atendimento')) {
         return host;
       }
@@ -2360,93 +2300,31 @@
     return null;
   }
 
-  function findFilesContentHost(shell) {
-    if (!shell) return null;
-
-    for (const host of shell.querySelectorAll('div.space-y-3')) {
-      const text = normalizeText(host.textContent);
-      if (text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || text.includes('Abrir')) {
-        return host;
-      }
-    }
-
-    const p3 = shell.querySelector('.h-full.w-full.overflow-auto > .p-3');
-    return p3 instanceof HTMLElement ? p3 : null;
-  }
-
-  function getCurrentTabContentHost(panel) {
-    const shell = findSidePanelContentShell(panel);
-    const tab = findActiveSideTabName(panel);
-
-    if (tab === 'geral') return findGeneralContentHost(shell);
-    if (tab === 'arquivos') return findFilesContentHost(shell);
-
-    return null;
-  }
-
-  function findCardByHeading(root, headingText) {
-    if (!root) return null;
-
-    for (const title of root.querySelectorAll('h3')) {
-      if (normalizeText(title.textContent) !== headingText) continue;
-      const card = title.closest('.rounded-xl.bg-card.border.border-border');
-      if (card instanceof HTMLElement) return card;
-    }
-
-    return null;
-  }
-
-  function findNotesCardIn(root) {
-    return findCardByHeading(root, 'Notas Internas');
-  }
-
-  function isSwappableFileNode(node) {
-    if (!(node instanceof HTMLElement)) return false;
-    if (node.getAttribute(TAB_SWAP_ROLE_ATTR) === 'notes') return false;
-    if (findNotesCardIn(node)) return false;
-
-    const text = normalizeText(node.textContent);
-    const hasOpenButton = Array.from(node.querySelectorAll('button')).some(button => normalizeText(button.textContent) === 'Abrir');
-    const hasFileMarker = text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || !!node.querySelector('img');
-
-    return hasOpenButton && hasFileMarker;
-  }
-
-
-  function isNativeFilesEmptyState(node) {
-    if (!(node instanceof HTMLElement)) return false;
-    if (findNotesCardIn(node)) return false;
-
-    const text = normalizeText(node.textContent);
-    return text.includes('Nenhum arquivo anexado') ||
-      text.includes('Arquivos enviados durante o atendimento aparecerão aqui');
-  }
-
-  function hideNativeFilesEmptyState(host) {
+  function cleanGetCurrentTicketKey() {
     try {
-      if (!host) return;
+      const header = document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4');
+      const name = normalizeText(header?.querySelector('h2')?.textContent || '');
+      const phone = normalizeText(header?.querySelector('a[href^="tel:"]')?.getAttribute('href') || '');
+      const selectedCard =
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer[class*="border-primary"]');
 
-      for (const node of Array.from(host.children)) {
-        if (!isNativeFilesEmptyState(node)) continue;
-        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-empty');
-        hideElement(node);
-      }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ocultar estado vazio de Arquivos`, error);
+      const selectedText = normalizeText(selectedCard?.textContent || '').slice(0, 160);
+      return [name, phone, selectedText].filter(Boolean).join('|') || location.pathname;
+    } catch (_) {
+      return location.pathname;
     }
   }
 
-  function hideVisibleTabSwapNodesNow() {
-    const panel = findSidePanelWithTabs();
-    if (!panel) return;
-
-    for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
-      if (!(node instanceof HTMLElement)) continue;
-      hideElement(node);
-    }
+  function cleanEnsureTicketContext() {
+    const key = cleanGetCurrentTicketKey();
+    if (key === cleanActiveTicketKey) return;
+    cleanActiveTicketKey = key;
+    cleanHideStaleApiFiles();
   }
 
-  function normalizeTicketFile(file) {
+  function cleanNormalizeTicketFile(file) {
     if (!file || typeof file !== 'object') return null;
 
     const id = file.id || file.fileId || file.downloadUrl || file.fileName;
@@ -2465,43 +2343,48 @@
       thumbnailUrl: String(file.thumbnailUrl || '').trim(),
       downloadUrl,
       createdAt: file.createdAt || null,
-      formattedSize: String(file.formattedSize || '').trim(),
       icon: String(file.icon || '').trim()
     };
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
     try {
+      const url = String(requestUrl || '');
       if (!payload || typeof payload !== 'object') return;
-      if (!Array.isArray(payload.files) && !String(requestUrl || '').includes('/files')) return;
+      if (!Array.isArray(payload.files) && !url.includes('/files')) return;
 
       const files = Array.isArray(payload.files)
-        ? payload.files.map(normalizeTicketFile).filter(Boolean)
+        ? payload.files.map(cleanNormalizeTicketFile).filter(Boolean)
         : [];
 
-      const currentKey = getCurrentTicketSwapKey();
-      if (!currentKey) return;
+      const key = cleanGetCurrentTicketKey();
+      if (!key) return;
 
-      TICKET_FILES_BY_KEY.set(currentKey, files);
+      CLEAN_TICKET_FILES_BY_KEY.set(key, files);
 
-      if (TICKET_FILES_BY_KEY.size > TICKET_FILES_CACHE_LIMIT) {
-        const overflow = TICKET_FILES_BY_KEY.size - TICKET_FILES_CACHE_LIMIT;
-        Array.from(TICKET_FILES_BY_KEY.keys()).slice(0, overflow).forEach(key => TICKET_FILES_BY_KEY.delete(key));
+      if (CLEAN_TICKET_FILES_BY_KEY.size > CLEAN_FILES_CACHE_LIMIT) {
+        const overflow = CLEAN_TICKET_FILES_BY_KEY.size - CLEAN_FILES_CACHE_LIMIT;
+        Array.from(CLEAN_TICKET_FILES_BY_KEY.keys()).slice(0, overflow).forEach(oldKey => CLEAN_TICKET_FILES_BY_KEY.delete(oldKey));
       }
 
-      scheduleGeneralFilesNotesSwap();
+      cleanScheduleRender();
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao processar arquivos do ticket`, error);
     }
   }
 
-  function formatTicketFileDate(value) {
+  function cleanCurrentFiles() {
+    cleanEnsureTicketContext();
+    return CLEAN_TICKET_FILES_BY_KEY.get(cleanActiveTicketKey) || [];
+  }
+
+  function cleanFormatFileDate(value) {
     const date = parseApiDate(value);
     if (!date) return '';
     return `${date.toLocaleDateString('pt-BR')} às ${formatApiTime(date)}`;
   }
 
-  function getTicketFileBadge(file) {
+  function cleanFileBadge(file) {
     const category = String(file?.category || '').toUpperCase();
     const mimeType = String(file?.mimeType || '').toLowerCase();
 
@@ -2512,17 +2395,17 @@
     return 'Documento';
   }
 
-  function isImageTicketFile(file) {
+  function cleanIsImageFile(file) {
     const mimeType = String(file?.mimeType || '').toLowerCase();
     const icon = String(file?.icon || '').toLowerCase();
     return mimeType.startsWith('image/') || icon === 'image';
   }
 
-  function buildFileThumb(file) {
+  function cleanCreateFileThumb(file) {
     const box = document.createElement('div');
     box.className = 'relative h-12 w-12 rounded overflow-hidden bg-muted group flex items-center justify-center';
 
-    if (isImageTicketFile(file) && file.thumbnailUrl) {
+    if (cleanIsImageFile(file) && file.thumbnailUrl) {
       const img = document.createElement('img');
       img.src = file.thumbnailUrl;
       img.alt = file.fileName;
@@ -2532,21 +2415,18 @@
       return box;
     }
 
-    const icon = document.createElement('span');
-    icon.className = 'text-muted-foreground text-xl leading-none';
-    icon.textContent = '▯';
-    box.appendChild(icon);
+    const span = document.createElement('span');
+    span.className = 'text-muted-foreground text-xl leading-none';
+    span.textContent = '▯';
+    box.appendChild(span);
     return box;
   }
 
-  function createApiFileCard(file) {
+  function cleanCreateApiFileCard(file) {
     const card = document.createElement('div');
     card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
-    card.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
-    card.setAttribute(TAB_SWAP_SOURCE_ATTR, 'api-files');
-    card.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-    card.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-    card.setAttribute(TAB_SWAP_API_FILE_ID_ATTR, file.id);
+    card.setAttribute(CLEAN_ROLE_ATTR, 'api-file');
+    card.setAttribute(CLEAN_API_FILE_ID_ATTR, file.id);
 
     const outer = document.createElement('div');
     outer.className = 'p-4';
@@ -2556,18 +2436,14 @@
 
     const thumbWrap = document.createElement('div');
     thumbWrap.className = 'shrink-0';
-    thumbWrap.appendChild(buildFileThumb(file));
+    thumbWrap.appendChild(cleanCreateFileThumb(file));
 
     const info = document.createElement('div');
     info.className = 'flex-1 min-w-0';
 
-    const titleRow = document.createElement('div');
-    titleRow.className = 'flex items-start justify-between gap-2 mb-1';
-
     const title = document.createElement('p');
     title.className = 'text-sm font-medium truncate';
     title.textContent = file.fileName || 'Arquivo';
-    titleRow.appendChild(title);
 
     const description = document.createElement('p');
     description.className = 'text-xs text-muted-foreground mb-1 line-clamp-1';
@@ -2578,18 +2454,18 @@
 
     const badge = document.createElement('div');
     badge.className = 'inline-flex items-center rounded-full border px-2.5 py-0.5 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-card text-card-foreground hover:bg-muted text-xs';
-    badge.textContent = getTicketFileBadge(file);
+    badge.textContent = cleanFileBadge(file);
     meta.appendChild(badge);
 
-    const dateText = formatTicketFileDate(file.createdAt);
-    if (dateText) {
+    const formattedDate = cleanFormatFileDate(file.createdAt);
+    if (formattedDate) {
       const date = document.createElement('span');
       date.className = 'text-xs text-muted-foreground';
-      date.textContent = dateText;
+      date.textContent = formattedDate;
       meta.appendChild(date);
     }
 
-    info.appendChild(titleRow);
+    info.appendChild(title);
     info.appendChild(description);
     info.appendChild(meta);
 
@@ -2612,168 +2488,163 @@
     return card;
   }
 
-  function getCurrentApiFiles() {
-    ensureTabSwapTicketContext();
-    return TICKET_FILES_BY_KEY.get(activeTabSwapTicketKey) || [];
-  }
-
-  function findApiFileCard(fileId) {
-    const selector = `[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_API_FILE_ID_ATTR}="${CSS.escape(String(fileId))}"]`;
-    return Array.from(document.querySelectorAll(selector))
-      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
-  }
-
-  function syncApiFilesToGeneral(host) {
+  function cleanMarkNativeCards(host) {
     if (!host) return;
-    const files = getCurrentApiFiles();
+
+    for (const child of Array.from(host.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+
+      if (findNotesCardIn(child)) {
+        child.setAttribute(CLEAN_ROLE_ATTR, 'notes');
+        continue;
+      }
+
+      if (child.getAttribute(CLEAN_ROLE_ATTR) === 'api-file') continue;
+
+      child.setAttribute(CLEAN_ROLE_ATTR, 'general');
+    }
+  }
+
+  function cleanSyncApiFiles(host) {
+    if (!host) return;
+
+    const files = cleanCurrentFiles();
     const wanted = new Set(files.map(file => file.id));
 
-    for (const node of host.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`)) {
+    for (const node of Array.from(host.querySelectorAll(`[${CLEAN_ROLE_ATTR}="api-file"]`))) {
       if (!(node instanceof HTMLElement)) continue;
-      const id = node.getAttribute(TAB_SWAP_API_FILE_ID_ATTR) || '';
-      const ticket = node.getAttribute(TAB_SWAP_TICKET_ATTR) || '';
-      if (ticket !== activeTabSwapTicketKey || !wanted.has(id)) {
-        hideElement(node);
-        ensureTabSwapDepot().appendChild(node);
+      const id = node.getAttribute(CLEAN_API_FILE_ID_ATTR) || '';
+      if (!wanted.has(id)) {
+        node.remove();
       }
     }
 
     for (const file of files) {
-      let card = findApiFileCard(file.id);
-      if (!card) card = createApiFileCard(file);
-      showElement(card);
+      let card = host.querySelector(`[${CLEAN_ROLE_ATTR}="api-file"][${CLEAN_API_FILE_ID_ATTR}="${CSS.escape(file.id)}"]`);
+      if (!card) {
+        card = cleanCreateApiFileCard(file);
+      }
       host.appendChild(card);
     }
   }
 
-  function cacheNotesCardFromHost(host) {
+  function cleanHideStaleApiFiles() {
     try {
-      const notesCard = findNotesCardIn(host);
-      if (!notesCard) return null;
-
-      const depot = ensureTabSwapDepot();
-      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
-      notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
-      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      showElement(notesCard);
-      depot.appendChild(notesCard);
-      return notesCard;
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao guardar Notas Internas`, error);
-      return null;
-    }
-  }
-
-  function cacheFileNodesFromHost(host) {
-    try {
-      if (!host) return [];
-
-      hideNativeFilesEmptyState(host);
-      const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
-
-      for (const node of fileNodes) {
-        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-original');
-        hideElement(node);
+      for (const node of document.querySelectorAll(`[${CLEAN_ROLE_ATTR}="api-file"]`)) {
+        if (!(node instanceof HTMLElement)) continue;
+        node.setAttribute(HIDDEN_ATTR, 'true');
       }
-
-      return fileNodes;
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ocultar Arquivos originais`, error);
-      return [];
-    }
+    } catch (_) {}
   }
 
-  function getCachedNotesCard() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
-      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
-  }
-
-  function appendApiFilesToGeneral(host) {
-    if (!host) return;
-    ensureTabSwapTicketContext();
-
-    const notesCard = findNotesCardIn(host);
-    if (notesCard) {
-      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
-      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      hideElement(notesCard);
-      cacheNotesCardFromHost(host);
-    }
-
-    syncApiFilesToGeneral(host);
-  }
-
-  function appendCachedNotesToFiles(host) {
-    if (!host) return;
-    ensureTabSwapTicketContext();
-    hideNativeFilesEmptyState(host);
-
-    // v9.9: nunca remove/move os arquivos nativos da aba Arquivos.
-    // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
-    // ao trocar de ticket com a aba Arquivos aberta.
-    cacheFileNodesFromHost(host);
-
-    const notesCard = getCachedNotesCard();
-    if (!notesCard) return;
-
-    if (notesCard.parentElement !== host) {
-      showElement(notesCard);
-      notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-      host.appendChild(notesCard);
-    } else {
-      showElement(notesCard);
-    }
-  }
-
-  function cacheCurrentTabBeforeSwap() {
+  function cleanApplyView() {
     try {
-      const panel = findSidePanelWithTabs();
-      if (!panel) return;
+      cleanEnsureTicketContext();
+      cleanMarkTabButtons();
 
-      const tab = findActiveSideTabName(panel);
-      syncSideActiveTabAttribute(tab);
-      const host = getCurrentTabContentHost(panel);
+      const host = cleanFindGeneralHost();
       if (!host) return;
 
-      if (tab === 'geral') {
-        cacheNotesCardFromHost(host);
-      } else if (tab === 'arquivos') {
-        cacheFileNodesFromHost(host);
+      cleanMarkNativeCards(host);
+      host.setAttribute(CLEAN_SIDE_VIEW_ATTR, cleanNotesMode ? 'notas' : 'geral');
+
+      if (!cleanNotesMode) {
+        cleanSyncApiFiles(host);
+      }
+
+      // Garantia extra: Notas nunca aparece em Geral; arquivos nunca aparecem em Notas.
+      for (const child of Array.from(host.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+
+        const role = child.getAttribute(CLEAN_ROLE_ATTR) || '';
+        if (!cleanNotesMode && role === 'notes') {
+          child.setAttribute(HIDDEN_ATTR, 'true');
+        } else if (cleanNotesMode && role !== 'notes') {
+          child.setAttribute(HIDDEN_ATTR, 'true');
+        } else {
+          child.removeAttribute(HIDDEN_ATTR);
+        }
       }
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha no cache pré-troca Geral/Arquivos`, error);
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar Geral/Notas`, error);
     }
   }
 
-  function applyGeneralFilesNotesSwap() {
-    try {
-      ensureTabSwapTicketContext();
-      const panel = findSidePanelWithTabs();
-      if (!panel) return;
+  function cleanScheduleRender() {
+    cleanTimers.forEach(clearTimeout);
+    cleanTimers = [];
 
-      const tab = findActiveSideTabName(panel);
-      syncSideActiveTabAttribute(tab);
-      const host = getCurrentTabContentHost(panel);
-      if (!host) return;
-
-      if (tab === 'geral') {
-        appendApiFilesToGeneral(host);
-      } else if (tab === 'arquivos') {
-        appendCachedNotesToFiles(host);
-      }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
+    for (const delay of [0, 40, 120, 280]) {
+      cleanTimers.push(window.setTimeout(cleanApplyView, delay));
     }
   }
 
-  let tabSwapTimers = [];
+  function cleanActivateNativeGeneralThen(modeNotes) {
+    cleanSetNotesMode(modeNotes);
+
+    const geralButton = cleanFindTabButton('geral');
+    if (geralButton) {
+      const panel = cleanFindSidePanel();
+      const activeIsGeral = panel && Array.from(panel.querySelectorAll('button')).some(button =>
+        button === geralButton &&
+        button.classList.contains('bg-background') &&
+        button.classList.contains('text-foreground')
+      );
+
+      if (!activeIsGeral) {
+        geralButton.click();
+      }
+    }
+
+    cleanScheduleRender();
+  }
+
+  function cleanInstallTabClicks() {
+    if (window.__tmEffinityCleanTabsInstalled) return;
+    window.__tmEffinityCleanTabsInstalled = true;
+
+    document.addEventListener('click', (event) => {
+      try {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const button = target.closest('button');
+        if (!button) return;
+
+        const text = cleanGetButtonText(button);
+        const isSideTab = ['geral', 'notas', 'arquivos', 'timeline', 'histórico', 'historico', 'msgs'].includes(text);
+        if (!isSideTab) return;
+
+        if (text === 'notas' || text === 'arquivos') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          cleanActivateNativeGeneralThen(true);
+          return;
+        }
+
+        cleanSetNotesMode(false);
+        cleanScheduleRender();
+      } catch (error) {
+        console.error(`[${SCRIPT_NAME}] falha no clique Geral/Notas`, error);
+      }
+    }, true);
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest('div.p-2.border.rounded.cursor-pointer')) {
+        cleanActiveTicketKey = '';
+        cleanHideStaleApiFiles();
+        cleanSetNotesMode(false);
+        cleanScheduleRender();
+      }
+    }, true);
+  }
+
   function scheduleGeneralFilesNotesSwap() {
-    tabSwapTimers.forEach(clearTimeout);
-    tabSwapTimers = [];
-
-    for (const delay of [0, 40, 100, 220, 420]) {
-      tabSwapTimers.push(window.setTimeout(applyGeneralFilesNotesSwap, delay));
-    }
+    cleanScheduleRender();
   }
 
   /* ========================================================================
@@ -2861,15 +2732,13 @@
       if (target instanceof Element && target.closest('div.p-2.border.rounded.cursor-pointer')) {
         refreshSideActiveTabAttribute();
         beginTicketSwapRefresh();
-        scheduleTabAntiFlickerPasses();
-
+    
         // v9.9: se a troca de ticket acontecer com Arquivos aberto, não forçamos
         // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
         // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {
           ensureTabSwapTicketContext();
-          scheduleTabAntiFlickerPasses();
-          scheduleGeneralFilesNotesSwap();
+                scheduleGeneralFilesNotesSwap();
         }, 180);
       }
 
@@ -2878,9 +2747,7 @@
       const clickedTab = normalizeText(target.closest('button, a, [role="tab"]')?.textContent || '').toLowerCase();
       if (clickedTab) syncSideActiveTabAttribute(clickedTab === 'historico' ? 'histórico' : (clickedTab === 'notas' ? 'arquivos' : clickedTab));
 
-      cacheCurrentTabBeforeSwap();
-      scheduleTabAntiFlickerPasses();
-      scheduleGeneralFilesNotesSwap();
+          scheduleGeneralFilesNotesSwap();
     }, true);
   }
 
@@ -2910,6 +2777,7 @@
   function init() {
     renameFilesTabLabelToNotes();
     refreshSideActiveTabAttribute();
+    cleanApplyView();
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();
@@ -2921,6 +2789,7 @@
   }
 
   function boot() {
+    cleanInstallTabClicks();
     init();
     startObserver();
     startFavoriteLayer();

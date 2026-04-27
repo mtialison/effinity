@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.4
+// @version      10.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.4';
+  const SCRIPT_VERSION = '10.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -560,6 +560,14 @@
     html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
       .h-full.w-full.overflow-auto > .flex.flex-col.gap-4.p-3 > .rounded-xl.bg-card.border.border-border:has(textarea) * {
       pointer-events: auto !important;
+    }
+
+
+    html[data-tm-virtual-notes-mode="true"] [data-tm-virtual-notes-hidden="true"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
 
     /* ── Aba Notas: garantir interação no card de Notas Internas ─────────
@@ -2883,6 +2891,7 @@
 
       if (isVirtualNotesMode && isVirtualNotesMode()) {
         paintVirtualNotesTabButton();
+        applyVirtualNotesInlineVisibility();
         return;
       }
 
@@ -2979,6 +2988,7 @@
    * local controlado pelo React, preservando textarea, botão e cadastro.
    * ====================================================================== */
   const VIRTUAL_NOTES_MODE_ATTR = 'data-tm-virtual-notes-mode';
+  const VIRTUAL_NOTES_HIDDEN_ATTR = 'data-tm-virtual-notes-hidden';
 
   function setVirtualNotesMode(active) {
     try {
@@ -2987,12 +2997,81 @@
         document.documentElement.setAttribute('data-tm-side-active-tab', 'arquivos');
       } else {
         document.documentElement.removeAttribute(VIRTUAL_NOTES_MODE_ATTR);
+        clearVirtualNotesInlineVisibility();
       }
     } catch (_) {}
   }
 
   function isVirtualNotesMode() {
     return document.documentElement.getAttribute(VIRTUAL_NOTES_MODE_ATTR) === 'true';
+  }
+
+
+  function getSidePanelShellAndHost() {
+    try {
+      const panel = findSidePanelWithTabs();
+      const shell = findSidePanelContentShell(panel);
+      const generalHost = findGeneralContentHost(shell);
+      return { panel, shell, generalHost };
+    } catch (_) {
+      return { panel: null, shell: null, generalHost: null };
+    }
+  }
+
+  function applyVirtualNotesInlineVisibility() {
+    try {
+      const { generalHost } = getSidePanelShellAndHost();
+      if (!generalHost) return false;
+
+      let notesCard = findNotesCardIn(generalHost);
+      if (!notesCard) {
+        const cached = getCachedNotesCard?.();
+        if (cached) {
+          showElement(cached);
+          generalHost.appendChild(cached);
+          notesCard = cached;
+        }
+      }
+
+      if (!notesCard) return false;
+
+      for (const child of Array.from(generalHost.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+
+        if (child === notesCard || findNotesCardIn(child)) {
+          child.removeAttribute(VIRTUAL_NOTES_HIDDEN_ATTR);
+          showElement(child);
+          child.style.display = '';
+          child.style.visibility = '';
+          child.style.opacity = '';
+          child.style.pointerEvents = 'auto';
+          child.style.position = child.style.position || 'relative';
+          child.style.zIndex = child.style.zIndex || '25';
+          bindNotesCardInteractionSafety(child);
+          continue;
+        }
+
+        child.setAttribute(VIRTUAL_NOTES_HIDDEN_ATTR, 'true');
+        child.setAttribute(HIDDEN_ATTR, 'true');
+        child.style.pointerEvents = 'none';
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar modo Notas visual`, error);
+      return false;
+    }
+  }
+
+  function clearVirtualNotesInlineVisibility() {
+    try {
+      for (const node of document.querySelectorAll(`[${VIRTUAL_NOTES_HIDDEN_ATTR}="true"]`)) {
+        if (!(node instanceof HTMLElement)) continue;
+        node.removeAttribute(VIRTUAL_NOTES_HIDDEN_ATTR);
+        node.removeAttribute(HIDDEN_ATTR);
+        node.style.pointerEvents = '';
+      }
+    } catch (_) {}
   }
 
   function findSideTabButtonByName(name) {
@@ -3057,22 +3136,15 @@
     try {
       setVirtualNotesMode(true);
       clickNativeGeneralTabSafely();
+      applyVirtualNotesInlineVisibility();
 
-      for (const delay of [0, 20, 60, 140, 300]) {
+      for (const delay of [0, 20, 60, 140, 300, 700]) {
         window.setTimeout(() => {
           try {
             renameFilesTabLabelToNotes();
             setVirtualNotesMode(true);
             paintVirtualNotesTabButton();
-            const panel = findSidePanelWithTabs();
-            const host = getCurrentTabContentHost(panel);
-            if (host) {
-              const notes = findNotesCardIn(host);
-              if (notes) {
-                showElement(notes);
-                bindNotesCardInteractionSafety(notes);
-              }
-            }
+            applyVirtualNotesInlineVisibility();
           } catch (error) {
             console.error(`[${SCRIPT_NAME}] falha ao renderizar aba Notas virtual`, error);
           }
@@ -3087,6 +3159,7 @@
     try {
       if (!isVirtualNotesMode()) return;
       setVirtualNotesMode(false);
+      clearVirtualNotesInlineVisibility();
       scheduleGeneralFilesNotesSwap();
     } catch (_) {}
   }

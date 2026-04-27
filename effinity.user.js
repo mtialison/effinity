@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.8
+// @version      8.9
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/
+// @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.8';
+  const SCRIPT_VERSION = '8.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2112,6 +2112,290 @@
     }
   }
 
+
+
+  /* ========================================================================
+   * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
+   * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
+   * Estratégia SPA-safe: cache em depósito oculto, appendChild, delays curtos,
+   * validações e flags dataset. Não usa removeChild nem observer dedicado.
+   * ====================================================================== */
+  const TAB_SWAP_DEPOT_ID = 'tm-effinity-tab-swap-depot';
+  const TAB_SWAP_READY_ATTR = 'data-tm-tab-swap-ready';
+  const TAB_SWAP_ROLE_ATTR = 'data-tm-tab-swap-role';
+  const TAB_SWAP_SOURCE_ATTR = 'data-tm-tab-swap-source';
+
+  function ensureTabSwapDepot() {
+    let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
+    if (depot) return depot;
+
+    depot = document.createElement('div');
+    depot.id = TAB_SWAP_DEPOT_ID;
+    depot.setAttribute('aria-hidden', 'true');
+    depot.style.display = 'none';
+    depot.style.position = 'fixed';
+    depot.style.width = '0';
+    depot.style.height = '0';
+    depot.style.overflow = 'hidden';
+    depot.style.pointerEvents = 'none';
+
+    const parent = document.body || document.documentElement;
+    parent.appendChild(depot);
+    return depot;
+  }
+
+  function showElement(el) {
+    if (!el || !(el instanceof HTMLElement)) return;
+    el.removeAttribute(HIDDEN_ATTR);
+  }
+
+  function getButtonText(button) {
+    return normalizeText(button?.textContent || '').toLowerCase();
+  }
+
+  function findSidePanelWithTabs() {
+    for (const button of document.querySelectorAll('button')) {
+      if (getButtonText(button) !== 'geral') continue;
+
+      const panel = button.closest('.flex.flex-col.h-full.min-h-0') ||
+        button.closest('.hidden.xl\\:flex') ||
+        button.closest('.flex.flex-col');
+
+      if (!panel) continue;
+
+      const labels = Array.from(panel.querySelectorAll('button')).map(getButtonText);
+      if (labels.includes('geral') && labels.includes('arquivos')) return panel;
+    }
+
+    return null;
+  }
+
+  function findActiveSideTabName(panel) {
+    if (!panel) return '';
+
+    for (const button of panel.querySelectorAll('button')) {
+      const text = getButtonText(button);
+      if (!['geral', 'arquivos', 'timeline', 'histórico', 'historico', 'msgs'].includes(text)) continue;
+
+      const isActive =
+        button.classList.contains('bg-background') &&
+        button.classList.contains('text-foreground') &&
+        button.classList.contains('shadow-sm');
+
+      if (isActive) return text === 'historico' ? 'histórico' : text;
+    }
+
+    return '';
+  }
+
+  function findSidePanelContentShell(panel) {
+    if (!panel) return null;
+
+    for (const child of Array.from(panel.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (
+        child.classList.contains('relative') &&
+        child.classList.contains('overflow-hidden') &&
+        child.classList.contains('flex-1')
+      ) {
+        return child;
+      }
+    }
+
+    return panel.querySelector('.relative.overflow-hidden.flex-1');
+  }
+
+  function findGeneralContentHost(shell) {
+    if (!shell) return null;
+
+    for (const host of shell.querySelectorAll('div.flex.flex-col.gap-4.p-3')) {
+      if (findNotesCardIn(host) || normalizeText(host.textContent).includes('Dados do Atendimento')) {
+        return host;
+      }
+    }
+
+    return null;
+  }
+
+  function findFilesContentHost(shell) {
+    if (!shell) return null;
+
+    for (const host of shell.querySelectorAll('div.space-y-3')) {
+      const text = normalizeText(host.textContent);
+      if (text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || text.includes('Abrir')) {
+        return host;
+      }
+    }
+
+    const p3 = shell.querySelector('.h-full.w-full.overflow-auto > .p-3');
+    return p3 instanceof HTMLElement ? p3 : null;
+  }
+
+  function getCurrentTabContentHost(panel) {
+    const shell = findSidePanelContentShell(panel);
+    const tab = findActiveSideTabName(panel);
+
+    if (tab === 'geral') return findGeneralContentHost(shell);
+    if (tab === 'arquivos') return findFilesContentHost(shell);
+
+    return null;
+  }
+
+  function findCardByHeading(root, headingText) {
+    if (!root) return null;
+
+    for (const title of root.querySelectorAll('h3')) {
+      if (normalizeText(title.textContent) !== headingText) continue;
+      const card = title.closest('.rounded-xl.bg-card.border.border-border');
+      if (card instanceof HTMLElement) return card;
+    }
+
+    return null;
+  }
+
+  function findNotesCardIn(root) {
+    return findCardByHeading(root, 'Notas Internas');
+  }
+
+  function isSwappableFileNode(node) {
+    if (!(node instanceof HTMLElement)) return false;
+    if (node.getAttribute(TAB_SWAP_ROLE_ATTR) === 'notes') return false;
+    if (findNotesCardIn(node)) return false;
+
+    const text = normalizeText(node.textContent);
+    const hasOpenButton = Array.from(node.querySelectorAll('button')).some(button => normalizeText(button.textContent) === 'Abrir');
+    const hasFileMarker = text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || !!node.querySelector('img');
+
+    return hasOpenButton && hasFileMarker;
+  }
+
+  function cacheNotesCardFromHost(host) {
+    try {
+      const notesCard = findNotesCardIn(host);
+      if (!notesCard) return null;
+
+      const depot = ensureTabSwapDepot();
+      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
+      notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
+      showElement(notesCard);
+      depot.appendChild(notesCard);
+      return notesCard;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao guardar Notas Internas`, error);
+      return null;
+    }
+  }
+
+  function cacheFileNodesFromHost(host) {
+    try {
+      if (!host) return [];
+
+      const depot = ensureTabSwapDepot();
+      const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
+
+      for (const node of fileNodes) {
+        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
+        node.setAttribute(TAB_SWAP_SOURCE_ATTR, 'arquivos');
+        showElement(node);
+        depot.appendChild(node);
+      }
+
+      return fileNodes;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao guardar Arquivos`, error);
+      return [];
+    }
+  }
+
+  function getCachedNotesCard() {
+    return ensureTabSwapDepot().querySelector(`[${TAB_SWAP_ROLE_ATTR}="notes"]`);
+  }
+
+  function getCachedFileNodes() {
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`));
+  }
+
+  function appendCachedFilesToGeneral(host) {
+    if (!host) return;
+
+    const files = getCachedFileNodes();
+    if (!files.length) return;
+
+    const notesCard = findNotesCardIn(host);
+    if (notesCard) {
+      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
+      hideElement(notesCard);
+      cacheNotesCardFromHost(host);
+    }
+
+    for (const fileNode of files) {
+      showElement(fileNode);
+      fileNode.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+      host.appendChild(fileNode);
+    }
+  }
+
+  function appendCachedNotesToFiles(host) {
+    if (!host) return;
+
+    cacheFileNodesFromHost(host);
+
+    const notesCard = getCachedNotesCard();
+    if (!notesCard) return;
+
+    showElement(notesCard);
+    notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+    host.appendChild(notesCard);
+  }
+
+  function cacheCurrentTabBeforeSwap() {
+    try {
+      const panel = findSidePanelWithTabs();
+      if (!panel) return;
+
+      const tab = findActiveSideTabName(panel);
+      const host = getCurrentTabContentHost(panel);
+      if (!host) return;
+
+      if (tab === 'geral') {
+        cacheNotesCardFromHost(host);
+      } else if (tab === 'arquivos') {
+        cacheFileNodesFromHost(host);
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha no cache pré-troca Geral/Arquivos`, error);
+    }
+  }
+
+  function applyGeneralFilesNotesSwap() {
+    try {
+      const panel = findSidePanelWithTabs();
+      if (!panel) return;
+
+      const tab = findActiveSideTabName(panel);
+      const host = getCurrentTabContentHost(panel);
+      if (!host) return;
+
+      if (tab === 'geral') {
+        appendCachedFilesToGeneral(host);
+      } else if (tab === 'arquivos') {
+        appendCachedNotesToFiles(host);
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
+    }
+  }
+
+  let tabSwapTimers = [];
+  function scheduleGeneralFilesNotesSwap() {
+    tabSwapTimers.forEach(clearTimeout);
+    tabSwapTimers = [];
+
+    for (const delay of [80, 180, 350, 650]) {
+      tabSwapTimers.push(window.setTimeout(applyGeneralFilesNotesSwap, delay));
+    }
+  }
+
   /* ========================================================================
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
@@ -2129,6 +2413,7 @@
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
+    applyGeneralFilesNotesSwap();
   }
 
   function applyFastAntiFlickerPass() {
@@ -2142,6 +2427,7 @@
     formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
+    applyGeneralFilesNotesSwap();
   }
 
   function reapplyAll() {
@@ -2192,7 +2478,9 @@
 
     document.addEventListener('click', (event) => {
       if (!isSidePanelTabTrigger(event.target)) return;
+      cacheCurrentTabBeforeSwap();
       scheduleTabAntiFlickerPasses();
+      scheduleGeneralFilesNotesSwap();
     }, true);
   }
 
@@ -2203,6 +2491,7 @@
     ensureSidebarStartsCollapsed();
     finalizeAgentBootMask();
     scheduleFavoriteLayer(900);
+    scheduleGeneralFilesNotesSwap();
     log(`iniciado v${SCRIPT_VERSION}`);
   }
 

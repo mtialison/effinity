@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.2
+// @version      11.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.2';
+  const SCRIPT_VERSION = '11.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -231,6 +231,7 @@
       const nativeSend = NativeXHR.prototype.send;
 
       NativeXHR.prototype.open = function tmEffinityXhrOpen(...args) {
+        this.__tmEffinityMethod = args[0];
         this.__tmEffinityUrl = args[1];
         return nativeOpen.apply(this, args);
       };
@@ -2776,6 +2777,125 @@
     }
   }
 
+
+  /* ========================================================================
+   * SEÇÃO: DIAGNÓSTICO SEGURO DE NOTAS VIA API (v11.3)
+   * Não altera layout, não move DOM, não intercepta cliques de aba.
+   * Objetivo: validar captura de ticketId, GET/POST de notas e cache local.
+   * ====================================================================== */
+  const NOTES_DIAG_CACHE_LIMIT = 80;
+  const NOTES_DIAG_BY_TICKET_ID = new Map();
+  const NOTES_DIAG_LAST_TICKET_KEY = 'tm-effinity-notes-diag-last-ticket-id';
+  const NOTES_DIAG_ENABLED_KEY = 'tm-effinity-notes-diag-enabled';
+
+  function notesDiagEnabled() {
+    try {
+      const raw = localStorage.getItem(NOTES_DIAG_ENABLED_KEY);
+      return raw !== 'false';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function notesDiagLog(...args) {
+    if (!notesDiagEnabled()) return;
+    console.log(`[${SCRIPT_NAME}] [notas-api-diag]`, ...args);
+  }
+
+  function notesDiagExtractTicketIdFromUrl(value) {
+    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
+    return match ? match[1] : '';
+  }
+
+  function notesDiagNormalizeNote(note) {
+    if (!note || typeof note !== 'object') return null;
+
+    const id = note.id || `${note.createdAt || ''}-${note.content || note.eventData || ''}`;
+    const content = String(note.content || note.eventData || '').trim();
+    if (!id || !content) return null;
+
+    return {
+      id: String(id),
+      content,
+      createdAt: note.createdAt || null,
+      createdByUserId: note.createdByUserId || note.performedByUserId || null,
+      createdByUserName: String(note.createdByUserName || note.performedByUserName || '').trim()
+    };
+  }
+
+  function notesDiagRememberTicketId(ticketId, source) {
+    try {
+      const id = String(ticketId || '').trim();
+      if (!id) return;
+
+      sessionStorage.setItem(NOTES_DIAG_LAST_TICKET_KEY, id);
+      notesDiagLog(`ticketId capturado (${source || 'api'}):`, id);
+    } catch (_) {}
+  }
+
+  function notesDiagProcessPayload(payload, requestUrl = '', method = '') {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+
+      const url = String(requestUrl || '');
+      const upperMethod = String(method || '').toUpperCase();
+      const ticketId = notesDiagExtractTicketIdFromUrl(url);
+
+      if (ticketId && (url.includes('/notes') || url.includes('/files'))) {
+        notesDiagRememberTicketId(ticketId, url.includes('/notes') ? 'notes' : 'files');
+      }
+
+      if (!url.includes('/notes')) return;
+
+      if (Array.isArray(payload.notes)) {
+        const notes = payload.notes.map(notesDiagNormalizeNote).filter(Boolean);
+        if (ticketId) {
+          NOTES_DIAG_BY_TICKET_ID.set(ticketId, notes);
+
+          if (NOTES_DIAG_BY_TICKET_ID.size > NOTES_DIAG_CACHE_LIMIT) {
+            const overflow = NOTES_DIAG_BY_TICKET_ID.size - NOTES_DIAG_CACHE_LIMIT;
+            Array.from(NOTES_DIAG_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => NOTES_DIAG_BY_TICKET_ID.delete(key));
+          }
+        }
+
+        notesDiagLog(`GET notes ticket=${ticketId || 'desconhecido'} total=${notes.length}`, notes);
+        return;
+      }
+
+      if (upperMethod === 'POST' && (payload.eventType === 'NOTE_ADDED' || payload.eventData || payload.id)) {
+        notesDiagLog(`POST note salvo ticket=${ticketId || payload.ticketId || 'desconhecido'}`, payload);
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] [notas-api-diag] falha ao processar payload`, error);
+    }
+  }
+
+  window.tmEffinityNotesDiag = {
+    getLastTicketId() {
+      try {
+        return sessionStorage.getItem(NOTES_DIAG_LAST_TICKET_KEY) || '';
+      } catch (_) {
+        return '';
+      }
+    },
+    getNotes(ticketId) {
+      return NOTES_DIAG_BY_TICKET_ID.get(String(ticketId || this.getLastTicketId())) || [];
+    },
+    enable() {
+      try {
+        localStorage.setItem(NOTES_DIAG_ENABLED_KEY, 'true');
+      } catch (_) {}
+      console.log(`[${SCRIPT_NAME}] diagnóstico de notas ativado`);
+    },
+    disable() {
+      try {
+        localStorage.setItem(NOTES_DIAG_ENABLED_KEY, 'false');
+      } catch (_) {}
+      console.log(`[${SCRIPT_NAME}] diagnóstico de notas desativado`);
+    }
+  };
+
+
   /* ========================================================================
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
@@ -2918,6 +3038,7 @@
     scheduleFavoriteLayer(900);
     scheduleGeneralFilesNotesSwap();
     log(`iniciado v${SCRIPT_VERSION}`);
+    notesDiagLog('diagnóstico seguro ativo. Use window.tmEffinityNotesDiag.getLastTicketId() e getNotes() no console.');
   }
 
   function boot() {

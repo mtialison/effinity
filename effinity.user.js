@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.9
+// @version      13.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.9';
+  const SCRIPT_VERSION = '13.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2179,7 +2179,9 @@
   function sideSetCurrentTicketId(ticketId) {
     const id = String(ticketId || '').trim();
     if (!id || id === sideCurrentTicketId) return;
+
     sideCurrentTicketId = id;
+    sideClearRenderedFilesImmediately();
     sideScheduleRender();
   }
 
@@ -2200,6 +2202,27 @@
     } catch (_) {}
 
     return '';
+  }
+
+  function sideClearRenderedFilesImmediately() {
+    try {
+      const host = sideFindHost();
+      if (host) {
+        for (const node of Array.from(host.querySelectorAll('[data-tm-api-file-card="true"]'))) {
+          if (node instanceof HTMLElement) {
+            node.remove();
+          }
+        }
+      }
+
+      for (const node of Array.from(document.querySelectorAll('[data-tm-api-file-card="true"]'))) {
+        if (node instanceof HTMLElement) {
+          node.remove();
+        }
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao limpar arquivos renderizados`, error);
+    }
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
@@ -2444,7 +2467,7 @@
   }
 
   function sideGetFiles() {
-    const ticketId = sideGetCurrentTicketId();
+    const ticketId = sideCurrentTicketId;
     return ticketId ? (SIDE_FILES_BY_TICKET_ID.get(ticketId) || []) : [];
   }
 
@@ -2560,6 +2583,11 @@
 
   function sideSyncFiles(host) {
     if (!host) return;
+
+    if (!sideCurrentTicketId) {
+      sideClearRenderedFilesImmediately();
+      return;
+    }
 
     const files = sideGetFiles();
     const wanted = new Set(files.map(file => file.id));
@@ -2692,9 +2720,23 @@
         }
 
         if (target.closest('div.p-2.border.rounded.cursor-pointer')) {
+          // v13.0: ao trocar ticket, nunca manter arquivos do ticket anterior.
+          // Limpamos imediatamente e só renderizamos novamente quando chegar
+          // o /tickets/{id}/files do ticket novo.
           sideCurrentTicketId = '';
+          sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
+
+          for (const delay of [80, 180, 360, 700]) {
+            window.setTimeout(() => {
+              try {
+                if (!sideCurrentTicketId) {
+                  sideClearRenderedFilesImmediately();
+                }
+              } catch (_) {}
+            }, delay);
+          }
         }
       } catch (error) {
         console.error(`[${SCRIPT_NAME}] falha no handler Geral/Notas`, error);

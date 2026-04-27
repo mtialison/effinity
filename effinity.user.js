@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.5
+// @version      11.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.5';
+  const SCRIPT_VERSION = '11.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3098,18 +3098,106 @@
   }
 
   
+
   /* ========================================================================
-   * SEÇÃO: UI TESTE NOTAS API (v11.4)
-   * NÃO altera layout do sistema.
-   * Apenas cria um botão flutuante para testar POST de nota.
+   * SEÇÃO: TESTE SEGURO DE NOTAS PELO BOTÃO ORIGINAL (v11.6)
+   * NÃO faz POST manual.
+   * NÃO usa fetch próprio.
+   * Usa o fluxo nativo do React: textarea original + botão original.
    * ====================================================================== */
+
+  function findNativeNotesCardSafe() {
+    try {
+      for (const title of document.querySelectorAll('h3')) {
+        if (normalizeText(title.textContent) !== 'Notas Internas') continue;
+
+        const card = title.closest('.rounded-xl.bg-card.border.border-border') ||
+          title.closest('div');
+
+        if (card && card.querySelector('textarea') && Array.from(card.querySelectorAll('button')).some(btn => normalizeText(btn.textContent).includes('Adicionar Nota'))) {
+          return card;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function setReactTextareaValue(textarea, value) {
+    try {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(textarea, value);
+      } else {
+        textarea.value = value;
+      }
+
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao preencher textarea nativo`, error);
+      return false;
+    }
+  }
+
+  function clickNativeNotesButtonWithContent(content) {
+    try {
+      const card = findNativeNotesCardSafe();
+      if (!card) {
+        alert('Card nativo de Notas Internas não encontrado. Abra a aba Notas e tente novamente.');
+        return;
+      }
+
+      const textarea = card.querySelector('textarea');
+      const button = Array.from(card.querySelectorAll('button')).find(btn =>
+        normalizeText(btn.textContent).includes('Adicionar Nota')
+      );
+
+      if (!textarea || !button) {
+        alert('Textarea ou botão original não encontrado.');
+        return;
+      }
+
+      setReactTextareaValue(textarea, content);
+      textarea.focus();
+
+      const tryClick = (attempt = 1) => {
+        try {
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+
+          if (!button.disabled) {
+            button.click();
+            return;
+          }
+
+          if (attempt < 6) {
+            window.setTimeout(() => tryClick(attempt + 1), 120);
+            return;
+          }
+
+          alert('O botão original continuou desabilitado. Digite qualquer caractere no campo e teste novamente.');
+        } catch (error) {
+          console.error(`[${SCRIPT_NAME}] falha ao clicar botão original`, error);
+          alert('Erro ao acionar o botão original.');
+        }
+      };
+
+      window.setTimeout(() => tryClick(1), 120);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha no teste de nota nativa`, error);
+      alert('Erro ao executar teste pelo botão original.');
+    }
+  }
 
   function createNotesTestButton() {
     if (document.getElementById('tm-notes-test-btn')) return;
 
     const btn = document.createElement('button');
     btn.id = 'tm-notes-test-btn';
-    btn.textContent = 'Testar Nota API';
+    btn.textContent = 'Testar Nota Nativa';
     btn.style.position = 'fixed';
     btn.style.bottom = '20px';
     btn.style.right = '20px';
@@ -3117,50 +3205,21 @@
     btn.style.padding = '8px 12px';
     btn.style.fontSize = '12px';
     btn.style.borderRadius = '6px';
-    btn.style.background = '#4F7CFF';
+    btn.style.background = '#22c55e';
     btn.style.color = '#fff';
     btn.style.border = 'none';
     btn.style.cursor = 'pointer';
 
-    btn.onclick = async () => {
-      try {
-        const ticketId =
-          window.tmEffinityNotesDiag.getLastTicketId() ||
-          notesDiagFindTicketIdFromPerformance() ||
-          notesDiagFindTicketIdFromDomLinks();
+    btn.onclick = () => {
+      const content = prompt('Texto da nota para testar pelo botão original:', 'teste nativo v11.6');
+      if (!content || !normalizeText(content)) return;
 
-        if (!ticketId) {
-          alert('TicketId não encontrado. Abra a aba nativa de Notas ou Arquivos uma vez e tente novamente.');
-          return;
-        }
-
-        const res = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${ticketId}/notes`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            content: 'teste api v11.4',
-            userName: 'Alison',
-            isInternal: true
-          })
-        });
-
-        if (!res.ok) {
-          alert('Erro ao salvar nota');
-          return;
-        }
-
-        alert('Nota enviada com sucesso');
-      } catch (e) {
-        console.error(e);
-        alert('Erro ao executar teste');
-      }
+      clickNativeNotesButtonWithContent(content);
     };
 
     document.body.appendChild(btn);
   }
+
 
 function boot() {
     init();

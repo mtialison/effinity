@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.8
+// @version      12.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.8';
+  const SCRIPT_VERSION = '12.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2321,17 +2321,15 @@
     if (!geral || !notas) return;
 
     if (sideNotesMode) {
-      geral.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
-      if (!geral.classList.contains('hover:bg-background/50')) {
-        geral.classList.add('hover:bg-background/50');
-      }
+      // v12.9: causa real do conflito:
+      // a aba Geral continua sendo a aba real ativa do React por baixo da aba Notas virtual.
+      // Portanto, não podemos remover as classes ativas reais da Geral.
+      geral.classList.add('bg-background', 'text-foreground', 'shadow-sm');
 
-      notas.classList.add('bg-background', 'text-foreground', 'shadow-sm');
+      // Destaque virtual da aba Notas: somente texto/ícone branco, sem fundo, sem sombra.
+      notas.classList.add('text-foreground');
       notas.classList.remove('hover:bg-background/50');
 
-      notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
-      notas.style.setProperty('font-weight', '500', 'important');
-      // v12.6: destaque correto é somente texto/ícone branco.
       notas.style.setProperty('color', 'rgb(255, 255, 255)', 'important');
       notas.style.setProperty('font-weight', '500', 'important');
       notas.style.setProperty('background', 'transparent', 'important');
@@ -2344,10 +2342,10 @@
         notasSvg.style.setProperty('stroke', 'currentColor', 'important');
       }
 
+      // Apenas esmaece a Geral temporariamente.
+      // Ao sair de Notas, removemos esse inline e a Geral volta com suas classes nativas.
       geral.style.setProperty('color', 'hsl(var(--muted-foreground))', 'important');
       geral.style.setProperty('font-weight', '500', 'important');
-      geral.style.setProperty('background', 'transparent', 'important');
-      geral.style.setProperty('box-shadow', 'none', 'important');
     } else {
       notas.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
       if (!notas.classList.contains('hover:bg-background/50')) {
@@ -2668,6 +2666,27 @@
 
           if (['geral', 'timeline', 'histórico', 'historico', 'msgs'].includes(text)) {
             sideSetNotesMode(false);
+
+            // v12.9: ao voltar de Notas para Geral, o React não reativa visualmente
+            // porque a aba real já era Geral. Então apenas restauramos as classes
+            // nativas da Geral e removemos estilos temporários.
+            if (text === 'geral') {
+              window.setTimeout(() => {
+                try {
+                  const geral = sideFindTabButton('geral');
+                  if (geral) {
+                    geral.classList.add('bg-background', 'text-foreground', 'shadow-sm');
+                    geral.classList.remove('hover:bg-background/50');
+                    geral.style.removeProperty('color');
+                    geral.style.removeProperty('font-weight');
+                    geral.style.removeProperty('background');
+                    geral.style.removeProperty('background-color');
+                    geral.style.removeProperty('box-shadow');
+                  }
+                } catch (_) {}
+              }, 0);
+            }
+
             return;
           }
         }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.0
+// @version      10.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.9';
+  const SCRIPT_VERSION = '10.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -257,6 +257,28 @@
    * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
+    /* ── Aba Arquivos renomeada visualmente para Notas ────────────────
+       CSS aplicado no document-start para evitar flicker do texto original. */
+    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) {
+      font-size: 0 !important;
+    }
+
+    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0)::after {
+      content: 'Notas' !important;
+      display: inline !important;
+      font-size: 11px !important;
+      line-height: 1 !important;
+      font-weight: inherit !important;
+      color: inherit !important;
+      white-space: nowrap !important;
+    }
+
+    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) svg {
+      width: 0.75rem !important;
+      height: 0.75rem !important;
+      flex-shrink: 0 !important;
+    }
+
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
       height: 100vh !important;
@@ -2253,7 +2275,9 @@
   }
 
   function getButtonText(button) {
-    return normalizeText(button?.textContent || '').toLowerCase();
+    const text = normalizeText(button?.textContent || '').toLowerCase();
+    if (text === 'notas') return 'arquivos';
+    return text;
   }
 
   function findSidePanelWithTabs() {
@@ -2786,6 +2810,7 @@
 
   function reapplyAll() {
     applyCSS();
+    renameFilesTabLabelToNotes();
     applySelectedFeatures();
   }
 
@@ -2814,7 +2839,7 @@
     if (!trigger) return false;
 
     const text = normalizeText(trigger.textContent).toLowerCase();
-    return ['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs'].includes(text);
+    return ['geral', 'timeline', 'arquivos', 'notas', 'histórico', 'historico', 'msgs'].includes(text);
   }
 
   function startObserver() {
@@ -2851,7 +2876,7 @@
       if (!isSidePanelTabTrigger(target)) return;
 
       const clickedTab = normalizeText(target.closest('button, a, [role="tab"]')?.textContent || '').toLowerCase();
-      if (clickedTab) syncSideActiveTabAttribute(clickedTab === 'historico' ? 'histórico' : clickedTab);
+      if (clickedTab) syncSideActiveTabAttribute(clickedTab === 'historico' ? 'histórico' : (clickedTab === 'notas' ? 'arquivos' : clickedTab));
 
       cacheCurrentTabBeforeSwap();
       scheduleTabAntiFlickerPasses();
@@ -2859,7 +2884,31 @@
     }, true);
   }
 
+
+  function renameFilesTabLabelToNotes() {
+    try {
+      const panel = findSidePanelWithTabs();
+      if (!panel) return;
+
+      for (const button of panel.querySelectorAll('button')) {
+        if (!button.querySelector('svg.lucide-file')) continue;
+
+        for (const node of Array.from(button.childNodes)) {
+          if (node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue) === 'Arquivos') {
+            node.nodeValue = 'Notas';
+          }
+        }
+
+        button.setAttribute('aria-label', 'Notas');
+        button.setAttribute('title', 'Notas');
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao renomear aba Arquivos`, error);
+    }
+  }
+
   function init() {
+    renameFilesTabLabelToNotes();
     refreshSideActiveTabAttribute();
     applyFastAntiFlickerPass();
     reapplyAll();
@@ -2893,19 +2942,4 @@
 
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
-
-  // RENOMEAR ABA ARQUIVOS PARA NOTAS
-  function renameArquivosTab() {
-    try {
-      const buttons = document.querySelectorAll('button');
-      buttons.forEach(btn => {
-        if (btn.textContent.trim() === 'Arquivos') {
-          btn.textContent = 'Notas';
-        }
-      });
-    } catch (e) {}
-  }
-
-  setInterval(renameArquivosTab, 1500);
-
 })();

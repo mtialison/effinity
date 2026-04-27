@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.9
+// @version      12.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.9';
+  const SCRIPT_VERSION = '12.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -508,6 +508,7 @@
       background: hsl(var(--background)) !important;
       color: hsl(var(--foreground)) !important;
       box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+      font-weight: 600 !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2320,6 +2321,25 @@
       for (const node of Array.from(notas.childNodes)) {
         if (node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue).toLowerCase() === 'arquivos') {
           node.nodeValue = 'Notas';
+        }
+      }
+    }
+
+    // v12.0: como a aba Notas é virtual, sincronizamos só o destaque visual
+    // dos botões. Não muda a aba real do React nem move conteúdo.
+    if (geral && notas) {
+      if (sideNotesMode) {
+        geral.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
+        if (!geral.classList.contains('hover:bg-background/50')) {
+          geral.classList.add('hover:bg-background/50');
+        }
+
+        notas.classList.add('bg-background', 'text-foreground', 'shadow-sm');
+        notas.classList.remove('hover:bg-background/50');
+      } else {
+        notas.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
+        if (!notas.classList.contains('hover:bg-background/50')) {
+          notas.classList.add('hover:bg-background/50');
         }
       }
     }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.5
+// @version      12.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.5';
+  const SCRIPT_VERSION = '12.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2331,11 +2331,18 @@
 
       notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
       notas.style.setProperty('font-weight', '700', 'important');
-      // v12.5: o log mostrou que bg-background computava transparente.
-      // Por isso o destaque precisa de background-color real, independente do tema.
-      notas.style.setProperty('background', 'rgba(255, 255, 255, 0.08)', 'important');
-      notas.style.setProperty('background-color', 'rgba(255, 255, 255, 0.08)', 'important');
-      notas.style.setProperty('box-shadow', '0 1px 2px 0 rgb(0 0 0 / 0.18)', 'important');
+      // v12.6: destaque correto é somente texto/ícone branco.
+      notas.style.setProperty('color', 'rgb(255, 255, 255)', 'important');
+      notas.style.setProperty('font-weight', '700', 'important');
+      notas.style.setProperty('background', 'transparent', 'important');
+      notas.style.setProperty('background-color', 'transparent', 'important');
+      notas.style.setProperty('box-shadow', 'none', 'important');
+
+      const notasSvg = notas.querySelector('svg');
+      if (notasSvg) {
+        notasSvg.style.setProperty('color', 'rgb(255, 255, 255)', 'important');
+        notasSvg.style.setProperty('stroke', 'currentColor', 'important');
+      }
 
       geral.style.setProperty('color', 'hsl(var(--muted-foreground))', 'important');
       geral.style.setProperty('font-weight', '500', 'important');
@@ -2352,6 +2359,12 @@
       notas.style.removeProperty('background');
       notas.style.removeProperty('background-color');
       notas.style.removeProperty('box-shadow');
+
+      const notasSvg = notas.querySelector('svg');
+      if (notasSvg) {
+        notasSvg.style.removeProperty('color');
+        notasSvg.style.removeProperty('stroke');
+      }
 
       geral.style.removeProperty('color');
       geral.style.removeProperty('font-weight');

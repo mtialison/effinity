@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      9.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.0';
+  const SCRIPT_VERSION = '9.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2317,6 +2317,108 @@
     return hasOpenButton && hasFileMarker;
   }
 
+
+  function getDocumentLinksFromAttendanceCard(host) {
+    const links = [];
+    if (!host) return links;
+
+    const attendanceCard = findCardByHeading(host, 'Dados do Atendimento');
+    if (!attendanceCard) return links;
+
+    for (const link of attendanceCard.querySelectorAll('a[href]')) {
+      const href = link.getAttribute('href') || '';
+      if (!href || !href.includes('/public/files/')) continue;
+
+      const row = link.closest('.flex.items-baseline.gap-2') || link.parentElement;
+      const label = normalizeText(row?.querySelector('span.text-xs.text-muted-foreground')?.textContent || link.textContent || 'Arquivo');
+      links.push({ href, label: label || 'Arquivo' });
+    }
+
+    return links;
+  }
+
+  function extractFileNameFromUrl(href, label) {
+    try {
+      const url = new URL(href, location.origin);
+      const filename = url.searchParams.get('filename');
+      return filename || label || 'Arquivo';
+    } catch (_) {
+      return label || 'Arquivo';
+    }
+  }
+
+  function createDocumentFileCard(fileInfo) {
+    const card = document.createElement('div');
+    card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
+    card.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
+    card.setAttribute(TAB_SWAP_SOURCE_ATTR, 'documentos-geral');
+    card.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
+    card.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+    card.setAttribute('data-tm-tab-swap-generated', 'true');
+
+    const fileName = extractFileNameFromUrl(fileInfo.href, fileInfo.label);
+    const label = fileInfo.label || 'Arquivo';
+
+    card.innerHTML = `
+      <div class="p-4">
+        <div class="flex items-start gap-3">
+          <div class="shrink-0"><div class="relative h-12 w-12 rounded overflow-hidden bg-muted flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file h-6 w-6 text-muted-foreground"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          </div></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between gap-2 mb-1"><p class="text-sm font-medium truncate"></p></div>
+            <p class="text-xs text-muted-foreground mb-1 line-clamp-1"></p>
+            <div class="flex items-center gap-2 flex-wrap"><div class="inline-flex items-center rounded-full border px-2.5 py-0.5 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-card text-card-foreground hover:bg-muted text-xs">Documento</div></div>
+          </div>
+          <button class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold ring-offset-background transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-95 transform-gpu border-2 border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow-md focus-visible:ring-gray-500 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600 dark:active:bg-gray-700 dark:focus-visible:ring-gray-400 h-8 px-3 text-sm shrink-0" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-external-link h-4 w-4 mr-1.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" x2="21" y1="14" y2="3"></line></svg>Abrir
+          </button>
+        </div>
+      </div>`;
+
+    const title = card.querySelector('p.text-sm.font-medium');
+    const desc = card.querySelector('p.text-xs.text-muted-foreground');
+    const button = card.querySelector('button');
+
+    if (title) title.textContent = fileName;
+    if (desc) desc.textContent = label;
+    if (button) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(fileInfo.href, '_blank', 'noopener,noreferrer');
+      }, true);
+    }
+
+    return card;
+  }
+
+  function ensureGeneratedDocumentFilesForGeneral(host) {
+    if (!host || getCachedFileNodes().length) return;
+
+    const links = getDocumentLinksFromAttendanceCard(host);
+    if (!links.length) return;
+
+    const depot = ensureTabSwapDepot();
+    const seen = new Set();
+
+    for (const fileInfo of links) {
+      if (!fileInfo.href || seen.has(fileInfo.href)) continue;
+      seen.add(fileInfo.href);
+      depot.appendChild(createDocumentFileCard(fileInfo));
+    }
+  }
+
+  function hideStaleVisibleSwapNodes(panel) {
+    if (!panel) return;
+
+    for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
+      if (!(node instanceof HTMLElement)) continue;
+      const nodeTicket = node.getAttribute(TAB_SWAP_TICKET_ATTR);
+      if (nodeTicket && nodeTicket !== activeTabSwapTicketKey) hideElement(node);
+    }
+  }
+
   function cacheNotesCardFromHost(host) {
     try {
       const notesCard = findNotesCardIn(host);
@@ -2371,8 +2473,9 @@
     if (!host) return;
     ensureTabSwapTicketContext();
 
+    ensureGeneratedDocumentFilesForGeneral(host);
+
     const files = getCachedFileNodes();
-    if (!files.length) return;
 
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
@@ -2381,6 +2484,8 @@
       hideElement(notesCard);
       cacheNotesCardFromHost(host);
     }
+
+    if (!files.length) return;
 
     for (const fileNode of files) {
       showElement(fileNode);
@@ -2408,6 +2513,8 @@
       const panel = findSidePanelWithTabs();
       if (!panel) return;
 
+      hideStaleVisibleSwapNodes(panel);
+
       const tab = findActiveSideTabName(panel);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
@@ -2428,13 +2535,15 @@
       const panel = findSidePanelWithTabs();
       if (!panel) return;
 
+      hideStaleVisibleSwapNodes(panel);
+
       const tab = findActiveSideTabName(panel);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
 
       if (tab === 'geral') {
         appendCachedFilesToGeneral(host);
-        scheduleAutoPrimeFilesForGeneral(panel);
+        // v9.1: sem clique automático entre abas para evitar flicker.
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
@@ -2452,52 +2561,9 @@
   }
 
   function scheduleAutoPrimeFilesForGeneral(panel) {
-    if (!panel || !activeTabSwapTicketKey) return;
-    if (lastAutoPrimedTicketKey === activeTabSwapTicketKey) return;
-    if (getCachedFileNodes().length) return;
-
-    const generalButton = findSideTabButton(panel, 'geral');
-    const filesButton = findSideTabButton(panel, 'arquivos');
-    if (!generalButton || !filesButton) return;
-
-    lastAutoPrimedTicketKey = activeTabSwapTicketKey;
-    clearTimeout(tabSwapPrimeTimer);
-    document.documentElement.setAttribute(TAB_SWAP_PRIMING_ATTR, 'true');
-
-    tabSwapPrimeTimer = window.setTimeout(() => {
-      try {
-        if (findActiveSideTabName(panel) !== 'geral') {
-          document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
-          return;
-        }
-
-        cacheCurrentTabBeforeSwap();
-        filesButton.click();
-
-        window.setTimeout(() => {
-          try {
-            ensureTabSwapTicketContext();
-            const freshPanel = findSidePanelWithTabs();
-            const freshHost = getCurrentTabContentHost(freshPanel);
-            cacheFileNodesFromHost(freshHost);
-
-            const freshGeneralButton = findSideTabButton(freshPanel, 'geral');
-            if (freshGeneralButton) freshGeneralButton.click();
-
-            window.setTimeout(() => {
-              document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
-              applyGeneralFilesNotesSwap();
-            }, 160);
-          } catch (error) {
-            document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
-            console.error(`[${SCRIPT_NAME}] falha ao capturar Arquivos na pré-carga`, error);
-          }
-        }, 220);
-      } catch (error) {
-        document.documentElement.removeAttribute(TAB_SWAP_PRIMING_ATTR);
-        console.error(`[${SCRIPT_NAME}] falha na pré-carga de Arquivos`, error);
-      }
-    }, 180);
+    // v9.1: desativado de propósito.
+    // Não clica automaticamente em Arquivos/Geral, evitando flicker ao trocar tickets.
+    return;
   }
 
   let tabSwapTimers = [];

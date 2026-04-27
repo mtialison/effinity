@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.4
+// @version      11.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.4';
+  const SCRIPT_VERSION = '11.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2807,6 +2807,61 @@
     return match ? match[1] : '';
   }
 
+
+  function notesDiagExtractTicketIdFromAnyUrl(value) {
+    const text = String(value || '');
+    const direct = notesDiagExtractTicketIdFromUrl(text);
+    if (direct) return direct;
+
+    const generic = text.match(/tickets\/(\d+)/);
+    if (generic) return generic[1];
+
+    return '';
+  }
+
+  function notesDiagFindTicketIdFromPerformance() {
+    try {
+      const entries = performance.getEntriesByType('resource') || [];
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        const url = entries[i]?.name || '';
+        if (!url.includes('/api/whatsapp/tickets/')) continue;
+
+        const id = notesDiagExtractTicketIdFromAnyUrl(url);
+        if (id) {
+          notesDiagRememberTicketId(id, 'performance');
+          return id;
+        }
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  function notesDiagFindTicketIdFromDomLinks() {
+    try {
+      const links = Array.from(document.querySelectorAll('a[href*="/api/whatsapp/tickets/"], a[href*="/tickets/"], a[href*="ticketId="]'));
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        const id = notesDiagExtractTicketIdFromAnyUrl(href) || (href.match(/[?&]ticketId=(\d+)/)?.[1] || '');
+        if (id) {
+          notesDiagRememberTicketId(id, 'dom-link');
+          return id;
+        }
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  function notesDiagFindTicketIdFromKnownRequests() {
+    try {
+      const raw = sessionStorage.getItem(NOTES_DIAG_LAST_TICKET_KEY) || '';
+      if (raw) return raw;
+    } catch (_) {}
+
+    return notesDiagFindTicketIdFromPerformance() || notesDiagFindTicketIdFromDomLinks();
+  }
+
   function notesDiagNormalizeNote(note) {
     if (!note || typeof note !== 'object') return null;
 
@@ -2873,7 +2928,7 @@
   window.tmEffinityNotesDiag = {
     getLastTicketId() {
       try {
-        return sessionStorage.getItem(NOTES_DIAG_LAST_TICKET_KEY) || '';
+        return notesDiagFindTicketIdFromKnownRequests();
       } catch (_) {
         return '';
       }
@@ -3038,6 +3093,7 @@
     scheduleFavoriteLayer(900);
     scheduleGeneralFilesNotesSwap();
     log(`iniciado v${SCRIPT_VERSION}`);
+    notesDiagFindTicketIdFromPerformance();
     notesDiagLog('diagnóstico seguro ativo. Use window.tmEffinityNotesDiag.getLastTicketId() e getNotes() no console.');
   }
 
@@ -3068,9 +3124,13 @@
 
     btn.onclick = async () => {
       try {
-        const ticketId = window.tmEffinityNotesDiag.getLastTicketId();
+        const ticketId =
+          window.tmEffinityNotesDiag.getLastTicketId() ||
+          notesDiagFindTicketIdFromPerformance() ||
+          notesDiagFindTicketIdFromDomLinks();
+
         if (!ticketId) {
-          alert('TicketId não encontrado ainda.');
+          alert('TicketId não encontrado. Abra a aba nativa de Notas ou Arquivos uma vez e tente novamente.');
           return;
         }
 

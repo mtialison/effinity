@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.1
+// @version      10.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.1';
+  const SCRIPT_VERSION = '10.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -531,6 +531,25 @@
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
+    }
+
+
+    /* ── Aba Notas: garantir interação no card de Notas Internas ─────────
+       v10.2: o conteúdo nativo da antiga aba Arquivos continua mascarado,
+       mas o card real de Notas sempre fica clicável e acima da máscara. */
+    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      position: relative !important;
+      z-index: 20 !important;
+    }
+
+    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] *,
+    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] textarea,
+    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] button {
+      pointer-events: auto !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2656,6 +2675,7 @@
       notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
       notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
       showElement(notesCard);
+      bindNotesCardInteractionSafety(notesCard);
       depot.appendChild(notesCard);
       return notesCard;
     } catch (error) {
@@ -2703,6 +2723,50 @@
     syncApiFilesToGeneral(host);
   }
 
+
+  function bindNotesCardInteractionSafety(notesCard) {
+    try {
+      if (!notesCard || !(notesCard instanceof HTMLElement)) return;
+
+      notesCard.style.pointerEvents = 'auto';
+      notesCard.style.position = notesCard.style.position || 'relative';
+      notesCard.style.zIndex = notesCard.style.zIndex || '20';
+
+      if (notesCard.getAttribute('data-tm-notes-interaction-bound') === 'true') {
+        return;
+      }
+
+      notesCard.setAttribute('data-tm-notes-interaction-bound', 'true');
+
+      const syncButtonState = () => {
+        try {
+          const textarea = notesCard.querySelector('textarea');
+          const button = Array.from(notesCard.querySelectorAll('button')).find(btn =>
+            normalizeText(btn.textContent).includes('Adicionar Nota')
+          );
+
+          if (!textarea || !button) return;
+
+          const hasText = normalizeText(textarea.value).length > 0;
+          if (hasText) {
+            button.disabled = false;
+            button.removeAttribute('disabled');
+            button.style.pointerEvents = 'auto';
+          }
+        } catch (_) {}
+      };
+
+      notesCard.addEventListener('input', syncButtonState, true);
+      notesCard.addEventListener('keyup', syncButtonState, true);
+      notesCard.addEventListener('focusin', syncButtonState, true);
+
+      window.setTimeout(syncButtonState, 0);
+      window.setTimeout(syncButtonState, 120);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao proteger interação das notas`, error);
+    }
+  }
+
   function appendCachedNotesToFiles(host) {
     if (!host) return;
     ensureTabSwapTicketContext();
@@ -2719,9 +2783,11 @@
     if (notesCard.parentElement !== host) {
       showElement(notesCard);
       notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+      bindNotesCardInteractionSafety(notesCard);
       host.appendChild(notesCard);
     } else {
       showElement(notesCard);
+      bindNotesCardInteractionSafety(notesCard);
     }
   }
 

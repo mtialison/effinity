@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.3
+// @version      13.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.3';
+  const SCRIPT_VERSION = '13.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -611,6 +611,11 @@
       background: #020617 !important;
       padding: 10px !important;
       overflow: hidden !important;
+      cursor: default !important;
+      touch-action: none !important;
+    }
+
+    [data-tm-image-popup-body="true"][data-tm-pannable="true"] {
       cursor: grab !important;
     }
 
@@ -628,7 +633,8 @@
       transform-origin: center center !important;
       user-select: none !important;
       -webkit-user-drag: none !important;
-      transition: transform 0.05s linear !important;
+      will-change: transform !important;
+      transition: none !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2688,16 +2694,63 @@
     }
   }
 
+  function sideGetPopupPanBounds(popup) {
+    const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+    const img = body?.querySelector('img');
+    if (!body || !img) return { maxX: 0, maxY: 0, pannableX: false, pannableY: false };
+
+    const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
+    const naturalW = Number(popup.dataset.tmImageNaturalW || img.naturalWidth || img.offsetWidth || 1);
+    const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || img.offsetHeight || 1);
+    const bodyRect = body.getBoundingClientRect();
+
+    const scaledW = naturalW * zoom;
+    const scaledH = naturalH * zoom;
+
+    const overflowX = Math.max(0, scaledW - bodyRect.width);
+    const overflowY = Math.max(0, scaledH - bodyRect.height);
+
+    return {
+      maxX: overflowX / 2,
+      maxY: overflowY / 2,
+      pannableX: overflowX > 1,
+      pannableY: overflowY > 1
+    };
+  }
+
+  function sideClampPopupPan(popup) {
+    const bounds = sideGetPopupPanBounds(popup);
+
+    let panX = Number(popup.dataset.tmImagePanX || '0') || 0;
+    let panY = Number(popup.dataset.tmImagePanY || '0') || 0;
+
+    panX = bounds.pannableX ? Math.max(-bounds.maxX, Math.min(bounds.maxX, panX)) : 0;
+    panY = bounds.pannableY ? Math.max(-bounds.maxY, Math.min(bounds.maxY, panY)) : 0;
+
+    popup.dataset.tmImagePanX = String(panX);
+    popup.dataset.tmImagePanY = String(panY);
+
+    const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+    if (body) {
+      if (bounds.pannableX || bounds.pannableY) {
+        body.setAttribute('data-tm-pannable', 'true');
+      } else {
+        body.removeAttribute('data-tm-pannable');
+      }
+    }
+
+    return { panX, panY };
+  }
+
   function sideApplyPopupImageTransform(popup) {
     try {
       const img = popup.querySelector('[data-tm-image-popup-body="true"] img');
       if (!img) return;
 
       const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
-      const panX = Number(popup.dataset.tmImagePanX || '0') || 0;
-      const panY = Number(popup.dataset.tmImagePanY || '0') || 0;
+      const { panX, panY } = sideClampPopupPan(popup);
 
-      img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+      img.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);
     }
@@ -2769,11 +2822,24 @@
     let startY = 0;
     let startPanX = 0;
     let startPanY = 0;
+    let pendingX = 0;
+    let pendingY = 0;
+    let rafId = 0;
+
+    const flushPan = () => {
+      rafId = 0;
+      popup.dataset.tmImagePanX = String(pendingX);
+      popup.dataset.tmImagePanY = String(pendingY);
+      sideApplyPopupImageTransform(popup);
+    };
 
     body.addEventListener('mousedown', (event) => {
       try {
         if (event.button !== 0) return;
         if (event.target.closest('button')) return;
+
+        const bounds = sideGetPopupPanBounds(popup);
+        if (!bounds.pannableX && !bounds.pannableY) return;
 
         panning = true;
         body.setAttribute('data-tm-panning', 'true');
@@ -2782,6 +2848,8 @@
         startY = event.clientY;
         startPanX = Number(popup.dataset.tmImagePanX || '0') || 0;
         startPanY = Number(popup.dataset.tmImagePanY || '0') || 0;
+        pendingX = startPanX;
+        pendingY = startPanY;
 
         imagePopupZIndex += 1;
         popup.style.zIndex = String(imagePopupZIndex);
@@ -2795,9 +2863,16 @@
       if (!panning) return;
 
       try {
-        popup.dataset.tmImagePanX = String(startPanX + (event.clientX - startX));
-        popup.dataset.tmImagePanY = String(startPanY + (event.clientY - startY));
-        sideApplyPopupImageTransform(popup);
+        const bounds = sideGetPopupPanBounds(popup);
+        const rawX = startPanX + (event.clientX - startX);
+        const rawY = startPanY + (event.clientY - startY);
+
+        pendingX = bounds.pannableX ? Math.max(-bounds.maxX, Math.min(bounds.maxX, rawX)) : 0;
+        pendingY = bounds.pannableY ? Math.max(-bounds.maxY, Math.min(bounds.maxY, rawY)) : 0;
+
+        if (!rafId) {
+          rafId = window.requestAnimationFrame(flushPan);
+        }
 
         event.preventDefault();
         event.stopPropagation();
@@ -2914,6 +2989,8 @@
           const naturalH = img.naturalHeight || 1;
           const fit = Math.min(maxW / naturalW, maxH / naturalH, 1);
 
+          popup.dataset.tmImageNaturalW = String(naturalW);
+          popup.dataset.tmImageNaturalH = String(naturalH);
           img.style.width = `${naturalW}px`;
           img.style.height = `${naturalH}px`;
           popup.dataset.tmImagePanX = '0';
@@ -2950,6 +3027,12 @@
 
       sideInstallPopupDrag(popup, header);
       document.body.appendChild(popup);
+
+      window.addEventListener('resize', () => {
+        try {
+          if (document.body.contains(popup)) sideApplyPopupImageTransform(popup);
+        } catch (_) {}
+      });
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao abrir visualizador de imagem`, error);
       window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');

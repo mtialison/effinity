@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.0
+// @version      11.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.0';
+  const SCRIPT_VERSION = '11.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -471,66 +471,52 @@
     }
 
 
-    /* ── Troca Geral ↔ Arquivos: máscara discreta durante pré-carga ───── */
-    html[data-tm-tab-swap-priming="true"] .hidden.xl\:flex.xl\:col-span-1 {
-      opacity: 0 !important;
-      transition: opacity 0.06s ease !important;
-      pointer-events: none !important;
-    }
 
-    /* ── Troca Geral ↔ Arquivos: anti-stale imediato ao trocar ticket ─── */
-    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="file"],
-    html[data-tm-tab-swap-ticket-switching="true"] [data-tm-tab-swap-role="notes"] {
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-
-
-    /* ── Troca Geral ↔ Arquivos: anti-flicker da aba Arquivos ───────────
-       Enquanto Arquivos está ativa, os cards nativos de arquivo do SPA ficam
-       ocultos no primeiro paint; o script insere apenas o card de Notas. */
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="notes"]),
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="file-original"] {
+    /* ── Geral ↔ Notas API v11.1 ───────────────────────────────────────
+       Não move o card nativo de Notas Internas. A aba Notas usa um card
+       próprio do script e salva direto via API. */
+    [data-tm-api-notes-hidden="true"],
+    [data-tm-api-notes-view="geral"] [data-tm-api-notes-card="true"],
+    [data-tm-api-notes-view="notas"] [data-tm-api-file-card="true"],
+    [data-tm-api-notes-view="notas"] [data-tm-api-general-card="true"],
+    [data-tm-api-notes-view="notas"] [data-tm-api-native-notes="true"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
     }
 
-
-
-    /* ── Troca Geral ↔ Arquivos: bloqueio total do conteúdo nativo da aba Arquivos ──
-       v9.9: regra independente da aba ativa. Isso impede o primeiro paint dos
-       arquivos/estado vazio nativos antes do JS atualizar data-tm-side-active-tab. */
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
-    .hidden.xl\\:flex.xl\\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3 {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
+    [data-tm-api-notes-view="notas"] [data-tm-api-notes-card="true"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
     }
 
-    /* ── Troca Geral ↔ Arquivos: ocultar estado vazio nativo em Arquivos ──
-       O card de Notas Internas é o conteúdo desejado nessa aba. O estado
-       "Nenhum arquivo anexado" do SPA não deve aparecer junto com ele. */
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3,
-    html[data-tm-side-active-tab="arquivos"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .p-3 > [data-tm-tab-swap-role="file-empty"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
+    [data-tm-api-notes-view="notas"] [data-tm-api-notes-card="true"] * {
+      pointer-events: auto !important;
+    }
+
+    html[data-tm-api-notes-active="true"] button[data-tm-api-tab="geral"] {
+      background: transparent !important;
+      box-shadow: none !important;
+      color: hsl(var(--muted-foreground)) !important;
+    }
+
+    html[data-tm-api-notes-active="true"] button[data-tm-api-tab="notas"] {
+      background: hsl(var(--background)) !important;
+      color: hsl(var(--foreground)) !important;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+    }
+
+    [data-tm-api-notes-card="true"] textarea {
+      min-height: 80px !important;
+      resize: none !important;
+    }
+
+    [data-tm-api-notes-card="true"] button[data-tm-api-notes-submit="true"]:disabled {
+      opacity: 0.5 !important;
+      cursor: not-allowed !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2239,214 +2225,99 @@
   }
 
   function showElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return;
-    el.removeAttribute(HIDDEN_ATTR);
+    if (!el || !(el instanceo
+  /* ========================================================================
+   * SEÇÃO: GERAL ↔ NOTAS POR API (v11.1)
+   * Solução estável:
+   * - não move o card nativo de Notas Internas;
+   * - oculta o card nativo;
+   * - cria card próprio na aba Notas;
+   * - lista notas via GET /api/whatsapp/tickets/{id}/notes;
+   * - salva via POST /api/whatsapp/tickets/{id}/notes.
+   * ====================================================================== */
+  const API_FILES_CACHE_LIMIT = 80;
+  const API_NOTES_CACHE_LIMIT = 80;
+  const API_BASE_URL = 'https://webhook.sono.effinity.com.br/api/whatsapp/tickets';
+
+  const API_FILES_BY_TICKET_ID = new Map();
+  const API_NOTES_BY_TICKET_ID = new Map();
+
+  let apiCurrentTicketId = '';
+  let apiNotesMode = false;
+  let apiRenderTimers = [];
+  let apiNotesLoading = false;
+
+  function apiNormalizeTicketId(value) {
+    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
+    return match ? match[1] : '';
   }
 
-  function getCurrentTicketSwapKey() {
+  function apiGetTicketIdFromUrl() {
+    const match = location.href.match(/tickets\/(\d+)/) || location.href.match(/[?&]ticketId=(\d+)/);
+    return match ? match[1] : '';
+  }
+
+  function apiGetTicketIdFromSelectedCard() {
     try {
-      const header = document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4');
-      const name = normalizeText(header?.querySelector('h2')?.textContent || '');
-      const phone = normalizeText(header?.querySelector('a[href^="tel:"]')?.getAttribute('href') || '');
-      const selectedCard = document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
-        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500');
-      const protocol = normalizeText(selectedCard?.textContent || '').slice(0, 120);
-      const key = [name, phone, protocol].filter(Boolean).join('|');
-      return key || location.pathname;
+      const selectedCard =
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer[class*="border-primary"]');
+
+      const text = normalizeText(selectedCard?.textContent || '');
+      const protocolMatch = text.match(/\bCS(\d+)\b/i);
+      if (protocolMatch) return protocolMatch[1];
+
+      return '';
     } catch (_) {
-      return location.pathname;
+      return '';
     }
   }
 
-  function ensureTabSwapTicketContext() {
-    const key = getCurrentTicketSwapKey();
-    if (key === activeTabSwapTicketKey) return;
-    activeTabSwapTicketKey = key;
-    hideVisibleTabSwapNodesNow();
+  function apiGetCurrentTicketId() {
+    return apiCurrentTicketId || apiGetTicketIdFromUrl() || apiGetTicketIdFromSelectedCard();
   }
 
-  function beginTicketSwapRefresh() {
+  function apiSetCurrentTicketId(ticketId) {
+    const normalized = String(ticketId || '').trim();
+    if (!normalized || normalized === apiCurrentTicketId) return;
+
+    apiCurrentTicketId = normalized;
+    apiHideStaleCards();
+    apiScheduleRender();
+  }
+
+  function apiHideStaleCards() {
     try {
-      activeTabSwapTicketKey = '';
-      hideVisibleTabSwapNodesNow();
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao iniciar troca visual de ticket`, error);
-    }
-  }
-
-  function getButtonText(button) {
-    const text = normalizeText(button?.textContent || '').toLowerCase();
-    if (text === 'notas') return 'arquivos';
-    return text;
-  }
-
-  function findSidePanelWithTabs() {
-    for (const button of document.querySelectorAll('button')) {
-      if (getButtonText(button) !== 'geral') continue;
-
-      const panel = button.closest('.flex.flex-col.h-full.min-h-0') ||
-        button.closest('.hidden.xl\\:flex') ||
-        button.closest('.flex.flex-col');
-
-      if (!panel) continue;
-
-      const labels = Array.from(panel.querySelectorAll('button')).map(getButtonText);
-      if (labels.includes('geral') && labels.includes('arquivos')) return panel;
-    }
-
-    return null;
-  }
-
-  function findActiveSideTabName(panel) {
-    if (!panel) return '';
-
-    for (const button of panel.querySelectorAll('button')) {
-      const text = getButtonText(button);
-      if (!['geral', 'arquivos', 'timeline', 'histórico', 'historico', 'msgs'].includes(text)) continue;
-
-      const isActive =
-        button.classList.contains('bg-background') &&
-        button.classList.contains('text-foreground') &&
-        button.classList.contains('shadow-sm');
-
-      if (isActive) return text === 'historico' ? 'histórico' : text;
-    }
-
-    return '';
-  }
-
-  function syncSideActiveTabAttribute(tabName) {
-    try {
-      const normalized = String(tabName || '').toLowerCase();
-      if (normalized) {
-        document.documentElement.setAttribute('data-tm-side-active-tab', normalized);
-      } else {
-        document.documentElement.removeAttribute('data-tm-side-active-tab');
+      for (const card of document.querySelectorAll('[data-tm-api-file-card="true"], [data-tm-api-notes-card="true"]')) {
+        if (card instanceof HTMLElement) {
+          card.setAttribute('data-tm-api-notes-hidden', 'true');
+        }
       }
     } catch (_) {}
   }
 
-  function refreshSideActiveTabAttribute() {
-    const panel = findSidePanelWithTabs();
-    syncSideActiveTabAttribute(findActiveSideTabName(panel));
-  }
-
-  function findSidePanelContentShell(panel) {
-    if (!panel) return null;
-
-    for (const child of Array.from(panel.children)) {
-      if (!(child instanceof HTMLElement)) continue;
-      if (
-        child.classList.contains('relative') &&
-        child.classList.contains('overflow-hidden') &&
-        child.classList.contains('flex-1')
-      ) {
-        return child;
-      }
-    }
-
-    return panel.querySelector('.relative.overflow-hidden.flex-1');
-  }
-
-  function findGeneralContentHost(shell) {
-    if (!shell) return null;
-
-    for (const host of shell.querySelectorAll('div.flex.flex-col.gap-4.p-3')) {
-      if (findNotesCardIn(host) || normalizeText(host.textContent).includes('Dados do Atendimento')) {
-        return host;
-      }
-    }
-
-    return null;
-  }
-
-  function findFilesContentHost(shell) {
-    if (!shell) return null;
-
-    for (const host of shell.querySelectorAll('div.space-y-3')) {
-      const text = normalizeText(host.textContent);
-      if (text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || text.includes('Abrir')) {
-        return host;
-      }
-    }
-
-    const p3 = shell.querySelector('.h-full.w-full.overflow-auto > .p-3');
-    return p3 instanceof HTMLElement ? p3 : null;
-  }
-
-  function getCurrentTabContentHost(panel) {
-    const shell = findSidePanelContentShell(panel);
-    const tab = findActiveSideTabName(panel);
-
-    if (tab === 'geral') return findGeneralContentHost(shell);
-    if (tab === 'arquivos') return findFilesContentHost(shell);
-
-    return null;
-  }
-
-  function findCardByHeading(root, headingText) {
-    if (!root) return null;
-
-    for (const title of root.querySelectorAll('h3')) {
-      if (normalizeText(title.textContent) !== headingText) continue;
-      const card = title.closest('.rounded-xl.bg-card.border.border-border');
-      if (card instanceof HTMLElement) return card;
-    }
-
-    return null;
-  }
-
-  function findNotesCardIn(root) {
-    return findCardByHeading(root, 'Notas Internas');
-  }
-
-  function isSwappableFileNode(node) {
-    if (!(node instanceof HTMLElement)) return false;
-    if (node.getAttribute(TAB_SWAP_ROLE_ATTR) === 'notes') return false;
-    if (findNotesCardIn(node)) return false;
-
-    const text = normalizeText(node.textContent);
-    const hasOpenButton = Array.from(node.querySelectorAll('button')).some(button => normalizeText(button.textContent) === 'Abrir');
-    const hasFileMarker = text.includes('Mídia WhatsApp') || text.includes('Arquivo recebido') || text.includes('Mídia recebida') || !!node.querySelector('img');
-
-    return hasOpenButton && hasFileMarker;
-  }
-
-
-  function isNativeFilesEmptyState(node) {
-    if (!(node instanceof HTMLElement)) return false;
-    if (findNotesCardIn(node)) return false;
-
-    const text = normalizeText(node.textContent);
-    return text.includes('Nenhum arquivo anexado') ||
-      text.includes('Arquivos enviados durante o atendimento aparecerão aqui');
-  }
-
-  function hideNativeFilesEmptyState(host) {
+  function apiExtractTicketIdFromPayload(payload) {
     try {
-      if (!host) return;
+      if (!payload || typeof payload !== 'object') return '';
 
-      for (const node of Array.from(host.children)) {
-        if (!isNativeFilesEmptyState(node)) continue;
-        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-empty');
-        hideElement(node);
+      if (payload.ticketId) return String(payload.ticketId);
+
+      if (Array.isArray(payload.files) && payload.files[0]?.ticketId) {
+        return String(payload.files[0].ticketId);
       }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ocultar estado vazio de Arquivos`, error);
+
+      if (Array.isArray(payload.notes) && payload.notes[0]?.ticketId) {
+        return String(payload.notes[0].ticketId);
+      }
+
+      return '';
+    } catch (_) {
+      return '';
     }
   }
 
-  function hideVisibleTabSwapNodesNow() {
-    const panel = findSidePanelWithTabs();
-    if (!panel) return;
-
-    for (const node of panel.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"], [${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
-      if (!(node instanceof HTMLElement)) continue;
-      hideElement(node);
-    }
-  }
-
-  function normalizeTicketFile(file) {
+  function apiNormalizeFile(file) {
     if (!file || typeof file !== 'object') return null;
 
     const id = file.id || file.fileId || file.downloadUrl || file.fileName;
@@ -2475,33 +2346,85 @@
       if (!payload || typeof payload !== 'object') return;
       if (!Array.isArray(payload.files) && !String(requestUrl || '').includes('/files')) return;
 
+      const ticketId = apiNormalizeTicketId(requestUrl) || apiExtractTicketIdFromPayload(payload) || apiGetCurrentTicketId();
+      if (!ticketId) return;
+
       const files = Array.isArray(payload.files)
-        ? payload.files.map(normalizeTicketFile).filter(Boolean)
+        ? payload.files.map(apiNormalizeFile).filter(Boolean)
         : [];
 
-      const currentKey = getCurrentTicketSwapKey();
-      if (!currentKey) return;
+      API_FILES_BY_TICKET_ID.set(String(ticketId), files);
+      apiSetCurrentTicketId(ticketId);
 
-      TICKET_FILES_BY_KEY.set(currentKey, files);
-
-      if (TICKET_FILES_BY_KEY.size > TICKET_FILES_CACHE_LIMIT) {
-        const overflow = TICKET_FILES_BY_KEY.size - TICKET_FILES_CACHE_LIMIT;
-        Array.from(TICKET_FILES_BY_KEY.keys()).slice(0, overflow).forEach(key => TICKET_FILES_BY_KEY.delete(key));
+      if (API_FILES_BY_TICKET_ID.size > API_FILES_CACHE_LIMIT) {
+        const overflow = API_FILES_BY_TICKET_ID.size - API_FILES_CACHE_LIMIT;
+        Array.from(API_FILES_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => API_FILES_BY_TICKET_ID.delete(key));
       }
 
-      scheduleGeneralFilesNotesSwap();
+      apiScheduleRender();
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao processar arquivos do ticket`, error);
     }
   }
 
-  function formatTicketFileDate(value) {
+  function apiNormalizeNote(note) {
+    if (!note || typeof note !== 'object') return null;
+
+    const id = note.id || `${note.createdAt || ''}-${note.content || ''}`;
+    const content = String(note.content || note.eventData || '').trim();
+    if (!id || !content) return null;
+
+    return {
+      id: String(id),
+      content,
+      createdAt: note.createdAt || null,
+      createdByUserName: String(note.createdByUserName || note.performedByUserName || 'Alison').trim()
+    };
+  }
+
+  function apiProcessNotesPayload(payload, requestUrl = '') {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+      if (!Array.isArray(payload.notes) && !String(requestUrl || '').includes('/notes')) return;
+
+      const ticketId = apiNormalizeTicketId(requestUrl) || apiExtractTicketIdFromPayload(payload) || apiGetCurrentTicketId();
+      if (!ticketId) return;
+
+      const notes = Array.isArray(payload.notes)
+        ? payload.notes.map(apiNormalizeNote).filter(Boolean)
+        : [];
+
+      API_NOTES_BY_TICKET_ID.set(String(ticketId), notes);
+      apiSetCurrentTicketId(ticketId);
+
+      if (API_NOTES_BY_TICKET_ID.size > API_NOTES_CACHE_LIMIT) {
+        const overflow = API_NOTES_BY_TICKET_ID.size - API_NOTES_CACHE_LIMIT;
+        Array.from(API_NOTES_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => API_NOTES_BY_TICKET_ID.delete(key));
+      }
+
+      apiScheduleRender();
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao processar notas do ticket`, error);
+    }
+  }
+
+  function apiGetCurrentFiles() {
+    const ticketId = apiGetCurrentTicketId();
+    return ticketId ? (API_FILES_BY_TICKET_ID.get(String(ticketId)) || []) : [];
+  }
+
+  function apiGetCurrentNotes() {
+    const ticketId = apiGetCurrentTicketId();
+    return ticketId ? (API_NOTES_BY_TICKET_ID.get(String(ticketId)) || []) : [];
+  }
+
+  function apiFormatDate(value) {
     const date = parseApiDate(value);
     if (!date) return '';
     return `${date.toLocaleDateString('pt-BR')} às ${formatApiTime(date)}`;
   }
 
-  function getTicketFileBadge(file) {
+  function apiFileBadge(file) {
     const category = String(file?.category || '').toUpperCase();
     const mimeType = String(file?.mimeType || '').toLowerCase();
 
@@ -2512,17 +2435,17 @@
     return 'Documento';
   }
 
-  function isImageTicketFile(file) {
+  function apiIsImageFile(file) {
     const mimeType = String(file?.mimeType || '').toLowerCase();
     const icon = String(file?.icon || '').toLowerCase();
     return mimeType.startsWith('image/') || icon === 'image';
   }
 
-  function buildFileThumb(file) {
+  function apiCreateFileThumb(file) {
     const box = document.createElement('div');
     box.className = 'relative h-12 w-12 rounded overflow-hidden bg-muted group flex items-center justify-center';
 
-    if (isImageTicketFile(file) && file.thumbnailUrl) {
+    if (apiIsImageFile(file) && file.thumbnailUrl) {
       const img = document.createElement('img');
       img.src = file.thumbnailUrl;
       img.alt = file.fileName;
@@ -2539,14 +2462,11 @@
     return box;
   }
 
-  function createApiFileCard(file) {
+  function apiCreateFileCard(file) {
     const card = document.createElement('div');
     card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
-    card.setAttribute(TAB_SWAP_ROLE_ATTR, 'file');
-    card.setAttribute(TAB_SWAP_SOURCE_ATTR, 'api-files');
-    card.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-    card.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-    card.setAttribute(TAB_SWAP_API_FILE_ID_ATTR, file.id);
+    card.setAttribute('data-tm-api-file-card', 'true');
+    card.setAttribute('data-tm-api-file-id', file.id);
 
     const outer = document.createElement('div');
     outer.className = 'p-4';
@@ -2556,18 +2476,14 @@
 
     const thumbWrap = document.createElement('div');
     thumbWrap.className = 'shrink-0';
-    thumbWrap.appendChild(buildFileThumb(file));
+    thumbWrap.appendChild(apiCreateFileThumb(file));
 
     const info = document.createElement('div');
     info.className = 'flex-1 min-w-0';
 
-    const titleRow = document.createElement('div');
-    titleRow.className = 'flex items-start justify-between gap-2 mb-1';
-
     const title = document.createElement('p');
     title.className = 'text-sm font-medium truncate';
     title.textContent = file.fileName || 'Arquivo';
-    titleRow.appendChild(title);
 
     const description = document.createElement('p');
     description.className = 'text-xs text-muted-foreground mb-1 line-clamp-1';
@@ -2578,10 +2494,10 @@
 
     const badge = document.createElement('div');
     badge.className = 'inline-flex items-center rounded-full border px-2.5 py-0.5 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-card text-card-foreground hover:bg-muted text-xs';
-    badge.textContent = getTicketFileBadge(file);
+    badge.textContent = apiFileBadge(file);
     meta.appendChild(badge);
 
-    const dateText = formatTicketFileDate(file.createdAt);
+    const dateText = apiFormatDate(file.createdAt);
     if (dateText) {
       const date = document.createElement('span');
       date.className = 'text-xs text-muted-foreground';
@@ -2589,7 +2505,7 @@
       meta.appendChild(date);
     }
 
-    info.appendChild(titleRow);
+    info.appendChild(title);
     info.appendChild(description);
     info.appendChild(meta);
 
@@ -2612,218 +2528,465 @@
     return card;
   }
 
-  function getCurrentApiFiles() {
-    ensureTabSwapTicketContext();
-    return TICKET_FILES_BY_KEY.get(activeTabSwapTicketKey) || [];
+  function apiFindSidePanel() {
+    for (const button of document.querySelectorAll('button')) {
+      const text = normalizeText(button.textContent).toLowerCase();
+      if (text !== 'geral') continue;
+
+      const panel = button.closest('.flex.flex-col.h-full.min-h-0') ||
+        button.closest('.hidden.xl\\:flex') ||
+        button.closest('.flex.flex-col');
+
+      if (!panel) continue;
+
+      const labels = Array.from(panel.querySelectorAll('button')).map(btn => normalizeText(btn.textContent).toLowerCase());
+      if (labels.includes('geral') && (labels.includes('arquivos') || labels.includes('notas'))) {
+        return panel;
+      }
+    }
+
+    return null;
   }
 
-  function findApiFileCard(fileId) {
-    const selector = `[${TAB_SWAP_ROLE_ATTR}="file"][${TAB_SWAP_API_FILE_ID_ATTR}="${CSS.escape(String(fileId))}"]`;
-    return Array.from(document.querySelectorAll(selector))
-      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
+  function apiFindTabButton(name) {
+    const panel = apiFindSidePanel();
+    if (!panel) return null;
+
+    for (const button of panel.querySelectorAll('button')) {
+      const text = normalizeText(button.textContent).toLowerCase();
+      if (name === 'notas' && (text === 'notas' || text === 'arquivos')) return button;
+      if (text === name) return button;
+    }
+
+    return null;
   }
 
-  function syncApiFilesToGeneral(host) {
+  function apiMarkTabs() {
+    const geral = apiFindTabButton('geral');
+    const notas = apiFindTabButton('notas');
+
+    if (geral) geral.setAttribute('data-tm-api-tab', 'geral');
+
+    if (notas) {
+      notas.setAttribute('data-tm-api-tab', 'notas');
+      notas.setAttribute('aria-label', 'Notas');
+      notas.setAttribute('title', 'Notas');
+
+      for (const node of Array.from(notas.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue).toLowerCase() === 'arquivos') {
+          node.nodeValue = 'Notas';
+        }
+      }
+    }
+  }
+
+  function apiFindShell() {
+    const panel = apiFindSidePanel();
+    if (!panel) return null;
+
+    for (const child of Array.from(panel.children)) {
+      if (
+        child instanceof HTMLElement &&
+        child.classList.contains('relative') &&
+        child.classList.contains('overflow-hidden') &&
+        child.classList.contains('flex-1')
+      ) {
+        return child;
+      }
+    }
+
+    return panel.querySelector('.relative.overflow-hidden.flex-1');
+  }
+
+  function apiFindGeneralHost() {
+    const shell = apiFindShell();
+    if (!shell) return null;
+
+    for (const host of shell.querySelectorAll('div.flex.flex-col.gap-4.p-3')) {
+      if (!(host instanceof HTMLElement)) continue;
+      if (apiFindNativeNotesCard(host) || normalizeText(host.textContent).includes('Dados do Atendimento')) {
+        return host;
+      }
+    }
+
+    return null;
+  }
+
+  function apiFindNativeNotesCard(root) {
+    return findNotesCardIn(root);
+  }
+
+  function apiMarkNativeCards(host) {
     if (!host) return;
-    const files = getCurrentApiFiles();
+
+    for (const child of Array.from(host.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+
+      if (child.getAttribute('data-tm-api-file-card') === 'true' || child.getAttribute('data-tm-api-notes-card') === 'true') {
+        continue;
+      }
+
+      if (apiFindNativeNotesCard(child)) {
+        child.setAttribute('data-tm-api-native-notes', 'true');
+        child.setAttribute('data-tm-api-notes-hidden', 'true');
+        continue;
+      }
+
+      child.setAttribute('data-tm-api-general-card', 'true');
+    }
+  }
+
+  function apiSyncFilesToGeneral(host) {
+    if (!host) return;
+
+    const files = apiGetCurrentFiles();
     const wanted = new Set(files.map(file => file.id));
 
-    for (const node of host.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="file"]`)) {
+    for (const node of Array.from(host.querySelectorAll('[data-tm-api-file-card="true"]'))) {
       if (!(node instanceof HTMLElement)) continue;
-      const id = node.getAttribute(TAB_SWAP_API_FILE_ID_ATTR) || '';
-      const ticket = node.getAttribute(TAB_SWAP_TICKET_ATTR) || '';
-      if (ticket !== activeTabSwapTicketKey || !wanted.has(id)) {
-        hideElement(node);
-        ensureTabSwapDepot().appendChild(node);
+      const id = node.getAttribute('data-tm-api-file-id') || '';
+      if (!wanted.has(id)) {
+        node.remove();
       }
     }
 
     for (const file of files) {
-      let card = findApiFileCard(file.id);
-      if (!card) card = createApiFileCard(file);
-      showElement(card);
+      let card = host.querySelector(`[data-tm-api-file-card="true"][data-tm-api-file-id="${CSS.escape(file.id)}"]`);
+      if (!card) {
+        card = apiCreateFileCard(file);
+      }
+      card.removeAttribute('data-tm-api-notes-hidden');
       host.appendChild(card);
     }
   }
 
-  function cacheNotesCardFromHost(host) {
-    try {
-      const notesCard = findNotesCardIn(host);
-      if (!notesCard) return null;
+  function apiCreateNotesCard() {
+    const card = document.createElement('div');
+    card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-200 p-6 min-h-[360px]';
+    card.setAttribute('data-tm-api-notes-card', 'true');
 
-      const depot = ensureTabSwapDepot();
-      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
-      notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
-      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      showElement(notesCard);
-      depot.appendChild(notesCard);
-      return notesCard;
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao guardar Notas Internas`, error);
-      return null;
+    card.innerHTML = `
+      <div class="flex flex-col h-full">
+        <div class="flex-shrink-0 px-4 py-3 border-b border-border bg-muted/30">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-primary" aria-hidden="true">📝</span>
+              <h3 class="font-semibold text-foreground">Notas Internas</h3>
+              <span data-tm-api-notes-count="true" class="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full"></span>
+            </div>
+          </div>
+          <p class="text-xs text-muted-foreground mt-1">Registre informações importantes sobre este atendimento</p>
+        </div>
+        <div class="flex-shrink-0 p-4 border-b border-border bg-card">
+          <div class="space-y-3">
+            <textarea data-tm-api-notes-textarea="true" class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px] resize-none" placeholder="Digite uma nota interna sobre este ticket... (Ctrl+Enter para salvar)"></textarea>
+            <div class="flex items-center justify-end">
+              <button type="button" data-tm-api-notes-submit="true" class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold ring-offset-background ease-in-out focus-visible:outline-none focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 transform-gpu bg-gradient-to-r from-[#4F7CFF] to-[#8B5CF6] text-white hover:shadow-lg hover:shadow-primary/20 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-[0.99] transition-all duration-200 h-8 px-3 text-sm gap-1.5" disabled>Adicionar Nota</button>
+            </div>
+          </div>
+        </div>
+        <div data-tm-api-notes-list="true" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+      </div>
+    `;
+
+    const textarea = card.querySelector('[data-tm-api-notes-textarea="true"]');
+    const button = card.querySelector('[data-tm-api-notes-submit="true"]');
+
+    const syncButton = () => {
+      const hasValue = normalizeText(textarea.value).length > 0;
+      button.disabled = !hasValue || apiNotesLoading;
+    };
+
+    textarea.addEventListener('input', syncButton);
+    textarea.addEventListener('keydown', (event) => {
+      if (event.ctrlKey && event.key === 'Enter' && !button.disabled) {
+        event.preventDefault();
+        apiSubmitNote(card);
+      }
+    });
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!button.disabled) apiSubmitNote(card);
+    }, true);
+
+    syncButton();
+    return card;
+  }
+
+  function apiEnsureNotesCard(host) {
+    if (!host) return null;
+
+    let card = host.querySelector('[data-tm-api-notes-card="true"]');
+    if (!card) {
+      card = apiCreateNotesCard();
+      host.appendChild(card);
+    }
+
+    return card;
+  }
+
+  function apiRenderNotesList(card) {
+    if (!card) return;
+
+    const notes = apiGetCurrentNotes();
+    const list = card.querySelector('[data-tm-api-notes-list="true"]');
+    const count = card.querySelector('[data-tm-api-notes-count="true"]');
+    if (!list) return;
+
+    if (count) {
+      count.textContent = notes.length ? `${notes.length} ${notes.length === 1 ? 'nota' : 'notas'}` : '';
+      count.style.display = notes.length ? '' : 'none';
+    }
+
+    list.innerHTML = '';
+
+    if (!notes.length) {
+      const empty = document.createElement('div');
+      empty.className = 'flex flex-col items-center justify-center h-full text-center gap-3';
+      empty.innerHTML = `
+        <div class="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+          <span class="text-3xl opacity-50">📄</span>
+        </div>
+        <div>
+          <p class="font-medium text-foreground">Nenhuma nota registrada</p>
+          <p class="text-sm text-muted-foreground mt-1">Adicione a primeira nota para documentar este atendimento</p>
+        </div>
+      `;
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const note of notes) {
+      const item = document.createElement('div');
+      item.className = 'p-4 rounded-lg border bg-card border-border';
+
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between mb-2';
+
+      const author = document.createElement('div');
+      author.className = 'flex items-center gap-2';
+      author.innerHTML = `<span class="text-muted-foreground text-xs">👤</span>`;
+
+      const authorName = document.createElement('span');
+      authorName.className = 'text-sm font-semibold text-foreground';
+      authorName.textContent = note.createdByUserName || 'Alison';
+      author.appendChild(authorName);
+
+      const date = document.createElement('div');
+      date.className = 'flex items-center gap-1.5 text-xs text-muted-foreground';
+      date.textContent = apiFormatDate(note.createdAt);
+
+      header.appendChild(author);
+      header.appendChild(date);
+
+      const content = document.createElement('div');
+      content.className = 'text-sm text-foreground whitespace-pre-wrap leading-relaxed';
+      content.textContent = note.content;
+
+      item.appendChild(header);
+      item.appendChild(content);
+      list.appendChild(item);
     }
   }
 
-  function cacheFileNodesFromHost(host) {
+  async function apiFetchNotes(ticketId) {
+    if (!ticketId) return;
+
     try {
-      if (!host) return [];
+      const response = await fetch(`${API_BASE_URL}/${ticketId}/notes`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
 
-      hideNativeFilesEmptyState(host);
-      const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
+      const payload = await response.json();
+      apiProcessNotesPayload(payload, `${API_BASE_URL}/${ticketId}/notes`);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao buscar notas`, error);
+    }
+  }
 
-      for (const node of fileNodes) {
-        node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-original');
-        hideElement(node);
+  async function apiSubmitNote(card) {
+    const ticketId = apiGetCurrentTicketId();
+    if (!ticketId || apiNotesLoading) return;
+
+    const textarea = card.querySelector('[data-tm-api-notes-textarea="true"]');
+    const button = card.querySelector('[data-tm-api-notes-submit="true"]');
+    const content = normalizeText(textarea?.value || '');
+
+    if (!content) return;
+
+    apiNotesLoading = true;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/${ticketId}/notes`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content,
+          userName: 'Alison',
+          isInternal: true
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      return fileNodes;
+      textarea.value = '';
+
+      await apiFetchNotes(ticketId);
+      apiScheduleRender();
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ocultar Arquivos originais`, error);
-      return [];
+      console.error(`[${SCRIPT_NAME}] falha ao salvar nota`, error);
+      alert('Não foi possível salvar a nota interna. Verifique o console.');
+    } finally {
+      apiNotesLoading = false;
+      if (button) {
+        button.textContent = 'Adicionar Nota';
+        button.disabled = !normalizeText(textarea?.value || '');
+      }
     }
   }
 
-  function getCachedNotesCard() {
-    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
-      .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
-  }
+  function apiApplyView() {
+    try {
+      const ticketFromUrl = apiGetTicketIdFromUrl();
+      if (ticketFromUrl) apiSetCurrentTicketId(ticketFromUrl);
 
-  function appendApiFilesToGeneral(host) {
-    if (!host) return;
-    ensureTabSwapTicketContext();
+      apiMarkTabs();
 
-    const notesCard = findNotesCardIn(host);
-    if (notesCard) {
-      notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
-      notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      hideElement(notesCard);
-      cacheNotesCardFromHost(host);
+      const host = apiFindGeneralHost();
+      if (!host) return;
+
+      host.setAttribute('data-tm-api-notes-view', apiNotesMode ? 'notas' : 'geral');
+      apiMarkNativeCards(host);
+
+      const notesCard = apiEnsureNotesCard(host);
+      if (notesCard) {
+        apiRenderNotesList(notesCard);
+      }
+
+      if (!apiNotesMode) {
+        apiSyncFilesToGeneral(host);
+      } else {
+        const ticketId = apiGetCurrentTicketId();
+        if (ticketId && !API_NOTES_BY_TICKET_ID.has(String(ticketId))) {
+          apiFetchNotes(ticketId);
+        }
+      }
+
+      for (const child of Array.from(host.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+
+        const isNativeNotes = child.getAttribute('data-tm-api-native-notes') === 'true';
+        const isApiNotes = child.getAttribute('data-tm-api-notes-card') === 'true';
+        const isApiFile = child.getAttribute('data-tm-api-file-card') === 'true';
+        const isGeneral = child.getAttribute('data-tm-api-general-card') === 'true';
+
+        if (apiNotesMode) {
+          if (isApiNotes) child.removeAttribute('data-tm-api-notes-hidden');
+          if (isNativeNotes || isApiFile || isGeneral) child.setAttribute('data-tm-api-notes-hidden', 'true');
+        } else {
+          if (isApiNotes || isNativeNotes) child.setAttribute('data-tm-api-notes-hidden', 'true');
+          if (isApiFile || isGeneral) child.removeAttribute('data-tm-api-notes-hidden');
+        }
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar aba Geral/Notas API`, error);
     }
-
-    syncApiFilesToGeneral(host);
   }
 
-  function appendCachedNotesToFiles(host) {
-    if (!host) return;
-    ensureTabSwapTicketContext();
-    hideNativeFilesEmptyState(host);
+  function apiScheduleRender() {
+    apiRenderTimers.forEach(clearTimeout);
+    apiRenderTimers = [];
 
-    // v9.9: nunca remove/move os arquivos nativos da aba Arquivos.
-    // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
-    // ao trocar de ticket com a aba Arquivos aberta.
-    cacheFileNodesFromHost(host);
+    for (const delay of [0, 60, 180, 420]) {
+      apiRenderTimers.push(window.setTimeout(apiApplyView, delay));
+    }
+  }
 
-    const notesCard = getCachedNotesCard();
-    if (!notesCard) return;
+  function apiActivateNotesMode(active) {
+    apiNotesMode = !!active;
 
-    if (notesCard.parentElement !== host) {
-      showElement(notesCard);
-      notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-      host.appendChild(notesCard);
+    if (apiNotesMode) {
+      document.documentElement.setAttribute('data-tm-api-notes-active', 'true');
     } else {
-      showElement(notesCard);
+      document.documentElement.removeAttribute('data-tm-api-notes-active');
     }
-  }
 
-  function cacheCurrentTabBeforeSwap() {
-    try {
-      const panel = findSidePanelWithTabs();
-      if (!panel) return;
+    const geralButton = apiFindTabButton('geral');
+    if (geralButton) {
+      const panel = apiFindSidePanel();
+      const isGeralActive = panel && Array.from(panel.querySelectorAll('button')).some(button =>
+        button === geralButton &&
+        button.classList.contains('bg-background') &&
+        button.classList.contains('text-foreground')
+      );
 
-      const tab = findActiveSideTabName(panel);
-      syncSideActiveTabAttribute(tab);
-      const host = getCurrentTabContentHost(panel);
-      if (!host) return;
-
-      if (tab === 'geral') {
-        cacheNotesCardFromHost(host);
-      } else if (tab === 'arquivos') {
-        cacheFileNodesFromHost(host);
+      if (!isGeralActive) {
+        geralButton.click();
       }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha no cache pré-troca Geral/Arquivos`, error);
     }
+
+    apiScheduleRender();
   }
 
-  function applyGeneralFilesNotesSwap() {
-    try {
-      ensureTabSwapTicketContext();
-      const panel = findSidePanelWithTabs();
-      if (!panel) return;
+  function apiInstallTabHandlers() {
+    if (window.__tmEffinityApiNotesInstalled) return;
+    window.__tmEffinityApiNotesInstalled = true;
 
-      const tab = findActiveSideTabName(panel);
-      syncSideActiveTabAttribute(tab);
-      const host = getCurrentTabContentHost(panel);
-      if (!host) return;
+    document.addEventListener('click', (event) => {
+      try {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
 
-      if (tab === 'geral') {
-        appendApiFilesToGeneral(host);
-      } else if (tab === 'arquivos') {
-        appendCachedNotesToFiles(host);
+        const button = target.closest('button');
+        if (!button) return;
+
+        const text = normalizeText(button.textContent).toLowerCase();
+
+        if (text === 'notas' || text === 'arquivos') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          apiActivateNotesMode(true);
+          return;
+        }
+
+        if (text === 'geral') {
+          apiActivateNotesMode(false);
+          return;
+        }
+
+        if (target.closest('div.p-2.border.rounded.cursor-pointer')) {
+          apiCurrentTicketId = '';
+          apiActivateNotesMode(false);
+          apiScheduleRender();
+        }
+      } catch (error) {
+        console.error(`[${SCRIPT_NAME}] falha no handler Geral/Notas API`, error);
       }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao trocar Geral/Arquivos`, error);
-    }
+    }, true);
   }
 
-  let tabSwapTimers = [];
   function scheduleGeneralFilesNotesSwap() {
-    tabSwapTimers.forEach(clearTimeout);
-    tabSwapTimers = [];
-
-    for (const delay of [0, 40, 100, 220, 420]) {
-      tabSwapTimers.push(window.setTimeout(applyGeneralFilesNotesSwap, delay));
-    }
+    apiScheduleRender();
   }
 
-  /* ========================================================================
-   * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
-   * ====================================================================== */
-  function applySelectedFeatures() {
-    hideSelectedCards();
-    applyDateToMessages();
-    reorganizeAgentArea();
-    moveCreatedDateToHeader();
-    applyUppercaseToCustomerNames();
-    formatAttendanceDataPhones();
-    formatAttendanceDataEmails();
-    formatAttendanceDataCpfs();
-    formatAttendanceDataEmails();
-    formatAttendanceDataBirthDates();
-    enableCopyOnAttendanceData();
-    styleQueueTagsInTicketCards();
-    applyUnreadMessageIndicators();
-  }
-
-  function applyFastAntiFlickerPass() {
-    hideSelectedCards();
-    moveCreatedDateToHeader();
-    applyUppercaseToCustomerNames();
-    formatAttendanceDataPhones();
-    formatAttendanceDataEmails();
-    formatAttendanceDataCpfs();
-    formatAttendanceDataEmails();
-    formatAttendanceDataBirthDates();
-    styleQueueTagsInTicketCards();
-    applyUnreadMessageIndicators();
-  }
-
-  function reapplyAll() {
-    applyCSS();
-    renameFilesTabLabelToNotes();
-    applySelectedFeatures();
-  }
-
-  /* ========================================================================
-   * SEÇÃO: INFRAESTRUTURA SPA / REAPLICAÇÃO
-   * Mantida apenas para estabilidade em re-renderizações.
-   * ====================================================================== */
-  let observer = null;
-  let tabPassTimers = [];
-
-  function scheduleTabAntiFlickerPasses() {
-    tabPassTimers.forEach(clearTimeout);
-    tabPassTimers = [];
+mers = [];
 
     applyFastAntiFlickerPass();
 
@@ -2861,15 +3024,13 @@
       if (target instanceof Element && target.closest('div.p-2.border.rounded.cursor-pointer')) {
         refreshSideActiveTabAttribute();
         beginTicketSwapRefresh();
-        scheduleTabAntiFlickerPasses();
-
+        
         // v9.9: se a troca de ticket acontecer com Arquivos aberto, não forçamos
         // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
         // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {
           ensureTabSwapTicketContext();
-          scheduleTabAntiFlickerPasses();
-          scheduleGeneralFilesNotesSwap();
+                    scheduleGeneralFilesNotesSwap();
         }, 180);
       }
 
@@ -2878,9 +3039,7 @@
       const clickedTab = normalizeText(target.closest('button, a, [role="tab"]')?.textContent || '').toLowerCase();
       if (clickedTab) syncSideActiveTabAttribute(clickedTab === 'historico' ? 'histórico' : (clickedTab === 'notas' ? 'arquivos' : clickedTab));
 
-      cacheCurrentTabBeforeSwap();
-      scheduleTabAntiFlickerPasses();
-      scheduleGeneralFilesNotesSwap();
+                  scheduleGeneralFilesNotesSwap();
     }, true);
   }
 
@@ -2910,6 +3069,7 @@
   function init() {
     renameFilesTabLabelToNotes();
     refreshSideActiveTabAttribute();
+    apiApplyView();
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();
@@ -2921,6 +3081,7 @@
   }
 
   function boot() {
+    apiInstallTabHandlers();
     init();
     startObserver();
     startFavoriteLayer();

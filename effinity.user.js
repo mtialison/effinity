@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.6
+// @version      12.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.6';
+  const SCRIPT_VERSION = '12.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2330,10 +2330,10 @@
       notas.classList.remove('hover:bg-background/50');
 
       notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
-      notas.style.setProperty('font-weight', '700', 'important');
+      notas.style.setProperty('font-weight', '500', 'important');
       // v12.6: destaque correto é somente texto/ícone branco.
       notas.style.setProperty('color', 'rgb(255, 255, 255)', 'important');
-      notas.style.setProperty('font-weight', '700', 'important');
+      notas.style.setProperty('font-weight', '500', 'important');
       notas.style.setProperty('background', 'transparent', 'important');
       notas.style.setProperty('background-color', 'transparent', 'important');
       notas.style.setProperty('box-shadow', 'none', 'important');

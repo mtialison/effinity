@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.9
+// @version      10.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -2893,4 +2893,19 @@
 
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
+
+  // RENOMEAR ABA ARQUIVOS PARA NOTAS
+  function renameArquivosTab() {
+    try {
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(btn => {
+        if (btn.textContent.trim() === 'Arquivos') {
+          btn.textContent = 'Notas';
+        }
+      });
+    } catch (e) {}
+  }
+
+  setInterval(renameArquivosTab, 1500);
+
 })();

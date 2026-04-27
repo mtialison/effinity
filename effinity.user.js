@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.0
+// @version      12.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.0';
+  const SCRIPT_VERSION = '12.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2336,8 +2336,16 @@
 
         notas.classList.add('bg-background', 'text-foreground', 'shadow-sm');
         notas.classList.remove('hover:bg-background/50');
+        notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
+        notas.style.setProperty('font-weight', '700', 'important');
+        notas.style.setProperty('background', 'hsl(var(--background))', 'important');
+        notas.style.setProperty('box-shadow', '0 1px 2px 0 rgb(0 0 0 / 0.05)', 'important');
       } else {
         notas.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
+        notas.style.removeProperty('color');
+        notas.style.removeProperty('font-weight');
+        notas.style.removeProperty('background');
+        notas.style.removeProperty('box-shadow');
         if (!notas.classList.contains('hover:bg-background/50')) {
           notas.classList.add('hover:bg-background/50');
         }
@@ -2593,6 +2601,12 @@
       document.documentElement.removeAttribute('data-tm-notes-mode');
     }
     sideScheduleRender();
+
+    // v12.1: reforço visual tardio porque o React pode reescrever classes
+    // logo após o clique da aba.
+    for (const delay of [40, 120, 260, 520]) {
+      window.setTimeout(sideMarkTabs, delay);
+    }
   }
 
   function sideEnsureNativeGeralActiveThenNotes() {

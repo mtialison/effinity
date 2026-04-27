@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.1
+// @version      13.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.1';
+  const SCRIPT_VERSION = '13.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -492,6 +492,7 @@
     }
 
 
+
     /* ── Visualizador flutuante de imagens dos arquivos ──────────────── */
     [data-tm-image-popup="true"] {
       position: fixed !important;
@@ -518,13 +519,14 @@
     [data-tm-image-popup-header="true"] {
       height: 42px !important;
       display: grid !important;
-      grid-template-columns: 1fr auto 1fr !important;
+      grid-template-columns: minmax(0, 1fr) auto auto !important;
       align-items: center !important;
-      gap: 8px !important;
+      gap: 10px !important;
       padding: 0 10px 0 12px !important;
       background: rgba(15, 23, 42, 0.98) !important;
       border-bottom: 1px solid rgba(148, 163, 184, 0.25) !important;
       user-select: none !important;
+      cursor: move !important;
     }
 
     [data-tm-image-popup-title="true"] {
@@ -548,24 +550,57 @@
       justify-content: flex-end !important;
     }
 
-    [data-tm-image-popup-button="true"] {
-      width: 28px !important;
-      height: 28px !important;
+    [data-tm-image-popup-icon="true"] {
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
-      border: 1px solid rgba(148, 163, 184, 0.35) !important;
-      border-radius: 8px !important;
-      background: rgba(30, 41, 59, 0.72) !important;
-      color: #f9fafb !important;
+      border: 0 !important;
+      background: transparent !important;
+      color: #cbd5e1 !important;
       cursor: pointer !important;
-      font-size: 14px !important;
+      padding: 4px !important;
+      margin: 0 !important;
+      border-radius: 6px !important;
       line-height: 1 !important;
-      padding: 0 !important;
+      transition: background 0.12s ease, color 0.12s ease !important;
     }
 
-    [data-tm-image-popup-button="true"]:hover {
-      background: rgba(51, 65, 85, 0.95) !important;
+    [data-tm-image-popup-icon="true"]:hover {
+      background: rgba(148, 163, 184, 0.12) !important;
+      color: #f8fafc !important;
+    }
+
+    [data-tm-image-popup-close="true"] {
+      color: #f87171 !important;
+    }
+
+    [data-tm-image-popup-close="true"]:hover {
+      color: #ef4444 !important;
+      background: rgba(239, 68, 68, 0.12) !important;
+    }
+
+    [data-tm-image-popup-download="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      border: 1px solid rgba(34, 197, 94, 0.32) !important;
+      background: rgba(34, 197, 94, 0.10) !important;
+      color: #86efac !important;
+      cursor: pointer !important;
+      padding: 5px 9px !important;
+      margin: 0 !important;
+      border-radius: 8px !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      line-height: 1 !important;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease !important;
+    }
+
+    [data-tm-image-popup-download="true"]:hover {
+      background: rgba(34, 197, 94, 0.16) !important;
+      border-color: rgba(34, 197, 94, 0.46) !important;
+      color: #bbf7d0 !important;
     }
 
     [data-tm-image-popup-body="true"] {
@@ -575,14 +610,21 @@
       justify-content: center !important;
       background: #020617 !important;
       padding: 10px !important;
-      overflow: auto !important;
+      overflow: hidden !important;
+      cursor: default !important;
     }
 
     [data-tm-image-popup-body="true"] img {
-      max-width: 100% !important;
-      max-height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      width: auto !important;
+      height: auto !important;
       object-fit: contain !important;
       border-radius: 6px !important;
+      transform-origin: center center !important;
+      user-select: none !important;
+      -webkit-user-drag: none !important;
+      transition: transform 0.05s linear !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2610,6 +2652,7 @@
   }
 
 
+
   let imagePopupCounter = 0;
   let imagePopupZIndex = 99990;
 
@@ -2641,6 +2684,68 @@
     }
   }
 
+  function sideSetPopupImageZoom(popup, nextZoom) {
+    try {
+      const img = popup.querySelector('[data-tm-image-popup-body="true"] img');
+      if (!img) return;
+
+      const zoom = Math.max(0.25, Math.min(5, Number(nextZoom) || 1));
+      popup.dataset.tmImageZoom = String(zoom);
+      img.style.transform = `scale(${zoom})`;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar zoom`, error);
+    }
+  }
+
+  function sideInstallPopupDrag(popup, header) {
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    header.addEventListener('mousedown', (event) => {
+      try {
+        if (event.button !== 0) return;
+        if (event.target.closest('button')) return;
+        if (popup.getAttribute('data-tm-maximized') === 'true') return;
+
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = popup.offsetLeft;
+        startTop = popup.offsetTop;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mousemove', (event) => {
+      if (!dragging) return;
+
+      try {
+        const nextLeft = startLeft + (event.clientX - startX);
+        const nextTop = startTop + (event.clientY - startY);
+
+        const maxLeft = Math.max(0, window.innerWidth - popup.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - popup.offsetHeight);
+
+        popup.style.left = `${Math.max(0, Math.min(maxLeft, nextLeft))}px`;
+        popup.style.top = `${Math.max(0, Math.min(maxTop, nextTop))}px`;
+
+        event.preventDefault();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      dragging = false;
+    }, true);
+  }
+
   function sideOpenImagePopup(file) {
     try {
       if (!sideIsPreviewableImage(file)) {
@@ -2653,6 +2758,7 @@
 
       const popup = document.createElement('div');
       popup.setAttribute('data-tm-image-popup', 'true');
+      popup.dataset.tmImageZoom = '1';
       popup.style.left = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
       popup.style.top = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
       popup.style.zIndex = String(imagePopupZIndex);
@@ -2670,9 +2776,9 @@
 
       const download = document.createElement('button');
       download.type = 'button';
-      download.setAttribute('data-tm-image-popup-button', 'true');
+      download.setAttribute('data-tm-image-popup-download', 'true');
       download.title = 'Download';
-      download.textContent = '↓';
+      download.innerHTML = '<span>Download</span><span aria-hidden="true">↓</span>';
       download.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -2686,12 +2792,13 @@
 
       const maximize = document.createElement('button');
       maximize.type = 'button';
-      maximize.setAttribute('data-tm-image-popup-button', 'true');
+      maximize.setAttribute('data-tm-image-popup-icon', 'true');
       maximize.title = 'Maximizar';
       maximize.textContent = '□';
       maximize.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
+
         const isMax = popup.getAttribute('data-tm-maximized') === 'true';
         if (isMax) {
           popup.removeAttribute('data-tm-maximized');
@@ -2706,7 +2813,8 @@
 
       const close = document.createElement('button');
       close.type = 'button';
-      close.setAttribute('data-tm-image-popup-button', 'true');
+      close.setAttribute('data-tm-image-popup-icon', 'true');
+      close.setAttribute('data-tm-image-popup-close', 'true');
       close.title = 'Fechar';
       close.textContent = '×';
       close.addEventListener('click', (event) => {
@@ -2730,6 +2838,36 @@
       img.alt = file.fileName || 'Imagem';
       img.draggable = false;
 
+      img.addEventListener('load', () => {
+        try {
+          const bodyRect = body.getBoundingClientRect();
+          const maxW = Math.max(1, bodyRect.width - 20);
+          const maxH = Math.max(1, bodyRect.height - 20);
+          const naturalW = img.naturalWidth || 1;
+          const naturalH = img.naturalHeight || 1;
+          const fit = Math.min(maxW / naturalW, maxH / naturalH, 1);
+
+          img.style.width = `${naturalW}px`;
+          img.style.height = `${naturalH}px`;
+          sideSetPopupImageZoom(popup, fit);
+        } catch (_) {
+          sideSetPopupImageZoom(popup, 1);
+        }
+      }, { once: true });
+
+      body.addEventListener('wheel', (event) => {
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const current = Number(popup.dataset.tmImageZoom || '1') || 1;
+          const factor = event.deltaY < 0 ? 1.12 : 0.88;
+          sideSetPopupImageZoom(popup, current * factor);
+        } catch (error) {
+          console.error(`[${SCRIPT_NAME}] falha no zoom por scroll`, error);
+        }
+      }, { passive: false, capture: true });
+
       body.appendChild(img);
       popup.appendChild(header);
       popup.appendChild(body);
@@ -2739,6 +2877,7 @@
         popup.style.zIndex = String(imagePopupZIndex);
       }, true);
 
+      sideInstallPopupDrag(popup, header);
       document.body.appendChild(popup);
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao abrir visualizador de imagem`, error);

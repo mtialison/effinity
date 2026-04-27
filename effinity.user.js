@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.5
+// @version      9.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.5';
+  const SCRIPT_VERSION = '9.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2134,7 +2134,7 @@
   /* ========================================================================
    * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
    * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia v9.5: arquivos renderizados direto da API /tickets/{id}/files.
+   * Estratégia v9.6: arquivos renderizados direto da API /tickets/{id}/files.
    * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
    * da aba Arquivos para montar a aba Geral.
    * ====================================================================== */
@@ -2557,18 +2557,16 @@
     try {
       if (!host) return [];
 
-      const depot = ensureTabSwapDepot();
       const fileNodes = Array.from(host.children).filter(isSwappableFileNode);
 
       for (const node of fileNodes) {
         node.setAttribute(TAB_SWAP_ROLE_ATTR, 'file-original');
         hideElement(node);
-        depot.appendChild(node);
       }
 
       return fileNodes;
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao guardar Arquivos originais`, error);
+      console.error(`[${SCRIPT_NAME}] falha ao ocultar Arquivos originais`, error);
       return [];
     }
   }
@@ -2597,14 +2595,21 @@
     if (!host) return;
     ensureTabSwapTicketContext();
 
+    // v9.6: nunca remove/move os arquivos nativos da aba Arquivos.
+    // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
+    // ao trocar de ticket com a aba Arquivos aberta.
     cacheFileNodesFromHost(host);
 
     const notesCard = getCachedNotesCard();
     if (!notesCard) return;
 
-    showElement(notesCard);
-    notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-    host.appendChild(notesCard);
+    if (notesCard.parentElement !== host) {
+      showElement(notesCard);
+      notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
+      host.appendChild(notesCard);
+    } else {
+      showElement(notesCard);
+    }
   }
 
   function cacheCurrentTabBeforeSwap() {
@@ -2741,11 +2746,14 @@
         beginTicketSwapRefresh();
         scheduleTabAntiFlickerPasses();
 
+        // v9.6: se a troca de ticket acontecer com Arquivos aberto, não forçamos
+        // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
+        // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {
           ensureTabSwapTicketContext();
           scheduleTabAntiFlickerPasses();
           scheduleGeneralFilesNotesSwap();
-        }, 40);
+        }, 180);
       }
 
       if (!isSidePanelTabTrigger(target)) return;

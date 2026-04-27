@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.2
+// @version      10.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.2';
+  const SCRIPT_VERSION = '10.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2238,9 +2238,34 @@
 
   let activeTabSwapTicketKey = '';
 
+  function findReactSafeDepotParent() {
+    try {
+      const panel = findSidePanelWithTabs?.();
+      const shell = panel ? findSidePanelContentShell?.(panel) : null;
+      const appRoot =
+        document.getElementById('root') ||
+        document.querySelector('[data-reactroot]') ||
+        document.querySelector('main') ||
+        shell ||
+        document.body ||
+        document.documentElement;
+
+      return appRoot || document.documentElement;
+    } catch (_) {
+      return document.getElementById('root') || document.body || document.documentElement;
+    }
+  }
+
   function ensureTabSwapDepot() {
     let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
-    if (depot) return depot;
+
+    const safeParent = findReactSafeDepotParent();
+    if (depot) {
+      if (safeParent && depot.parentElement !== safeParent) {
+        safeParent.appendChild(depot);
+      }
+      return depot;
+    }
 
     depot = document.createElement('div');
     depot.id = TAB_SWAP_DEPOT_ID;
@@ -2252,8 +2277,7 @@
     depot.style.overflow = 'hidden';
     depot.style.pointerEvents = 'none';
 
-    const parent = document.body || document.documentElement;
-    parent.appendChild(depot);
+    safeParent.appendChild(depot);
     return depot;
   }
 
@@ -2747,10 +2771,7 @@
 
           if (!textarea || !button) return;
 
-          const hasText = normalizeText(textarea.value).length > 0;
-          if (hasText) {
-            button.disabled = false;
-            button.removeAttribute('disabled');
+          if (normalizeText(textarea.value).length > 0) {
             button.style.pointerEvents = 'auto';
           }
         } catch (_) {}
@@ -2759,6 +2780,16 @@
       notesCard.addEventListener('input', syncButtonState, true);
       notesCard.addEventListener('keyup', syncButtonState, true);
       notesCard.addEventListener('focusin', syncButtonState, true);
+
+      // v10.3: após mover o card entre abas, mantém os eventos dentro do root React
+      // e reemite input/change só quando o usuário digita, para o React atualizar
+      // o estado do botão de forma nativa.
+      notesCard.addEventListener('input', (event) => {
+        try {
+          if (!(event.target instanceof HTMLTextAreaElement)) return;
+          window.setTimeout(syncButtonState, 0);
+        } catch (_) {}
+      }, true);
 
       window.setTimeout(syncButtonState, 0);
       window.setTimeout(syncButtonState, 120);

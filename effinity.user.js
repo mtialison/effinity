@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.3
+// @version      12.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.3';
+  const SCRIPT_VERSION = '12.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -257,59 +257,7 @@
    * Mantém: 2, 3, 4, 5, 7, 9, 10+11, 19, 21, 22
    * ====================================================================== */
   const css = `
-    /* ── Aba Arquivos renomeada visualmente para Notas ────────────────
-       CSS aplicado no document-start para evitar flicker do texto original. */
-    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) {
-      font-size: 0 !important;
-    }
-
-    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0)::after {
-      content: 'Notas' !important;
-      display: inline !important;
-      font-size: 11px !important;
-      line-height: 1 !important;
-      font-weight: inherit !important;
-      color: inherit !important;
-      white-space: nowrap !important;
-    }
-
-    button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) svg {
-      width: 0.75rem !important;
-      height: 0.75rem !important;
-      flex-shrink: 0 !important;
-    }
-
-
-    
-    html[data-tm-notes-mode="true"]
-      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) {
-      background: hsl(var(--background)) !important;
-      color: hsl(var(--foreground)) !important;
-      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
-      font-weight: 700 !important;
-    }
-
-    html[data-tm-notes-mode="true"]
-      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0)::after {
-      color: hsl(var(--foreground)) !important;
-      font-weight: 700 !important;
-      opacity: 1 !important;
-    }
-
-    html[data-tm-notes-mode="true"]
-      button:has(svg.lucide-file.h-3.w-3.flex-shrink-0) svg {
-      color: hsl(var(--foreground)) !important;
-      stroke: currentColor !important;
-      opacity: 1 !important;
-    }
-
-    html[data-tm-notes-mode="true"]
-      button:has(svg.lucide-user.h-3.w-3.flex-shrink-0) {
-      background: transparent !important;
-      box-shadow: none !important;
-      color: hsl(var(--muted-foreground)) !important;
-      font-weight: 500 !important;
-    }
+    /* ── Aba Arquivos renomeada via JS real, sem ::after ───────────── */
 
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
     .h-\\[calc\\(100vh-100px\\)\\] {
@@ -2343,64 +2291,68 @@
     const geral = sideFindTabButton('geral');
     const notas = sideFindTabButton('notas');
 
-    if (geral) geral.setAttribute('data-tm-side-tab', 'geral');
+    if (geral) {
+      geral.setAttribute('data-tm-side-tab', 'geral');
+    }
 
     if (notas) {
       notas.setAttribute('data-tm-side-tab', 'notas');
       notas.setAttribute('aria-label', 'Notas');
       notas.setAttribute('title', 'Notas');
 
+      // v12.4: o texto da aba precisa ser texto real do botão.
+      // Não usar ::after, porque ele impede destaque confiável.
+      let hasTextNode = false;
       for (const node of Array.from(notas.childNodes)) {
-        if (node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue).toLowerCase() === 'arquivos') {
+        if (node.nodeType !== Node.TEXT_NODE) continue;
+
+        const value = normalizeText(node.nodeValue).toLowerCase();
+        if (value === 'arquivos' || value === 'notas') {
           node.nodeValue = 'Notas';
+          hasTextNode = true;
         }
+      }
+
+      if (!hasTextNode) {
+        notas.appendChild(document.createTextNode('Notas'));
       }
     }
 
-    // v12.0: como a aba Notas é virtual, sincronizamos só o destaque visual
-    // dos botões. Não muda a aba real do React nem move conteúdo.
-    
-    // v12.3: highlight direto via JS (sem depender de CSS moderno)
-    if (geral && notas) {
-      if (sideNotesMode) {
-        notas.style.color = 'hsl(var(--foreground))';
-        notas.style.fontWeight = '700';
-        notas.style.background = 'hsl(var(--background))';
-        notas.style.boxShadow = '0 1px 2px 0 rgb(0 0 0 / 0.05)';
+    if (!geral || !notas) return;
 
-        geral.style.color = 'hsl(var(--muted-foreground))';
-        geral.style.fontWeight = '500';
-        geral.style.background = 'transparent';
-        geral.style.boxShadow = 'none';
-      } else {
-        notas.style.color = '';
-        notas.style.fontWeight = '';
-        notas.style.background = '';
-        notas.style.boxShadow = '';
+    if (sideNotesMode) {
+      geral.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
+      if (!geral.classList.contains('hover:bg-background/50')) {
+        geral.classList.add('hover:bg-background/50');
       }
 
-      if (sideNotesMode) {
-        geral.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
-        if (!geral.classList.contains('hover:bg-background/50')) {
-          geral.classList.add('hover:bg-background/50');
-        }
+      notas.classList.add('bg-background', 'text-foreground', 'shadow-sm');
+      notas.classList.remove('hover:bg-background/50');
 
-        notas.classList.add('bg-background', 'text-foreground', 'shadow-sm');
-        notas.classList.remove('hover:bg-background/50');
-        notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
-        notas.style.setProperty('font-weight', '700', 'important');
-        notas.style.setProperty('background', 'hsl(var(--background))', 'important');
-        notas.style.setProperty('box-shadow', '0 1px 2px 0 rgb(0 0 0 / 0.05)', 'important');
-      } else {
-        notas.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
-        notas.style.removeProperty('color');
-        notas.style.removeProperty('font-weight');
-        notas.style.removeProperty('background');
-        notas.style.removeProperty('box-shadow');
-        if (!notas.classList.contains('hover:bg-background/50')) {
-          notas.classList.add('hover:bg-background/50');
-        }
+      notas.style.setProperty('color', 'hsl(var(--foreground))', 'important');
+      notas.style.setProperty('font-weight', '700', 'important');
+      notas.style.setProperty('background', 'hsl(var(--background))', 'important');
+      notas.style.setProperty('box-shadow', '0 1px 2px 0 rgb(0 0 0 / 0.05)', 'important');
+
+      geral.style.setProperty('color', 'hsl(var(--muted-foreground))', 'important');
+      geral.style.setProperty('font-weight', '500', 'important');
+      geral.style.setProperty('background', 'transparent', 'important');
+      geral.style.setProperty('box-shadow', 'none', 'important');
+    } else {
+      notas.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
+      if (!notas.classList.contains('hover:bg-background/50')) {
+        notas.classList.add('hover:bg-background/50');
       }
+
+      notas.style.removeProperty('color');
+      notas.style.removeProperty('font-weight');
+      notas.style.removeProperty('background');
+      notas.style.removeProperty('box-shadow');
+
+      geral.style.removeProperty('color');
+      geral.style.removeProperty('font-weight');
+      geral.style.removeProperty('background');
+      geral.style.removeProperty('box-shadow');
     }
   }
 
@@ -2651,12 +2603,16 @@
     } else {
       document.documentElement.removeAttribute('data-tm-notes-mode');
     }
+
     sideScheduleRender();
 
-    // v12.1: reforço visual tardio porque o React pode reescrever classes
-    // logo após o clique da aba.
-    for (const delay of [40, 120, 260, 520]) {
-      window.setTimeout(sideMarkTabs, delay);
+    for (const delay of [0, 40, 100, 220, 420, 800]) {
+      window.setTimeout(() => {
+        try {
+          sideMarkTabs();
+          sideApplyView();
+        } catch (_) {}
+      }, delay);
     }
   }
 

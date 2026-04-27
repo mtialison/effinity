@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.8
+// @version      9.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.8';
+  const SCRIPT_VERSION = '9.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -482,6 +482,21 @@
     }
 
 
+
+    /* ── Troca Geral ↔ Arquivos: bloqueio total do conteúdo nativo da aba Arquivos ──
+       v9.9: regra independente da aba ativa. Isso impede o primeiro paint dos
+       arquivos/estado vazio nativos antes do JS atualizar data-tm-side-active-tab. */
+    .hidden.xl\\:flex.xl\\:col-span-1
+      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(.lucide-external-link):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
+    .hidden.xl\\:flex.xl\\:col-span-1
+      .h-full.w-full.overflow-auto > .p-3 > .space-y-3 > .rounded-xl.bg-card.border.border-border:has(img):not(:has(textarea)):not([data-tm-tab-swap-role="file"]):not([data-tm-tab-swap-role="notes"]),
+    .hidden.xl\\:flex.xl\\:col-span-1
+      .h-full.w-full.overflow-auto > .p-3 > .flex.flex-col.items-center.justify-center.h-full.text-center.gap-3 {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
 
     /* ── Troca Geral ↔ Arquivos: ocultar estado vazio nativo em Arquivos ──
        O card de Notas Internas é o conteúdo desejado nessa aba. O estado
@@ -2166,7 +2181,7 @@
   /* ========================================================================
    * SEÇÃO: TROCA SEGURA ENTRE ABAS GERAL E ARQUIVOS (24)
    * Objetivo: exibir arquivos na aba Geral e Notas Internas na aba Arquivos.
-   * Estratégia v9.8: arquivos renderizados direto da API /tickets/{id}/files.
+   * Estratégia v9.9: arquivos renderizados direto da API /tickets/{id}/files.
    * Sem clique automático em aba, sem pré-carga visual e sem depender do DOM
    * da aba Arquivos para montar a aba Geral.
    * ====================================================================== */
@@ -2669,7 +2684,7 @@
     ensureTabSwapTicketContext();
     hideNativeFilesEmptyState(host);
 
-    // v9.8: nunca remove/move os arquivos nativos da aba Arquivos.
+    // v9.9: nunca remove/move os arquivos nativos da aba Arquivos.
     // Apenas oculta em CSS/atributo para não quebrar o ciclo de renderização do SPA
     // ao trocar de ticket com a aba Arquivos aberta.
     cacheFileNodesFromHost(host);
@@ -2823,7 +2838,7 @@
         beginTicketSwapRefresh();
         scheduleTabAntiFlickerPasses();
 
-        // v9.8: se a troca de ticket acontecer com Arquivos aberto, não forçamos
+        // v9.9: se a troca de ticket acontecer com Arquivos aberto, não forçamos
         // movimentação imediata de Notas/Arquivos. O SPA primeiro termina o render
         // do ticket novo; depois fazemos uma única reaplicação tardia e segura.
         window.setTimeout(() => {

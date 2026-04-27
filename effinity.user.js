@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.7
+// @version      10.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.7';
+  const SCRIPT_VERSION = '10.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -531,87 +531,6 @@
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
-    }
-
-
-
-    /* ── Aba Notas virtual: preserva o card nativo no lugar original do React ──
-       v10.4: não move o card de Notas Internas para outra árvore. Ao clicar
-       em Notas, mantém a aba Geral renderizada e exibe somente o card nativo
-       de Notas; assim o botão "Adicionar Nota" continua funcionando. */
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .flex.flex-col.gap-4.p-3 > .rounded-xl.bg-card.border.border-border:not(:has(textarea)) {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .flex.flex-col.gap-4.p-3 > .rounded-xl.bg-card.border.border-border:has(textarea) {
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      position: relative !important;
-      z-index: 25 !important;
-    }
-
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      .h-full.w-full.overflow-auto > .flex.flex-col.gap-4.p-3 > .rounded-xl.bg-card.border.border-border:has(textarea) * {
-      pointer-events: auto !important;
-    }
-
-
-    html[data-tm-virtual-notes-mode="true"] [data-tm-virtual-notes-hidden="true"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-
-    /* ── v10.7: modo Notas estrito ──────────────────────────────────────
-       Quando a aba Notas está ativa virtualmente, qualquer card que não seja
-       o card real de Notas Internas fica invisível, incluindo arquivos API. */
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="file"],
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="file-original"],
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="file-empty"],
-    html[data-tm-virtual-notes-mode="true"] .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-source="api-files"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-    html:not([data-tm-virtual-notes-mode="true"]) .hidden.xl\:flex.xl\:col-span-1
-      [data-tm-tab-swap-role="notes"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-    /* ── Aba Notas: garantir interação no card de Notas Internas ─────────
-       v10.2: o conteúdo nativo da antiga aba Arquivos continua mascarado,
-       mas o card real de Notas sempre fica clicável e acima da máscara. */
-    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] {
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      position: relative !important;
-      z-index: 20 !important;
-    }
-
-    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] *,
-    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] textarea,
-    html[data-tm-side-active-tab="arquivos"] [data-tm-tab-swap-role="notes"] button {
-      pointer-events: auto !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2300,34 +2219,9 @@
 
   let activeTabSwapTicketKey = '';
 
-  function findReactSafeDepotParent() {
-    try {
-      const panel = findSidePanelWithTabs?.();
-      const shell = panel ? findSidePanelContentShell?.(panel) : null;
-      const appRoot =
-        document.getElementById('root') ||
-        document.querySelector('[data-reactroot]') ||
-        document.querySelector('main') ||
-        shell ||
-        document.body ||
-        document.documentElement;
-
-      return appRoot || document.documentElement;
-    } catch (_) {
-      return document.getElementById('root') || document.body || document.documentElement;
-    }
-  }
-
   function ensureTabSwapDepot() {
     let depot = document.getElementById(TAB_SWAP_DEPOT_ID);
-
-    const safeParent = findReactSafeDepotParent();
-    if (depot) {
-      if (safeParent && depot.parentElement !== safeParent) {
-        safeParent.appendChild(depot);
-      }
-      return depot;
-    }
+    if (depot) return depot;
 
     depot = document.createElement('div');
     depot.id = TAB_SWAP_DEPOT_ID;
@@ -2339,7 +2233,8 @@
     depot.style.overflow = 'hidden';
     depot.style.pointerEvents = 'none';
 
-    safeParent.appendChild(depot);
+    const parent = document.body || document.documentElement;
+    parent.appendChild(depot);
     return depot;
   }
 
@@ -2756,20 +2651,15 @@
       const notesCard = findNotesCardIn(host);
       if (!notesCard) return null;
 
-      // v10.6: nunca mover o card nativo de Notas Internas para fora do local
-      // controlado pelo React. Apenas marca e oculta/exibe visualmente.
+      const depot = ensureTabSwapDepot();
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
       notesCard.setAttribute(TAB_SWAP_SOURCE_ATTR, 'geral');
       notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      bindNotesCardInteractionSafety(notesCard);
-
-      if (!isVirtualNotesMode || !isVirtualNotesMode()) {
-        hideElement(notesCard);
-      }
-
+      showElement(notesCard);
+      depot.appendChild(notesCard);
       return notesCard;
     } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao preparar Notas Internas`, error);
+      console.error(`[${SCRIPT_NAME}] falha ao guardar Notas Internas`, error);
       return null;
     }
   }
@@ -2794,7 +2684,7 @@
   }
 
   function getCachedNotesCard() {
-    return Array.from(document.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
+    return Array.from(ensureTabSwapDepot().querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`))
       .find(node => node instanceof HTMLElement && node.getAttribute(TAB_SWAP_TICKET_ATTR) === activeTabSwapTicketKey) || null;
   }
 
@@ -2802,19 +2692,15 @@
     if (!host) return;
     ensureTabSwapTicketContext();
 
-    // v10.6: Geral deve exibir Dados do Atendimento + arquivos.
-    // Notas Internas permanece no DOM nativo, mas fica oculto.
     const notesCard = findNotesCardIn(host);
     if (notesCard) {
       notesCard.setAttribute(TAB_SWAP_ROLE_ATTR, 'notes');
       notesCard.setAttribute(TAB_SWAP_TICKET_ATTR, activeTabSwapTicketKey);
-      bindNotesCardInteractionSafety(notesCard);
       hideElement(notesCard);
+      cacheNotesCardFromHost(host);
     }
 
-    if (!(isVirtualNotesMode && isVirtualNotesMode())) {
-      syncApiFilesToGeneral(host);
-    }
+    syncApiFilesToGeneral(host);
   }
 
   function appendCachedNotesToFiles(host) {
@@ -2833,11 +2719,9 @@
     if (notesCard.parentElement !== host) {
       showElement(notesCard);
       notesCard.setAttribute(TAB_SWAP_READY_ATTR, 'true');
-      bindNotesCardInteractionSafety(notesCard);
       host.appendChild(notesCard);
     } else {
       showElement(notesCard);
-      bindNotesCardInteractionSafety(notesCard);
     }
   }
 
@@ -2871,12 +2755,6 @@
       syncSideActiveTabAttribute(tab);
       const host = getCurrentTabContentHost(panel);
       if (!host) return;
-
-      if (isVirtualNotesMode && isVirtualNotesMode()) {
-        paintVirtualNotesTabButton();
-        enforceVirtualNotesViewStrict();
-        return;
-      }
 
       if (tab === 'geral') {
         appendApiFilesToGeneral(host);
@@ -2964,186 +2842,6 @@
     return ['geral', 'timeline', 'arquivos', 'notas', 'histórico', 'historico', 'msgs'].includes(text);
   }
 
-
-  /* ========================================================================
-   * SEÇÃO: ABA NOTAS VIRTUAL (v10.4)
-   * Evita mover o card nativo de Notas Internas. O card permanece no mesmo
-   * local controlado pelo React, preservando textarea, botão e cadastro.
-   * ====================================================================== */
-  const VIRTUAL_NOTES_MODE_ATTR = 'data-tm-virtual-notes-mode';
-  const VIRTUAL_NOTES_HIDDEN_ATTR = 'data-tm-virtual-notes-hidden';
-
-  function setVirtualNotesMode(active) {
-    try {
-      if (active) {
-        document.documentElement.setAttribute(VIRTUAL_NOTES_MODE_ATTR, 'true');
-        document.documentElement.setAttribute('data-tm-side-active-tab', 'arquivos');
-      } else {
-        document.documentElement.removeAttribute(VIRTUAL_NOTES_MODE_ATTR);
-        clearVirtualNotesInlineVisibility();
-      }
-    } catch (_) {}
-  }
-
-  function isVirtualNotesMode() {
-    return document.documentElement.getAttribute(VIRTUAL_NOTES_MODE_ATTR) === 'true';
-  }
-
-
-  function getSidePanelShellAndHost() {
-    try {
-      const panel = findSidePanelWithTabs();
-      const shell = findSidePanelContentShell(panel);
-      const generalHost = findGeneralContentHost(shell);
-      return { panel, shell, generalHost };
-    } catch (_) {
-      return { panel: null, shell: null, generalHost: null };
-    }
-  }
-
-  function applyVirtualNotesInlineVisibility() {
-    return enforceVirtualNotesViewStrict();
-  }
-
-  function clearVirtualNotesInlineVisibility() {
-    try {
-      for (const node of document.querySelectorAll(`[${VIRTUAL_NOTES_HIDDEN_ATTR}="true"]`)) {
-        if (!(node instanceof HTMLElement)) continue;
-        node.removeAttribute(VIRTUAL_NOTES_HIDDEN_ATTR);
-        node.removeAttribute(HIDDEN_ATTR);
-        node.style.pointerEvents = '';
-      }
-
-      for (const notes of document.querySelectorAll(`[${TAB_SWAP_ROLE_ATTR}="notes"]`)) {
-        if (!(notes instanceof HTMLElement)) continue;
-        hideElement(notes);
-      }
-    } catch (_) {}
-  }
-
-  function findSideTabButtonByName(name) {
-    const panel = findSidePanelWithTabs();
-    if (!panel) return null;
-
-    const wanted = String(name || '').toLowerCase();
-    for (const button of panel.querySelectorAll('button')) {
-      const text = getButtonText(button);
-      if (text === wanted) return button;
-    }
-
-    return null;
-  }
-
-  function isNotesTabButton(button) {
-    if (!button) return false;
-    return getButtonText(button) === 'arquivos';
-  }
-
-  function clickNativeGeneralTabSafely() {
-    try {
-      const generalButton = findSideTabButtonByName('geral');
-      if (!generalButton) return false;
-
-      const panel = findSidePanelWithTabs();
-      const current = findActiveSideTabName(panel);
-      if (current !== 'geral') {
-        generalButton.click();
-      }
-
-      return true;
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ativar Geral para modo Notas`, error);
-      return false;
-    }
-  }
-
-  function paintVirtualNotesTabButton() {
-    try {
-      const panel = findSidePanelWithTabs();
-      if (!panel) return;
-
-      const generalButton = findSideTabButtonByName('geral');
-      const notesButton = findSideTabButtonByName('arquivos');
-
-      if (!generalButton || !notesButton) return;
-
-      if (isVirtualNotesMode()) {
-        generalButton.classList.remove('bg-background', 'text-foreground', 'shadow-sm');
-        if (!generalButton.classList.contains('hover:bg-background/50')) {
-          generalButton.classList.add('hover:bg-background/50');
-        }
-
-        notesButton.classList.add('bg-background', 'text-foreground', 'shadow-sm');
-        notesButton.classList.remove('hover:bg-background/50');
-      }
-    } catch (_) {}
-  }
-
-  function activateVirtualNotesTab() {
-    try {
-      setVirtualNotesMode(true);
-      clickNativeGeneralTabSafely();
-      applyVirtualNotesInlineVisibility();
-      scheduleStrictSideViewPasses();
-
-      for (const delay of [0, 20, 60, 140, 300, 700]) {
-        window.setTimeout(() => {
-          try {
-            renameFilesTabLabelToNotes();
-            setVirtualNotesMode(true);
-            paintVirtualNotesTabButton();
-            applyVirtualNotesInlineVisibility();
-          } catch (error) {
-            console.error(`[${SCRIPT_NAME}] falha ao renderizar aba Notas virtual`, error);
-          }
-        }, delay);
-      }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ativar aba Notas virtual`, error);
-    }
-  }
-
-  function deactivateVirtualNotesTab() {
-    try {
-      if (!isVirtualNotesMode()) return;
-      setVirtualNotesMode(false);
-      clearVirtualNotesInlineVisibility();
-      enforceGeneralTabViewStrict();
-      scheduleStrictSideViewPasses();
-      scheduleGeneralFilesNotesSwap();
-    } catch (_) {}
-  }
-
-  function installVirtualNotesTabInterceptor() {
-    if (window.__tmEffinityVirtualNotesInstalled) return;
-    window.__tmEffinityVirtualNotesInstalled = true;
-
-    document.addEventListener('click', (event) => {
-      try {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-
-        const button = target.closest('button');
-        if (!button || !isSidePanelTabTrigger(button)) return;
-
-        if (isNotesTabButton(button)) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          activateVirtualNotesTab();
-          return;
-        }
-
-        if (isVirtualNotesMode()) {
-          deactivateVirtualNotesTab();
-          scheduleStrictSideViewPasses();
-        }
-      } catch (error) {
-        console.error(`[${SCRIPT_NAME}] falha no clique virtual da aba Notas`, error);
-      }
-    }, true);
-  }
-
   function startObserver() {
     const target = document.getElementById('app') || document.querySelector('[data-v-app]') || document.body;
     if (!target) return;
@@ -3212,8 +2910,6 @@
   function init() {
     renameFilesTabLabelToNotes();
     refreshSideActiveTabAttribute();
-    paintVirtualNotesTabButton();
-    scheduleStrictSideViewPasses();
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();
@@ -3225,7 +2921,6 @@
   }
 
   function boot() {
-    installVirtualNotesTabInterceptor();
     init();
     startObserver();
     startFavoriteLayer();

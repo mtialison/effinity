@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.3
+// @version      11.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.3';
+  const SCRIPT_VERSION = '11.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3041,8 +3041,70 @@
     notesDiagLog('diagnóstico seguro ativo. Use window.tmEffinityNotesDiag.getLastTicketId() e getNotes() no console.');
   }
 
-  function boot() {
+  
+  /* ========================================================================
+   * SEÇÃO: UI TESTE NOTAS API (v11.4)
+   * NÃO altera layout do sistema.
+   * Apenas cria um botão flutuante para testar POST de nota.
+   * ====================================================================== */
+
+  function createNotesTestButton() {
+    if (document.getElementById('tm-notes-test-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'tm-notes-test-btn';
+    btn.textContent = 'Testar Nota API';
+    btn.style.position = 'fixed';
+    btn.style.bottom = '20px';
+    btn.style.right = '20px';
+    btn.style.zIndex = '99999';
+    btn.style.padding = '8px 12px';
+    btn.style.fontSize = '12px';
+    btn.style.borderRadius = '6px';
+    btn.style.background = '#4F7CFF';
+    btn.style.color = '#fff';
+    btn.style.border = 'none';
+    btn.style.cursor = 'pointer';
+
+    btn.onclick = async () => {
+      try {
+        const ticketId = window.tmEffinityNotesDiag.getLastTicketId();
+        if (!ticketId) {
+          alert('TicketId não encontrado ainda.');
+          return;
+        }
+
+        const res = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${ticketId}/notes`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: 'teste api v11.4',
+            userName: 'Alison',
+            isInternal: true
+          })
+        });
+
+        if (!res.ok) {
+          alert('Erro ao salvar nota');
+          return;
+        }
+
+        alert('Nota enviada com sucesso');
+      } catch (e) {
+        console.error(e);
+        alert('Erro ao executar teste');
+      }
+    };
+
+    document.body.appendChild(btn);
+  }
+
+function boot() {
     init();
+    createNotesTestButton();
     startObserver();
     startFavoriteLayer();
   }

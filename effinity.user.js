@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.1
+// @version      9.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.1';
+  const SCRIPT_VERSION = '9.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2543,7 +2543,7 @@
 
       if (tab === 'geral') {
         appendCachedFilesToGeneral(host);
-        // v9.1: sem clique automático entre abas para evitar flicker.
+        // v9.2: sem clique automático e sem troca dentro do observer para evitar travamento.
       } else if (tab === 'arquivos') {
         appendCachedNotesToFiles(host);
       }
@@ -2561,7 +2561,7 @@
   }
 
   function scheduleAutoPrimeFilesForGeneral(panel) {
-    // v9.1: desativado de propósito.
+    // v9.2: desativado de propósito.
     // Não clica automaticamente em Arquivos/Geral, evitando flicker ao trocar tickets.
     return;
   }
@@ -2593,7 +2593,6 @@
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
-    applyGeneralFilesNotesSwap();
   }
 
   function applyFastAntiFlickerPass() {
@@ -2607,7 +2606,6 @@
     formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
-    applyGeneralFilesNotesSwap();
   }
 
   function reapplyAll() {

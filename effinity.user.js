@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.8
+// @version      14.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.8';
+  const SCRIPT_VERSION = '14.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3252,10 +3252,10 @@
       rotateIcon.style.display = 'inline-flex';
       rotateIcon.style.alignItems = 'center';
       rotateIcon.style.justifyContent = 'center';
-      rotateIcon.style.width = '18px';
-      rotateIcon.style.height = '18px';
-      rotateIcon.style.fontSize = '18px';
-      rotateIcon.style.lineHeight = '18px';
+      rotateIcon.style.width = '19px';
+      rotateIcon.style.height = '19px';
+      rotateIcon.style.fontSize = '19px';
+      rotateIcon.style.lineHeight = '19px';
       rotateIcon.style.fontWeight = '400';
       rotateIcon.style.textAlign = 'center';
       rotateIcon.style.margin = '0';

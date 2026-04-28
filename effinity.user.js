@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.0
+// @version      13.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.0';
+  const SCRIPT_VERSION = '13.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -606,15 +606,6 @@
 
     [data-tm-image-popup-download="true"] {
       color: #22c55e !important;
-      background: rgba(34, 197, 94, 0.12) !important;
-      padding: 0 10px !important;
-      width: auto !important;
-      min-width: 90px !important;
-      gap: 4px !important;
-    }
-
-    [data-tm-image-popup-download="true"]:hover {
-      background: rgba(34, 197, 94, 0.18) !important;
     }
 
     [data-tm-image-popup-maximize="true"] {
@@ -3215,13 +3206,6 @@
       download.setAttribute('data-tm-image-popup-download', 'true');
       download.title = 'Download';
       download.setAttribute('aria-label', 'Download');
-      const dlText = document.createElement('span');
-      dlText.textContent = 'Download';
-      dlText.style.fontSize = '12px';
-      dlText.style.fontWeight = '500';
-      dlText.style.marginRight = '6px';
-
-      download.appendChild(dlText);
       download.appendChild(sideCreatePopupSvgIcon('download'));
       download.addEventListener('click', (event) => {
         event.preventDefault();

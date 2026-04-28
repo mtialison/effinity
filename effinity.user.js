@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.9
+// @version      14.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.9';
+  const SCRIPT_VERSION = '14.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -611,6 +611,10 @@
     [data-tm-image-popup-maximize="true"] {
       color: #f8fafc !important;
     }
+    [data-tm-image-popup-rotate="true"] {
+      color: #f8fafc !important;
+    }
+
 
     [data-tm-image-popup-close="true"] {
       color: #ef4444 !important;
@@ -2837,7 +2841,8 @@
       const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
       const { panX, panY } = sideClampPopupPan(popup);
 
-      img.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+      const rotation = Number(popup.dataset.tmImageRotation || '0') || 0;
+      img.style.transform = `translate3d(${panX}px, ${panY}px, 0) rotate(${rotation}deg) scale(${zoom})`;
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);
     }
@@ -3167,6 +3172,12 @@
       return svg;
     }
 
+    if (type === 'rotate') {
+      svg.appendChild(makePath('M20 11a8 8 0 1 0-2.35 5.65'));
+      svg.appendChild(makePath('M20 4v7h-7'));
+      return svg;
+    }
+
     svg.appendChild(makeRect('6', '6', '12', '12'));
     return svg;
   }
@@ -3186,6 +3197,7 @@
       popup.dataset.tmImageZoom = '1';
       popup.dataset.tmImagePanX = '0';
       popup.dataset.tmImagePanY = '0';
+      popup.dataset.tmImageRotation = '0';
       popup.style.setProperty('left', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
       popup.style.setProperty('top', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
       popup.style.zIndex = String(imagePopupZIndex);
@@ -3217,6 +3229,22 @@
 
       const right = document.createElement('div');
       right.setAttribute('data-tm-image-popup-actions-right', 'true');
+
+      const rotate = document.createElement('button');
+      rotate.type = 'button';
+      rotate.setAttribute('data-tm-image-popup-icon', 'true');
+      rotate.setAttribute('data-tm-image-popup-rotate', 'true');
+      rotate.title = 'Girar 180°';
+      rotate.setAttribute('aria-label', 'Girar 180°');
+      rotate.appendChild(sideCreatePopupSvgIcon('rotate'));
+      rotate.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const currentRotation = Number(popup.dataset.tmImageRotation || '0') || 0;
+        popup.dataset.tmImageRotation = String((currentRotation + 180) % 360);
+        sideApplyPopupImageTransform(popup);
+      }, true);
 
       const maximize = document.createElement('button');
       maximize.type = 'button';
@@ -3278,6 +3306,7 @@
         popup.remove();
       }, true);
 
+      right.appendChild(rotate);
       right.appendChild(maximize);
       right.appendChild(close);
 

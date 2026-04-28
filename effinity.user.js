@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.4
+// @version      13.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.4';
+  const SCRIPT_VERSION = '13.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -635,6 +635,76 @@
       -webkit-user-drag: none !important;
       will-change: transform !important;
       transition: none !important;
+    }
+
+    [data-tm-image-popup-resize="true"] {
+      position: absolute !important;
+      z-index: 4 !important;
+      background: transparent !important;
+    }
+
+    [data-tm-image-popup-resize-dir="n"] {
+      top: 0 !important;
+      left: 10px !important;
+      right: 10px !important;
+      height: 8px !important;
+      cursor: ns-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="s"] {
+      bottom: 0 !important;
+      left: 10px !important;
+      right: 10px !important;
+      height: 8px !important;
+      cursor: ns-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="e"] {
+      top: 10px !important;
+      right: 0 !important;
+      bottom: 10px !important;
+      width: 8px !important;
+      cursor: ew-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="w"] {
+      top: 10px !important;
+      left: 0 !important;
+      bottom: 10px !important;
+      width: 8px !important;
+      cursor: ew-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="ne"],
+    [data-tm-image-popup-resize-dir="nw"],
+    [data-tm-image-popup-resize-dir="se"],
+    [data-tm-image-popup-resize-dir="sw"] {
+      width: 12px !important;
+      height: 12px !important;
+    }
+
+    [data-tm-image-popup-resize-dir="ne"] {
+      top: 0 !important;
+      right: 0 !important;
+      cursor: nesw-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="nw"] {
+      top: 0 !important;
+      left: 0 !important;
+      cursor: nwse-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="se"] {
+      right: 0 !important;
+      bottom: 0 !important;
+      cursor: nwse-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="sw"] {
+      left: 0 !important;
+      bottom: 0 !important;
+      cursor: nesw-resize !important;
     }
 
     /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
@@ -2886,6 +2956,153 @@
     }, true);
   }
 
+
+  function sideInstallPopupResize(popup) {
+    const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+    let resizing = false;
+    let dir = '';
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    const minW = 300;
+    const minH = 260;
+
+    const beginResize = (event, direction) => {
+      try {
+        if (event.button !== 0) return;
+        if (popup.getAttribute('data-tm-maximized') === 'true') return;
+
+        resizing = true;
+        dir = direction;
+        startX = event.clientX;
+        startY = event.clientY;
+        startW = popup.offsetWidth;
+        startH = popup.offsetHeight;
+        startLeft = popup.offsetLeft;
+        startTop = popup.offsetTop;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    };
+
+    for (const direction of directions) {
+      const handle = document.createElement('div');
+      handle.setAttribute('data-tm-image-popup-resize', 'true');
+      handle.setAttribute('data-tm-image-popup-resize-dir', direction);
+      handle.addEventListener('mousedown', (event) => beginResize(event, direction), true);
+      popup.appendChild(handle);
+    }
+
+    document.addEventListener('mousemove', (event) => {
+      if (!resizing) return;
+
+      try {
+        let nextLeft = startLeft;
+        let nextTop = startTop;
+        let nextW = startW;
+        let nextH = startH;
+
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+
+        if (dir.includes('e')) {
+          nextW = startW + dx;
+        }
+
+        if (dir.includes('s')) {
+          nextH = startH + dy;
+        }
+
+        if (dir.includes('w')) {
+          nextW = startW - dx;
+          nextLeft = startLeft + dx;
+        }
+
+        if (dir.includes('n')) {
+          nextH = startH - dy;
+          nextTop = startTop + dy;
+        }
+
+        if (nextW < minW) {
+          if (dir.includes('w')) nextLeft -= (minW - nextW);
+          nextW = minW;
+        }
+
+        if (nextH < minH) {
+          if (dir.includes('n')) nextTop -= (minH - nextH);
+          nextH = minH;
+        }
+
+        const maxW = window.innerWidth - nextLeft - 8;
+        const maxH = window.innerHeight - nextTop - 8;
+
+        nextW = Math.min(nextW, Math.max(minW, maxW));
+        nextH = Math.min(nextH, Math.max(minH, maxH));
+
+        nextLeft = Math.max(0, Math.min(nextLeft, window.innerWidth - nextW));
+        nextTop = Math.max(0, Math.min(nextTop, window.innerHeight - nextH));
+
+        popup.style.left = `${nextLeft}px`;
+        popup.style.top = `${nextTop}px`;
+        popup.style.width = `${nextW}px`;
+        popup.style.height = `${nextH}px`;
+
+        sideApplyPopupImageTransform(popup);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      resizing = false;
+      dir = '';
+    }, true);
+  }
+
+  function sideCloseTopImagePopup() {
+    try {
+      const popups = Array.from(document.querySelectorAll('[data-tm-image-popup="true"]'))
+        .filter(node => node instanceof HTMLElement);
+
+      if (!popups.length) return false;
+
+      popups.sort((a, b) => {
+        const za = Number(getComputedStyle(a).zIndex || a.style.zIndex || '0') || 0;
+        const zb = Number(getComputedStyle(b).zIndex || b.style.zIndex || '0') || 0;
+        return zb - za;
+      });
+
+      popups[0].remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function sideInstallPopupEscClose() {
+    if (window.__tmEffinityImagePopupEscInstalled) return;
+    window.__tmEffinityImagePopupEscInstalled = true;
+
+    document.addEventListener('keydown', (event) => {
+      try {
+        if (event.key !== 'Escape') return;
+        if (!sideCloseTopImagePopup()) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+  }
+
   function sideOpenImagePopup(file) {
     try {
       if (!sideIsPreviewableImage(file)) {
@@ -3026,6 +3243,8 @@
       }, true);
 
       sideInstallPopupDrag(popup, header);
+      sideInstallPopupResize(popup);
+      sideInstallPopupEscClose();
       document.body.appendChild(popup);
 
       window.addEventListener('resize', () => {

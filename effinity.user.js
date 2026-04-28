@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.7
+// @version      13.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.7';
+  const SCRIPT_VERSION = '13.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -510,10 +510,20 @@
     }
 
     [data-tm-image-popup="true"][data-tm-maximized="true"] {
-      left: 16px !important;
-      top: 16px !important;
-      width: calc(100vw - 32px) !important;
-      height: calc(100vh - 32px) !important;
+      left: 50% !important;
+      top: 50% !important;
+      width: min(1100px, calc(100vw - 48px)) !important;
+      height: min(820px, calc(100vh - 48px)) !important;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-header="true"] {
+      cursor: default !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-resize="true"] {
+      display: none !important;
+      pointer-events: none !important;
     }
 
     [data-tm-image-popup-header="true"] {
@@ -3161,15 +3171,39 @@
         event.stopPropagation();
 
         const isMax = popup.getAttribute('data-tm-maximized') === 'true';
+
         if (isMax) {
           popup.removeAttribute('data-tm-maximized');
+
+          const previous = popup.__tmPreviousGeometry || {};
+          popup.style.setProperty('left', previous.left || '24px', 'important');
+          popup.style.setProperty('top', previous.top || '24px', 'important');
+          popup.style.setProperty('width', previous.width || '420px', 'important');
+          popup.style.setProperty('height', previous.height || '520px', 'important');
+          popup.style.removeProperty('transform');
+
           maximize.textContent = '□';
           maximize.title = 'Maximizar';
         } else {
+          popup.__tmPreviousGeometry = {
+            left: popup.style.left || `${popup.offsetLeft}px`,
+            top: popup.style.top || `${popup.offsetTop}px`,
+            width: popup.style.width || `${popup.offsetWidth}px`,
+            height: popup.style.height || `${popup.offsetHeight}px`
+          };
+
           popup.setAttribute('data-tm-maximized', 'true');
+          popup.style.setProperty('left', '50%', 'important');
+          popup.style.setProperty('top', '50%', 'important');
+          popup.style.setProperty('width', 'min(1100px, calc(100vw - 48px))', 'important');
+          popup.style.setProperty('height', 'min(820px, calc(100vh - 48px))', 'important');
+          popup.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+
           maximize.textContent = '❐';
           maximize.title = 'Restaurar';
         }
+
+        window.setTimeout(() => sideApplyPopupImageTransform(popup), 0);
       }, true);
 
       const close = document.createElement('button');

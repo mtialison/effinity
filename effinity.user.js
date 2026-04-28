@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.5
+// @version      14.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.5';
+  const SCRIPT_VERSION = '14.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3246,7 +3246,19 @@
       rotate.setAttribute('data-tm-image-popup-rotate', 'true');
       rotate.title = 'Girar 90°';
       rotate.setAttribute('aria-label', 'Girar 90°');
-      rotate.appendChild(sideCreatePopupSvgIcon('rotate'));
+      const rotateIcon = document.createElement('span');
+      rotateIcon.textContent = '↻';
+      rotateIcon.setAttribute('aria-hidden', 'true');
+      rotateIcon.style.display = 'inline-flex';
+      rotateIcon.style.alignItems = 'center';
+      rotateIcon.style.justifyContent = 'center';
+      rotateIcon.style.width = '16px';
+      rotateIcon.style.height = '16px';
+      rotateIcon.style.fontSize = '16px';
+      rotateIcon.style.lineHeight = '16px';
+      rotateIcon.style.fontWeight = '400';
+      rotateIcon.style.transform = 'translateY(-0.5px)';
+      rotate.appendChild(rotateIcon);
       rotate.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();

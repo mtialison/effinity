@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.7
+// @version      14.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.7';
+  const SCRIPT_VERSION = '14.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -591,10 +591,10 @@
     }
 
     [data-tm-image-popup-icon-svg="true"] {
-      width: 16px !important;
-      height: 16px !important;
+      width: 21px !important;
+      height: 21px !important;
       display: block !important;
-      flex: 0 0 16px !important;
+      flex: 0 0 21px !important;
       color: currentColor !important;
       stroke: currentColor !important;
       fill: none !important;

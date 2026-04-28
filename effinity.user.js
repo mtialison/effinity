@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.1
+// @version      14.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.1';
+  const SCRIPT_VERSION = '14.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -591,14 +591,14 @@
     }
 
     [data-tm-image-popup-icon-svg="true"] {
-      width: 18px !important;
-      height: 18px !important;
+      width: 16px !important;
+      height: 16px !important;
       display: block !important;
-      flex: 0 0 18px !important;
+      flex: 0 0 16px !important;
       color: currentColor !important;
       stroke: currentColor !important;
       fill: none !important;
-      stroke-width: 2.25 !important;
+      stroke-width: 2 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       pointer-events: none !important;
@@ -3234,15 +3234,15 @@
       rotate.type = 'button';
       rotate.setAttribute('data-tm-image-popup-icon', 'true');
       rotate.setAttribute('data-tm-image-popup-rotate', 'true');
-      rotate.title = 'Girar 180°';
-      rotate.setAttribute('aria-label', 'Girar 180°');
+      rotate.title = 'Girar 90°';
+      rotate.setAttribute('aria-label', 'Girar 90°');
       rotate.appendChild(sideCreatePopupSvgIcon('rotate'));
       rotate.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
 
         const currentRotation = Number(popup.dataset.tmImageRotation || '0') || 0;
-        popup.dataset.tmImageRotation = String((currentRotation + 180) % 360);
+        popup.dataset.tmImageRotation = String((currentRotation + 90) % 360);
         sideApplyPopupImageTransform(popup);
       }, true);
 

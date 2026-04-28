@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.6
+// @version      13.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.6';
+  const SCRIPT_VERSION = '13.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2847,6 +2847,7 @@
       try {
         if (event.button !== 0) return;
         if (event.target.closest('button')) return;
+        if (event.target.closest('[data-tm-image-popup-resize="true"]')) return;
         if (popup.getAttribute('data-tm-maximized') === 'true') return;
 
         dragging = true;
@@ -2873,8 +2874,8 @@
         const maxLeft = Math.max(0, window.innerWidth - popup.offsetWidth);
         const maxTop = Math.max(0, window.innerHeight - popup.offsetHeight);
 
-        popup.style.left = `${Math.max(0, Math.min(maxLeft, nextLeft))}px`;
-        popup.style.top = `${Math.max(0, Math.min(maxTop, nextTop))}px`;
+        popup.style.setProperty('left', `${Math.max(0, Math.min(maxLeft, nextLeft))}px`, 'important');
+        popup.style.setProperty('top', `${Math.max(0, Math.min(maxTop, nextTop))}px`, 'important');
 
         event.preventDefault();
       } catch (_) {}
@@ -2990,6 +2991,7 @@
 
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation();
       } catch (_) {}
     };
 
@@ -3050,10 +3052,10 @@
         nextLeft = Math.max(0, Math.min(nextLeft, window.innerWidth - nextW));
         nextTop = Math.max(0, Math.min(nextTop, window.innerHeight - nextH));
 
-        popup.style.left = `${nextLeft}px`;
-        popup.style.top = `${nextTop}px`;
-        popup.style.width = `${nextW}px`;
-        popup.style.height = `${nextH}px`;
+        popup.style.setProperty('left', `${nextLeft}px`, 'important');
+        popup.style.setProperty('top', `${nextTop}px`, 'important');
+        popup.style.setProperty('width', `${nextW}px`, 'important');
+        popup.style.setProperty('height', `${nextH}px`, 'important');
 
         sideApplyPopupImageTransform(popup);
 
@@ -3118,8 +3120,8 @@
       popup.dataset.tmImageZoom = '1';
       popup.dataset.tmImagePanX = '0';
       popup.dataset.tmImagePanY = '0';
-      popup.style.left = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
-      popup.style.top = `${24 + ((imagePopupCounter - 1) % 8) * 28}px`;
+      popup.style.setProperty('left', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
+      popup.style.setProperty('top', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
       popup.style.zIndex = String(imagePopupZIndex);
 
       const header = document.createElement('div');

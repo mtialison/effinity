@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.3
+// @version      14.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.3';
+  const SCRIPT_VERSION = '14.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -562,8 +562,8 @@
 
     [data-tm-image-popup-icon="true"],
     [data-tm-image-popup-download="true"] {
-      width: 34px !important;
-      height: 34px !important;
+      width: 30px !important;
+      height: 30px !important;
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -591,8 +591,8 @@
     }
 
     [data-tm-image-popup-icon-svg="true"] {
-      width: 18px !important;
-      height: 18px !important;
+      width: 16px !important;
+      height: 16px !important;
       display: block !important;
       flex: 0 0 16px !important;
       color: currentColor !important;
@@ -3173,8 +3173,8 @@
     }
 
     if (type === 'rotate') {
-      svg.appendChild(makePath('M21 12a9 9 0 1 1-3-6.7'));
-      svg.appendChild(makePath('M21 3v7h-7'));
+      svg.appendChild(makePath('M3 12a9 9 0 1 0 3-6.7'));
+      svg.appendChild(makePath('M3 3v6h6'));
       return svg;
     }
 

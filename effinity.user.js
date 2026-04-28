@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.8
+// @version      13.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.8';
+  const SCRIPT_VERSION = '13.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -560,57 +560,64 @@
       justify-content: flex-end !important;
     }
 
-    [data-tm-image-popup-icon="true"] {
+    [data-tm-image-popup-icon="true"],
+    [data-tm-image-popup-download="true"] {
+      width: 30px !important;
+      height: 30px !important;
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
       border: 0 !important;
       background: transparent !important;
-      color: #cbd5e1 !important;
       cursor: pointer !important;
-      padding: 4px !important;
+      padding: 0 !important;
       margin: 0 !important;
-      border-radius: 6px !important;
+      border-radius: 7px !important;
       line-height: 1 !important;
-      transition: background 0.12s ease, color 0.12s ease !important;
+      transition: background 0.12s ease, opacity 0.12s ease, transform 0.08s ease !important;
+      vertical-align: middle !important;
+      flex: 0 0 30px !important;
     }
 
-    [data-tm-image-popup-icon="true"]:hover {
+    [data-tm-image-popup-icon="true"]:hover,
+    [data-tm-image-popup-download="true"]:hover {
       background: rgba(148, 163, 184, 0.12) !important;
+      opacity: 0.95 !important;
+    }
+
+    [data-tm-image-popup-icon="true"]:active,
+    [data-tm-image-popup-download="true"]:active {
+      transform: scale(0.96) !important;
+    }
+
+    [data-tm-image-popup-icon-svg="true"] {
+      width: 18px !important;
+      height: 18px !important;
+      display: block !important;
+      flex: 0 0 18px !important;
+      color: currentColor !important;
+      stroke: currentColor !important;
+      fill: none !important;
+      stroke-width: 2.25 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      pointer-events: none !important;
+    }
+
+    [data-tm-image-popup-download="true"] {
+      color: #22c55e !important;
+    }
+
+    [data-tm-image-popup-maximize="true"] {
       color: #f8fafc !important;
     }
 
     [data-tm-image-popup-close="true"] {
-      color: #f87171 !important;
+      color: #ef4444 !important;
     }
 
     [data-tm-image-popup-close="true"]:hover {
-      color: #ef4444 !important;
       background: rgba(239, 68, 68, 0.12) !important;
-    }
-
-    [data-tm-image-popup-download="true"] {
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      gap: 6px !important;
-      border: 1px solid rgba(34, 197, 94, 0.32) !important;
-      background: rgba(34, 197, 94, 0.10) !important;
-      color: #86efac !important;
-      cursor: pointer !important;
-      padding: 5px 9px !important;
-      margin: 0 !important;
-      border-radius: 8px !important;
-      font-size: 12px !important;
-      font-weight: 600 !important;
-      line-height: 1 !important;
-      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease !important;
-    }
-
-    [data-tm-image-popup-download="true"]:hover {
-      background: rgba(34, 197, 94, 0.16) !important;
-      border-color: rgba(34, 197, 94, 0.46) !important;
-      color: #bbf7d0 !important;
     }
 
     [data-tm-image-popup-body="true"] {
@@ -3115,6 +3122,55 @@
     }, true);
   }
 
+
+  function sideCreatePopupSvgIcon(type) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('data-tm-image-popup-icon-svg', 'true');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const makePath = (d) => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      return path;
+    };
+
+    const makeLine = (x1, y1, x2, y2) => {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      return line;
+    };
+
+    const makeRect = (x, y, width, height) => {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', width);
+      rect.setAttribute('height', height);
+      rect.setAttribute('rx', '1.8');
+      return rect;
+    };
+
+    if (type === 'download') {
+      svg.appendChild(makePath('M12 3v11'));
+      svg.appendChild(makePath('M7 10l5 5 5-5'));
+      svg.appendChild(makePath('M5 20h14'));
+      return svg;
+    }
+
+    if (type === 'close') {
+      svg.appendChild(makeLine('6', '6', '18', '18'));
+      svg.appendChild(makeLine('18', '6', '6', '18'));
+      return svg;
+    }
+
+    svg.appendChild(makeRect('6', '6', '12', '12'));
+    return svg;
+  }
+
   function sideOpenImagePopup(file) {
     try {
       if (!sideIsPreviewableImage(file)) {
@@ -3149,7 +3205,8 @@
       download.type = 'button';
       download.setAttribute('data-tm-image-popup-download', 'true');
       download.title = 'Download';
-      download.innerHTML = '<span>Download</span><span aria-hidden="true">↓</span>';
+      download.setAttribute('aria-label', 'Download');
+      download.appendChild(sideCreatePopupSvgIcon('download'));
       download.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -3164,8 +3221,10 @@
       const maximize = document.createElement('button');
       maximize.type = 'button';
       maximize.setAttribute('data-tm-image-popup-icon', 'true');
+      maximize.setAttribute('data-tm-image-popup-maximize', 'true');
       maximize.title = 'Maximizar';
-      maximize.textContent = '□';
+      maximize.setAttribute('aria-label', 'Maximizar');
+      maximize.appendChild(sideCreatePopupSvgIcon('maximize'));
       maximize.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -3182,8 +3241,8 @@
           popup.style.setProperty('height', previous.height || '520px', 'important');
           popup.style.removeProperty('transform');
 
-          maximize.textContent = '□';
           maximize.title = 'Maximizar';
+          maximize.setAttribute('aria-label', 'Maximizar');
         } else {
           popup.__tmPreviousGeometry = {
             left: popup.style.left || `${popup.offsetLeft}px`,
@@ -3199,8 +3258,8 @@
           popup.style.setProperty('height', 'min(820px, calc(100vh - 48px))', 'important');
           popup.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
 
-          maximize.textContent = '❐';
           maximize.title = 'Restaurar';
+          maximize.setAttribute('aria-label', 'Restaurar');
         }
 
         window.setTimeout(() => sideApplyPopupImageTransform(popup), 0);
@@ -3211,7 +3270,8 @@
       close.setAttribute('data-tm-image-popup-icon', 'true');
       close.setAttribute('data-tm-image-popup-close', 'true');
       close.title = 'Fechar';
-      close.textContent = '×';
+      close.setAttribute('aria-label', 'Fechar');
+      close.appendChild(sideCreatePopupSvgIcon('close'));
       close.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();

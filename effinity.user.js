@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.4
+// @version      14.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.4';
+  const SCRIPT_VERSION = '14.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3173,8 +3173,18 @@
     }
 
     if (type === 'rotate') {
-      svg.appendChild(makePath('M3 12a9 9 0 1 0 3-6.7'));
-      svg.appendChild(makePath('M3 3v6h6'));
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.setAttribute('transform', 'translate(2.4 2.4) scale(0.80)');
+
+      const arc = makePath('M19 12a7 7 0 1 1-2.05-4.95');
+      const arrow = makePath('M19 5v5h-5');
+      const diamond = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      diamond.setAttribute('d', 'M12 8.4 15.6 12 12 15.6 8.4 12Z');
+
+      group.appendChild(arc);
+      group.appendChild(arrow);
+      group.appendChild(diamond);
+      svg.appendChild(group);
       return svg;
     }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.8
+// @version      15.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.8';
+  const SCRIPT_VERSION = '15.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -191,6 +191,7 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      sideIndexTicketsFromPayload(payload);
       sideCaptureRealTicketIdFromRequest(requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
@@ -2476,6 +2477,8 @@
   let sideFilesAbortController = null;
   let sideFilesRequestSeq = 0;
   let sidePendingTicketCaptureUntil = 0;
+  const sideTicketIdByProtocol = new Map();
+  const sideTicketIdByProtocolSuffix = new Map();
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2484,24 +2487,150 @@
     return match ? match[1] : '';
   }
 
-  function sideExtractTicketIdFromProtocolText(text) {
-    try {
-      const match = String(text || '').match(/\bCS\d{3,}(\d{5})\b/i);
-      if (match) return match[1];
 
-      const loose = String(text || '').match(/\bCS(\d{10,})\b/i);
-      if (loose) return loose[1].slice(-5);
-    } catch (_) {}
+  function sideNormalizeProtocol(value) {
+    const match = String(value || '').match(/\bCS\d{8,}\b/i);
+    return match ? match[0].toUpperCase() : '';
+  }
+
+  function sideProtocolSuffix(protocol) {
+    const digits = String(protocol || '').replace(/\D/g, '');
+    return digits.length >= 5 ? digits.slice(-5) : '';
+  }
+
+  function sideMaybeTicketIdFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+
+    const candidates = [
+      obj.ticketId,
+      obj.ticket_id,
+      obj.id,
+      obj.ticket?.id,
+      obj.whatsappTicketId
+    ];
+
+    for (const value of candidates) {
+      const id = String(value || '').trim();
+      if (/^\d{4,8}$/.test(id)) return id;
+    }
 
     return '';
   }
 
+  function sideIndexTicketObject(obj) {
+    try {
+      if (!obj || typeof obj !== 'object') return;
+
+      const text = [
+        obj.protocol,
+        obj.protocolNumber,
+        obj.ticketProtocol,
+        obj.code,
+        obj.number,
+        obj.identifier,
+        obj.title,
+        obj.description,
+        obj.displayName,
+        obj.name,
+        obj.customerName,
+        obj.contactName
+      ].filter(Boolean).join(' ');
+
+      const protocol = sideNormalizeProtocol(text || JSON.stringify(obj).slice(0, 600));
+      if (!protocol) return;
+
+      const id = sideMaybeTicketIdFromObject(obj);
+      if (!id) return;
+
+      sideTicketIdByProtocol.set(protocol, id);
+
+      const suffix = sideProtocolSuffix(protocol);
+      if (suffix) sideTicketIdByProtocolSuffix.set(suffix, id);
+    } catch (_) {}
+  }
+
+  function sideIndexTicketsFromPayload(payload) {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+
+      const stack = [payload];
+      let scanned = 0;
+
+      while (stack.length && scanned < 1200) {
+        const item = stack.pop();
+        scanned += 1;
+
+        if (!item || typeof item !== 'object') continue;
+
+        if (!Array.isArray(item)) {
+          sideIndexTicketObject(item);
+        }
+
+        for (const value of Object.values(item)) {
+          if (value && typeof value === 'object') stack.push(value);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function sideResolveTicketIdFromProtocolText(text) {
+    const protocol = sideNormalizeProtocol(text);
+    if (protocol && sideTicketIdByProtocol.has(protocol)) {
+      return sideTicketIdByProtocol.get(protocol);
+    }
+
+    const suffix = sideProtocolSuffix(protocol || text);
+    if (suffix && sideTicketIdByProtocolSuffix.has(suffix)) {
+      return sideTicketIdByProtocolSuffix.get(suffix);
+    }
+
+    // Fallback final: em muitos protocolos CS... os 5 últimos dígitos são o ticketId,
+    // mas só é usado se ainda não houver mapeamento real por API.
+    if (suffix) return suffix;
+
+    return '';
+  }
+
+  function sideFindTicketCardFromTarget(target) {
+    try {
+      let node = target instanceof Element ? target : null;
+      let depth = 0;
+
+      while (node && depth < 8) {
+        const text = normalizeText(node.textContent || '');
+        if (/\bCS\d{8,}\b/i.test(text)) {
+          return node;
+        }
+
+        node = node.parentElement;
+        depth += 1;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function sideExtractTicketIdFromProtocolText(text) {
+    return sideResolveTicketIdFromProtocolText(text);
+  }
+
   function sideFindSelectedTicketCard() {
     try {
-      return document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
+      const direct =
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
         document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500') ||
         document.querySelector('div.p-2.border.rounded.cursor-pointer[class*="border-primary"]') ||
         document.querySelector('div.p-2.border.rounded.cursor-pointer[aria-selected="true"]');
+
+      if (direct) return direct;
+
+      const candidates = Array.from(document.querySelectorAll('div, button, [role="button"]'))
+        .filter(node => /\bCS\d{8,}\b/i.test(node.textContent || ''));
+
+      return candidates.find(node =>
+        /border-blue|bg-blue|primary|selected|active/i.test(node.className || '') ||
+        node.getAttribute('aria-selected') === 'true'
+      ) || null;
     } catch (_) {
       return null;
     }
@@ -2642,7 +2771,9 @@
   function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
     const id = sideExtractVisibleTicketIdFromHeader();
     if (id) {
-      sideSetVisibleTicketAndFetch(id, source);
+      if (id !== sideVisibleTicketId) {
+        sideSetVisibleTicketAndFetch(id, source);
+      }
       return id;
     }
 
@@ -3831,6 +3962,26 @@
     sideSetNotesMode(true);
   }
 
+
+  window.tmEffinityFilesDebug = {
+    getVisibleTicketId() {
+      return sideVisibleTicketId;
+    },
+    getProtocolMap() {
+      return {
+        protocol: Array.from(sideTicketIdByProtocol.entries()),
+        suffix: Array.from(sideTicketIdByProtocolSuffix.entries())
+      };
+    },
+    getFiles() {
+      return SIDE_FILES_BY_TICKET_ID.get(sideVisibleTicketId) || [];
+    },
+    refetch() {
+      if (sideVisibleTicketId) sideFetchFilesForTicket(sideVisibleTicketId, 'manual-debug');
+    }
+  };
+
+
   function sideInstallTabHandlers() {
     if (window.__tmEffinitySideTabsInstalled) return;
     window.__tmEffinitySideTabsInstalled = true;
@@ -3879,7 +4030,7 @@
           }
         }
 
-        const clickedTicketCard = target.closest('div.p-2.border.rounded.cursor-pointer');
+        const clickedTicketCard = sideFindTicketCardFromTarget(target);
         if (clickedTicketCard) {
           const clickedId = sideExtractTicketIdFromProtocolText(clickedTicketCard.textContent || '');
 

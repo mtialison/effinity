@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.0
+// @version      15.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.0';
+  const SCRIPT_VERSION = '15.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2855,11 +2855,41 @@
     }
   }
 
-  function sideSetPopupImageZoom(popup, nextZoom) {
+  function sideRecalculatePopupFit(popup, resetPan = false) {
     try {
-      const zoom = Math.max(0.25, Math.min(5, Number(nextZoom) || 1));
-      popup.dataset.tmImageZoom = String(zoom);
+      const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+      const img = body?.querySelector('img');
+      if (!body || !img) return;
+
+      const naturalW = Number(popup.dataset.tmImageNaturalW || img.naturalWidth || 1);
+      const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || 1);
+      const bodyRect = body.getBoundingClientRect();
+
+      const maxW = Math.max(1, bodyRect.width - 20);
+      const maxH = Math.max(1, bodyRect.height - 20);
+      const fit = Math.max(0.05, Math.min(maxW / naturalW, maxH / naturalH));
+
+      const userZoom = Number(popup.dataset.tmImageUserZoom || '1') || 1;
+
+      popup.dataset.tmImageBaseFit = String(fit);
+      popup.dataset.tmImageZoom = String(fit * userZoom);
+
+      if (resetPan) {
+        popup.dataset.tmImagePanX = '0';
+        popup.dataset.tmImagePanY = '0';
+      }
+
       sideApplyPopupImageTransform(popup);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao recalcular encaixe da imagem`, error);
+    }
+  }
+
+  function sideSetPopupImageZoom(popup, nextUserZoom) {
+    try {
+      const userZoom = Math.max(0.25, Math.min(8, Number(nextUserZoom) || 1));
+      popup.dataset.tmImageUserZoom = String(userZoom);
+      sideRecalculatePopupFit(popup, false);
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar zoom`, error);
     }
@@ -3086,7 +3116,7 @@
         popup.style.setProperty('width', `${nextW}px`, 'important');
         popup.style.setProperty('height', `${nextH}px`, 'important');
 
-        sideApplyPopupImageTransform(popup);
+        sideRecalculatePopupFit(popup, false);
 
         event.preventDefault();
         event.stopPropagation();
@@ -3212,6 +3242,8 @@
       const popup = document.createElement('div');
       popup.setAttribute('data-tm-image-popup', 'true');
       popup.dataset.tmImageZoom = '1';
+      popup.dataset.tmImageBaseFit = '1';
+      popup.dataset.tmImageUserZoom = '1';
       popup.dataset.tmImagePanX = '0';
       popup.dataset.tmImagePanY = '0';
       popup.dataset.tmImageRotation = '0';
@@ -3321,7 +3353,7 @@
           maximize.setAttribute('aria-label', 'Restaurar');
         }
 
-        window.setTimeout(() => sideApplyPopupImageTransform(popup), 0);
+        window.setTimeout(() => sideRecalculatePopupFit(popup, false), 0);
       }, true);
 
       const close = document.createElement('button');
@@ -3355,20 +3387,17 @@
 
       img.addEventListener('load', () => {
         try {
-          const bodyRect = body.getBoundingClientRect();
-          const maxW = Math.max(1, bodyRect.width - 20);
-          const maxH = Math.max(1, bodyRect.height - 20);
           const naturalW = img.naturalWidth || 1;
           const naturalH = img.naturalHeight || 1;
-          const fit = Math.min(maxW / naturalW, maxH / naturalH, 1);
 
           popup.dataset.tmImageNaturalW = String(naturalW);
           popup.dataset.tmImageNaturalH = String(naturalH);
+          popup.dataset.tmImageUserZoom = '1';
           img.style.width = `${naturalW}px`;
           img.style.height = `${naturalH}px`;
           popup.dataset.tmImagePanX = '0';
           popup.dataset.tmImagePanY = '0';
-          sideSetPopupImageZoom(popup, fit);
+          sideRecalculatePopupFit(popup, true);
         } catch (_) {
           sideSetPopupImageZoom(popup, 1);
         }
@@ -3379,7 +3408,7 @@
           event.preventDefault();
           event.stopPropagation();
 
-          const current = Number(popup.dataset.tmImageZoom || '1') || 1;
+          const current = Number(popup.dataset.tmImageUserZoom || '1') || 1;
           const factor = event.deltaY < 0 ? 1.12 : 0.88;
           sideSetPopupImageZoom(popup, current * factor);
         } catch (error) {
@@ -3405,7 +3434,7 @@
 
       window.addEventListener('resize', () => {
         try {
-          if (document.body.contains(popup)) sideApplyPopupImageTransform(popup);
+          if (document.body.contains(popup)) sideRecalculatePopupFit(popup, false);
         } catch (_) {}
       });
     } catch (error) {

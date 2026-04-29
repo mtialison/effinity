@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.5
+// @version      15.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.5';
+  const SCRIPT_VERSION = '15.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -191,6 +191,7 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      sideResolvePendingTicketFromRequestUrl(requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
         try {
@@ -2409,11 +2410,14 @@
   let sideAwaitingNextFilesResponse = false;
   let sideFilesAbortController = null;
   let sideFilesRequestSeq = 0;
+  let sidePendingTicketToken = 0;
+  let sidePendingTicketUntil = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
   function sideExtractTicketIdFromUrl(value) {
-    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
+    const text = String(value || '');
+    const match = text.match(/\/tickets\/(\d+)(?:\/|\?|#|$)/);
     return match ? match[1] : '';
   }
 
@@ -2496,6 +2500,7 @@
 
     const seq = ++sideFilesRequestSeq;
     sideFilesAbortController = new AbortController();
+    sidePendingTicketUntil = 0;
 
     try {
       const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
@@ -2542,9 +2547,52 @@
     return true;
   }
 
+  function sideOpenPendingTicketCaptureWindow(source = 'ticket-click') {
+    sidePendingTicketToken += 1;
+    sidePendingTicketUntil = Date.now() + 1400;
+    sideAwaitingNextFilesResponse = true;
+
+    const token = sidePendingTicketToken;
+
+    window.setTimeout(() => {
+      try {
+        if (token !== sidePendingTicketToken) return;
+        if (sideVisibleTicketId) return;
+
+        const fallbackId = sideExtractVisibleTicketIdFromHeader();
+        if (fallbackId) {
+          sideSetVisibleTicketAndFetch(fallbackId, `${source}-fallback-cs`);
+        } else {
+          sideClearRenderedFilesImmediately();
+        }
+      } catch (_) {}
+    }, 900);
+  }
+
+  function sideResolvePendingTicketFromRequestUrl(requestUrl) {
+    try {
+      if (!sidePendingTicketToken) return false;
+      if (Date.now() > sidePendingTicketUntil) return false;
+
+      const id = sideExtractTicketIdFromUrl(requestUrl);
+      if (!id) return false;
+
+      sidePendingTicketToken += 1;
+      sidePendingTicketUntil = 0;
+      sideSetVisibleTicketAndFetch(id, 'captured-real-request');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
+    if (sidePendingTicketToken && Date.now() <= sidePendingTicketUntil) {
+      return sideGetCurrentTicketId();
+    }
+
     const id = sideExtractVisibleTicketIdFromHeader();
-    if (id) {
+    if (id && !sideVisibleTicketId) {
       sideSetVisibleTicketAndFetch(id, source);
       return id;
     }
@@ -3784,29 +3832,18 @@
 
         const clickedTicketCard = target.closest('div.p-2.border.rounded.cursor-pointer');
         if (clickedTicketCard) {
-          const clickedId = sideExtractTicketIdFromProtocolText(clickedTicketCard.textContent || '');
-
           sideCurrentTicketId = '';
           sideVisibleTicketId = '';
-          sideAwaitingNextFilesResponse = true;
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          if (clickedId) {
-            window.setTimeout(() => {
-              sideSetVisibleTicketAndFetch(clickedId, 'ticket-click');
-            }, 0);
-          }
+          sideOpenPendingTicketCaptureWindow('ticket-click');
 
-          for (const delay of [80, 180, 360, 700, 1200]) {
+          for (const delay of [120, 260, 520, 900, 1400]) {
             window.setTimeout(() => {
               try {
-                if (!sideVisibleTicketId) {
-                  const id = sideExtractVisibleTicketIdFromHeader();
-                  if (id) sideSetVisibleTicketAndFetch(id, 'ticket-click-poll');
-                  else sideClearRenderedFilesImmediately();
-                }
+                if (!sideVisibleTicketId) sideClearRenderedFilesImmediately();
                 sideScheduleRender();
               } catch (_) {}
             }, delay);

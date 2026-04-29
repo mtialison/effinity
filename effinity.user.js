@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.0
+// @version      16.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.0';
+  const SCRIPT_VERSION = '16.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2466,22 +2466,10 @@
   }
 
   function sideGetCurrentTicketId() {
-    if (sideCurrentTicketId) return sideCurrentTicketId;
-
-    try {
-      const entries = performance.getEntriesByType('resource') || [];
-      for (let i = entries.length - 1; i >= 0; i -= 1) {
-        const url = entries[i]?.name || '';
-        if (!url.includes('/tickets/')) continue;
-        const id = sideExtractTicketIdFromUrl(url);
-        if (id) {
-          sideCurrentTicketId = id;
-          return id;
-        }
-      }
-    } catch (_) {}
-
-    return '';
+    // v16.1: não usar performance.getEntries como fallback.
+    // Esse fallback recuperava a última requisição do ticket anterior e fazia
+    // os arquivos antigos voltarem após trocar de atendimento.
+    return sideCurrentTicketId || '';
   }
 
   function sideClearRenderedFilesImmediately() {
@@ -2794,7 +2782,11 @@
 
   function sideGetFiles() {
     const ticketId = sideCurrentTicketId;
-    return ticketId ? (SIDE_FILES_BY_TICKET_ID.get(ticketId) || []) : [];
+
+    if (!ticketId) return [];
+    if (sideExpectedTicketId && String(ticketId) !== String(sideExpectedTicketId)) return [];
+
+    return SIDE_FILES_BY_TICKET_ID.get(ticketId) || [];
   }
 
   function sideFormatDate(value) {
@@ -3537,6 +3529,7 @@
     card.className = 'rounded-xl bg-card border border-border ease-in-out relative overflow-hidden shadow-sm hover:border-primary/20 duration-200 p-6 hover:shadow-md transition-shadow';
     card.setAttribute('data-tm-api-file-card', 'true');
     card.setAttribute('data-tm-api-file-id', file.id);
+    card.setAttribute('data-tm-api-ticket-id', sideCurrentTicketId || sideExpectedTicketId || '');
 
     const outer = document.createElement('div');
     outer.className = 'p-4';
@@ -3607,7 +3600,7 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
-    if (!sideCurrentTicketId) {
+    if (!sideCurrentTicketId || (sideExpectedTicketId && String(sideCurrentTicketId) !== String(sideExpectedTicketId))) {
       sideClearRenderedFilesImmediately();
       return;
     }
@@ -3617,13 +3610,22 @@
 
     for (const node of Array.from(host.querySelectorAll('[data-tm-api-file-card="true"]'))) {
       if (!(node instanceof HTMLElement)) continue;
+
       const id = node.getAttribute('data-tm-api-file-id') || '';
+      const ticketId = node.getAttribute('data-tm-api-ticket-id') || '';
+
+      if (ticketId && String(ticketId) !== String(sideCurrentTicketId)) {
+        node.remove();
+        continue;
+      }
+
       if (!wanted.has(id)) node.remove();
     }
 
     for (const file of files) {
       let card = host.querySelector(`[data-tm-api-file-card="true"][data-tm-api-file-id="${CSS.escape(file.id)}"]`);
       if (!card) card = sideCreateFileCard(file);
+      card.setAttribute('data-tm-api-ticket-id', sideCurrentTicketId || sideExpectedTicketId || '');
       card.removeAttribute(HIDDEN_ATTR);
       host.appendChild(card);
     }
@@ -3748,6 +3750,10 @@
 
           sideCurrentTicketId = '';
           sideExpectedTicketId = expectedId || '';
+          sideDirectFilesRequestSeq += 1;
+          try {
+            if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
+          } catch (_) {}
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();

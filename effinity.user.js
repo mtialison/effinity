@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.1
+// @version      15.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.1';
+  const SCRIPT_VERSION = '15.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2887,7 +2887,7 @@
 
   function sideSetPopupImageZoom(popup, nextUserZoom) {
     try {
-      const userZoom = Math.max(0.25, Math.min(8, Number(nextUserZoom) || 1));
+      const userZoom = Math.max(1, Math.min(8, Number(nextUserZoom) || 1));
       popup.dataset.tmImageUserZoom = String(userZoom);
       sideRecalculatePopupFit(popup, false);
     } catch (error) {

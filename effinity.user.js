@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      14.9
+// @version      15.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '14.9';
+  const SCRIPT_VERSION = '15.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2842,6 +2842,13 @@
       const { panX, panY } = sideClampPopupPan(popup);
 
       const rotation = Number(popup.dataset.tmImageRotation || '0') || 0;
+      const container = popup.querySelector('[data-tm-image-popup-body="true"]');
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+
+      img.style.maxWidth = cw + 'px';
+      img.style.maxHeight = ch + 'px';
+
       img.style.transform = `translate3d(${panX}px, ${panY}px, 0) rotate(${rotation}deg) scale(${zoom})`;
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);

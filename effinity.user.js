@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.4
+// @version      15.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.4';
+  const SCRIPT_VERSION = '15.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2407,6 +2407,8 @@
   let sideCurrentTicketId = '';
   let sideVisibleTicketId = '';
   let sideAwaitingNextFilesResponse = false;
+  let sideFilesAbortController = null;
+  let sideFilesRequestSeq = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2415,9 +2417,48 @@
     return match ? match[1] : '';
   }
 
+  function sideExtractTicketIdFromProtocolText(text) {
+    try {
+      const match = String(text || '').match(/\bCS\d{3,}(\d{5})\b/i);
+      if (match) return match[1];
+
+      const loose = String(text || '').match(/\bCS(\d{10,})\b/i);
+      if (loose) return loose[1].slice(-5);
+    } catch (_) {}
+
+    return '';
+  }
+
+  function sideFindSelectedTicketCard() {
+    try {
+      return document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer[class*="border-primary"]') ||
+        document.querySelector('div.p-2.border.rounded.cursor-pointer[aria-selected="true"]');
+    } catch (_) {
+      return null;
+    }
+  }
+
   function sideExtractVisibleTicketIdFromHeader() {
-    // Não usar protocolo CS como ticketId. Protocolo e ticketId da API são IDs diferentes.
-    // O ticketId confiável vem da URL /tickets/{id}/files.
+    // v15.5: extrai do protocolo visível CS..., que no sistema carrega o ticketId
+    // nos 5 últimos dígitos. Ex: CS00120260427029266 -> ticketId 29266.
+    try {
+      const selected = sideFindSelectedTicketCard();
+      const selectedId = sideExtractTicketIdFromProtocolText(selected?.textContent || '');
+      if (selectedId) return selectedId;
+
+      const headerCandidates = [
+        document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4'),
+        document.querySelector('[class*="px-4"][class*="py-3"]')
+      ].filter(Boolean);
+
+      for (const header of headerCandidates) {
+        const id = sideExtractTicketIdFromProtocolText(header.textContent || '');
+        if (id) return id;
+      }
+    } catch (_) {}
+
     return '';
   }
 
@@ -2443,10 +2484,68 @@
     return sideVisibleTicketId || sideCurrentTicketId || '';
   }
 
+  async function sideFetchFilesForTicket(ticketId, source = '') {
+    const id = String(ticketId || '').trim();
+    if (!id) return;
+
+    try {
+      if (sideFilesAbortController) {
+        sideFilesAbortController.abort();
+      }
+    } catch (_) {}
+
+    const seq = ++sideFilesRequestSeq;
+    sideFilesAbortController = new AbortController();
+
+    try {
+      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        },
+        signal: sideFilesAbortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const payload = await response.json();
+
+      if (seq !== sideFilesRequestSeq || String(sideVisibleTicketId) !== id) {
+        return;
+      }
+
+      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.error(`[${SCRIPT_NAME}] falha ao buscar arquivos do ticket ${id} (${source || 'manual'})`, error);
+    }
+  }
+
+  function sideSetVisibleTicketAndFetch(ticketId, source = '') {
+    const id = String(ticketId || '').trim();
+    if (!id) return false;
+
+    const changed = id !== sideVisibleTicketId;
+    sideVisibleTicketId = id;
+    sideCurrentTicketId = id;
+    sideAwaitingNextFilesResponse = false;
+
+    if (changed) {
+      sideClearRenderedFilesImmediately();
+    }
+
+    sideScheduleRender();
+    sideFetchFilesForTicket(id, source);
+    return true;
+  }
+
   function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
     const id = sideExtractVisibleTicketIdFromHeader();
     if (id) {
-      sideSetVisibleTicketId(id, source);
+      sideSetVisibleTicketAndFetch(id, source);
       return id;
     }
 
@@ -2490,7 +2589,7 @@
 
       SIDE_FILES_BY_TICKET_ID.set(ticketId, files);
 
-      if (sideAwaitingNextFilesResponse || !sideVisibleTicketId) {
+      if (!sideVisibleTicketId && sideAwaitingNextFilesResponse) {
         sideVisibleTicketId = String(ticketId);
         sideCurrentTicketId = String(ticketId);
         sideAwaitingNextFilesResponse = false;
@@ -3547,8 +3646,11 @@
     if (!host) return;
 
     if (!sideVisibleTicketId) {
-      sideClearRenderedFilesImmediately();
-      return;
+      sideRefreshVisibleTicketIdFromDom('sync-files-missing-id');
+      if (!sideVisibleTicketId) {
+        sideClearRenderedFilesImmediately();
+        return;
+      }
     }
 
     const files = sideGetFiles();
@@ -3680,9 +3782,10 @@
           }
         }
 
-        if (target.closest('div.p-2.border.rounded.cursor-pointer')) {
-          // v15.3: troca de ticket zera o vínculo visível e impede
-          // que resposta atrasada de outro /files seja renderizada.
+        const clickedTicketCard = target.closest('div.p-2.border.rounded.cursor-pointer');
+        if (clickedTicketCard) {
+          const clickedId = sideExtractTicketIdFromProtocolText(clickedTicketCard.textContent || '');
+
           sideCurrentTicketId = '';
           sideVisibleTicketId = '';
           sideAwaitingNextFilesResponse = true;
@@ -3690,10 +3793,20 @@
           sideSetNotesMode(false);
           sideScheduleRender();
 
+          if (clickedId) {
+            window.setTimeout(() => {
+              sideSetVisibleTicketAndFetch(clickedId, 'ticket-click');
+            }, 0);
+          }
+
           for (const delay of [80, 180, 360, 700, 1200]) {
             window.setTimeout(() => {
               try {
-                if (!sideVisibleTicketId) sideClearRenderedFilesImmediately();
+                if (!sideVisibleTicketId) {
+                  const id = sideExtractVisibleTicketIdFromHeader();
+                  if (id) sideSetVisibleTicketAndFetch(id, 'ticket-click-poll');
+                  else sideClearRenderedFilesImmediately();
+                }
                 sideScheduleRender();
               } catch (_) {}
             }, delay);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.3
+// @version      15.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.3';
+  const SCRIPT_VERSION = '15.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2406,6 +2406,7 @@
   const SIDE_FILES_BY_TICKET_ID = new Map();
   let sideCurrentTicketId = '';
   let sideVisibleTicketId = '';
+  let sideAwaitingNextFilesResponse = false;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2415,22 +2416,8 @@
   }
 
   function sideExtractVisibleTicketIdFromHeader() {
-    try {
-      const headerCandidates = [
-        document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4'),
-        document.querySelector('[class*="px-4"][class*="py-3"]')
-      ].filter(Boolean);
-
-      for (const header of headerCandidates) {
-        const text = normalizeText(header.textContent || '');
-        const protocol = text.match(/\bCS0*(\d{4,})\b/i);
-        if (protocol) return protocol[1];
-
-        const urlId = sideExtractTicketIdFromUrl(text);
-        if (urlId) return urlId;
-      }
-    } catch (_) {}
-
+    // Não usar protocolo CS como ticketId. Protocolo e ticketId da API são IDs diferentes.
+    // O ticketId confiável vem da URL /tickets/{id}/files.
     return '';
   }
 
@@ -2503,15 +2490,21 @@
 
       SIDE_FILES_BY_TICKET_ID.set(ticketId, files);
 
+      if (sideAwaitingNextFilesResponse || !sideVisibleTicketId) {
+        sideVisibleTicketId = String(ticketId);
+        sideCurrentTicketId = String(ticketId);
+        sideAwaitingNextFilesResponse = false;
+      }
+
       if (SIDE_FILES_BY_TICKET_ID.size > SIDE_FILES_CACHE_LIMIT) {
         const overflow = SIDE_FILES_BY_TICKET_ID.size - SIDE_FILES_CACHE_LIMIT;
         Array.from(SIDE_FILES_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => SIDE_FILES_BY_TICKET_ID.delete(key));
       }
 
-      const visibleId = sideRefreshVisibleTicketIdFromDom('files-response-check');
+      const visibleId = sideVisibleTicketId;
 
-      // Anti-race: resposta atrasada de outro ticket fica em cache,
-      // mas nunca troca o ticket visível nem renderiza na conversa atual.
+      // Anti-race: depois que o ticket visível foi definido, respostas atrasadas
+      // de outros tickets ficam em cache, mas não renderizam.
       if (!visibleId || String(ticketId) !== String(visibleId)) {
         try {
           console.debug(`[${SCRIPT_NAME}] arquivos ignorados por anti-race`, { ticketId, visibleId });
@@ -3553,8 +3546,6 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
-    sideRefreshVisibleTicketIdFromDom('sync-files');
-
     if (!sideVisibleTicketId) {
       sideClearRenderedFilesImmediately();
       return;
@@ -3580,8 +3571,6 @@
   function sideApplyView() {
     try {
       sideMarkTabs();
-      sideRefreshVisibleTicketIdFromDom('apply-view');
-
       const host = sideFindHost();
       if (!host) return;
 
@@ -3696,6 +3685,7 @@
           // que resposta atrasada de outro /files seja renderizada.
           sideCurrentTicketId = '';
           sideVisibleTicketId = '';
+          sideAwaitingNextFilesResponse = true;
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
@@ -3703,7 +3693,6 @@
           for (const delay of [80, 180, 360, 700, 1200]) {
             window.setTimeout(() => {
               try {
-                sideRefreshVisibleTicketIdFromDom('ticket-click-poll');
                 if (!sideVisibleTicketId) sideClearRenderedFilesImmediately();
                 sideScheduleRender();
               } catch (_) {}

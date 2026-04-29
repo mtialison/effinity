@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.7
+// @version      15.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.7';
+  const SCRIPT_VERSION = '15.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -205,6 +205,57 @@
     }
   }
 
+
+  const sideCapturedApiHeaders = {};
+
+  function sideRememberApiHeadersFromObject(headersLike) {
+    try {
+      if (!headersLike) return;
+
+      const applyHeader = (key, value) => {
+        const name = String(key || '').trim();
+        const lower = name.toLowerCase();
+        if (!name || value == null) return;
+
+        // Não reaproveitar headers que quebram GET manual.
+        if (['content-length', 'host', 'origin', 'referer', 'cookie'].includes(lower)) return;
+
+        // Content-Type só é necessário em POST; não forçamos no GET de arquivos.
+        if (lower === 'content-type') return;
+
+        sideCapturedApiHeaders[name] = String(value);
+      };
+
+      if (headersLike instanceof Headers) {
+        headersLike.forEach((value, key) => applyHeader(key, value));
+        return;
+      }
+
+      if (Array.isArray(headersLike)) {
+        for (const pair of headersLike) {
+          if (Array.isArray(pair) && pair.length >= 2) applyHeader(pair[0], pair[1]);
+        }
+        return;
+      }
+
+      if (typeof headersLike === 'object') {
+        for (const [key, value] of Object.entries(headersLike)) {
+          applyHeader(key, value);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function sideRememberFetchRequestHeaders(args) {
+    try {
+      const req = args?.[0];
+      const init = args?.[1];
+
+      if (req?.headers) sideRememberApiHeadersFromObject(req.headers);
+      if (init?.headers) sideRememberApiHeadersFromObject(init.headers);
+    } catch (_) {}
+  }
+
   function installMessageApiInterceptors() {
     if (window.__tmEffinityMessageInterceptorsInstalled) return;
     window.__tmEffinityMessageInterceptorsInstalled = true;
@@ -212,6 +263,7 @@
     const nativeFetch = window.fetch;
     if (typeof nativeFetch === 'function') {
       window.fetch = async function tmEffinityFetchProxy(...args) {
+        sideRememberFetchRequestHeaders(args);
         const response = await nativeFetch.apply(this, args);
 
         try {
@@ -230,6 +282,19 @@
     if (typeof NativeXHR === 'function') {
       const nativeOpen = NativeXHR.prototype.open;
       const nativeSend = NativeXHR.prototype.send;
+      const nativeSetRequestHeader = NativeXHR.prototype.setRequestHeader;
+
+      if (typeof nativeSetRequestHeader === 'function') {
+        NativeXHR.prototype.setRequestHeader = function tmEffinityXhrSetRequestHeader(name, value) {
+          try {
+            this.__tmEffinityHeaders = this.__tmEffinityHeaders || {};
+            this.__tmEffinityHeaders[name] = value;
+            sideRememberApiHeadersFromObject({ [name]: value });
+          } catch (_) {}
+
+          return nativeSetRequestHeader.apply(this, arguments);
+        };
+      }
 
       NativeXHR.prototype.open = function tmEffinityXhrOpen(...args) {
         this.__tmEffinityUrl = args[1];
@@ -2504,6 +2569,7 @@
         method: 'GET',
         credentials: 'include',
         headers: {
+          ...sideCapturedApiHeaders,
           'Accept': 'application/json'
         },
         signal: sideFilesAbortController.signal
@@ -2523,6 +2589,16 @@
     } catch (error) {
       if (error?.name === 'AbortError') return;
       console.error(`[${SCRIPT_NAME}] falha ao buscar arquivos do ticket ${id} (${source || 'manual'})`, error);
+
+      if (seq === sideFilesRequestSeq && String(sideVisibleTicketId) === id && !String(source || '').includes('retry')) {
+        window.setTimeout(() => {
+          try {
+            if (String(sideVisibleTicketId) === id) {
+              sideFetchFilesForTicket(id, `${source || 'manual'}-retry`);
+            }
+          } catch (_) {}
+        }, 350);
+      }
     }
   }
 

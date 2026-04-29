@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.2
+// @version      15.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.2';
+  const SCRIPT_VERSION = '15.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2405,6 +2405,7 @@
   const SIDE_FILES_CACHE_LIMIT = 80;
   const SIDE_FILES_BY_TICKET_ID = new Map();
   let sideCurrentTicketId = '';
+  let sideVisibleTicketId = '';
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2413,32 +2414,56 @@
     return match ? match[1] : '';
   }
 
-  function sideSetCurrentTicketId(ticketId) {
-    const id = String(ticketId || '').trim();
-    if (!id || id === sideCurrentTicketId) return;
-
-    sideCurrentTicketId = id;
-    sideClearRenderedFilesImmediately();
-    sideScheduleRender();
-  }
-
-  function sideGetCurrentTicketId() {
-    if (sideCurrentTicketId) return sideCurrentTicketId;
-
+  function sideExtractVisibleTicketIdFromHeader() {
     try {
-      const entries = performance.getEntriesByType('resource') || [];
-      for (let i = entries.length - 1; i >= 0; i -= 1) {
-        const url = entries[i]?.name || '';
-        if (!url.includes('/tickets/')) continue;
-        const id = sideExtractTicketIdFromUrl(url);
-        if (id) {
-          sideCurrentTicketId = id;
-          return id;
-        }
+      const headerCandidates = [
+        document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4'),
+        document.querySelector('[class*="px-4"][class*="py-3"]')
+      ].filter(Boolean);
+
+      for (const header of headerCandidates) {
+        const text = normalizeText(header.textContent || '');
+        const protocol = text.match(/\bCS0*(\d{4,})\b/i);
+        if (protocol) return protocol[1];
+
+        const urlId = sideExtractTicketIdFromUrl(text);
+        if (urlId) return urlId;
       }
     } catch (_) {}
 
     return '';
+  }
+
+  function sideSetVisibleTicketId(ticketId, source = '') {
+    const id = String(ticketId || '').trim();
+    if (!id) return false;
+
+    if (id === sideVisibleTicketId && id === sideCurrentTicketId) return true;
+
+    sideVisibleTicketId = id;
+    sideCurrentTicketId = id;
+    sideClearRenderedFilesImmediately();
+    sideScheduleRender();
+
+    try {
+      console.debug(`[${SCRIPT_NAME}] ticket visível definido (${source || 'unknown'}):`, id);
+    } catch (_) {}
+
+    return true;
+  }
+
+  function sideGetCurrentTicketId() {
+    return sideVisibleTicketId || sideCurrentTicketId || '';
+  }
+
+  function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
+    const id = sideExtractVisibleTicketIdFromHeader();
+    if (id) {
+      sideSetVisibleTicketId(id, source);
+      return id;
+    }
+
+    return sideGetCurrentTicketId();
   }
 
   function sideClearRenderedFilesImmediately() {
@@ -2468,7 +2493,7 @@
       if (!Array.isArray(payload.files) && !String(requestUrl || '').includes('/files')) return;
 
       const ticketId = sideExtractTicketIdFromUrl(requestUrl) ||
-        String(payload.files?.[0]?.ticketId || sideGetCurrentTicketId() || '').trim();
+        String(payload.files?.[0]?.ticketId || '').trim();
 
       if (!ticketId) return;
 
@@ -2477,11 +2502,21 @@
         : [];
 
       SIDE_FILES_BY_TICKET_ID.set(ticketId, files);
-      sideSetCurrentTicketId(ticketId);
 
       if (SIDE_FILES_BY_TICKET_ID.size > SIDE_FILES_CACHE_LIMIT) {
         const overflow = SIDE_FILES_BY_TICKET_ID.size - SIDE_FILES_CACHE_LIMIT;
         Array.from(SIDE_FILES_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => SIDE_FILES_BY_TICKET_ID.delete(key));
+      }
+
+      const visibleId = sideRefreshVisibleTicketIdFromDom('files-response-check');
+
+      // Anti-race: resposta atrasada de outro ticket fica em cache,
+      // mas nunca troca o ticket visível nem renderiza na conversa atual.
+      if (!visibleId || String(ticketId) !== String(visibleId)) {
+        try {
+          console.debug(`[${SCRIPT_NAME}] arquivos ignorados por anti-race`, { ticketId, visibleId });
+        } catch (_) {}
+        return;
       }
 
       sideScheduleRender();
@@ -2704,7 +2739,7 @@
   }
 
   function sideGetFiles() {
-    const ticketId = sideCurrentTicketId;
+    const ticketId = sideVisibleTicketId;
     return ticketId ? (SIDE_FILES_BY_TICKET_ID.get(ticketId) || []) : [];
   }
 
@@ -3518,7 +3553,9 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
-    if (!sideCurrentTicketId) {
+    sideRefreshVisibleTicketIdFromDom('sync-files');
+
+    if (!sideVisibleTicketId) {
       sideClearRenderedFilesImmediately();
       return;
     }
@@ -3543,6 +3580,7 @@
   function sideApplyView() {
     try {
       sideMarkTabs();
+      sideRefreshVisibleTicketIdFromDom('apply-view');
 
       const host = sideFindHost();
       if (!host) return;
@@ -3654,20 +3692,20 @@
         }
 
         if (target.closest('div.p-2.border.rounded.cursor-pointer')) {
-          // v13.0: ao trocar ticket, nunca manter arquivos do ticket anterior.
-          // Limpamos imediatamente e só renderizamos novamente quando chegar
-          // o /tickets/{id}/files do ticket novo.
+          // v15.3: troca de ticket zera o vínculo visível e impede
+          // que resposta atrasada de outro /files seja renderizada.
           sideCurrentTicketId = '';
+          sideVisibleTicketId = '';
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          for (const delay of [80, 180, 360, 700]) {
+          for (const delay of [80, 180, 360, 700, 1200]) {
             window.setTimeout(() => {
               try {
-                if (!sideCurrentTicketId) {
-                  sideClearRenderedFilesImmediately();
-                }
+                sideRefreshVisibleTicketIdFromDom('ticket-click-poll');
+                if (!sideVisibleTicketId) sideClearRenderedFilesImmediately();
+                sideScheduleRender();
               } catch (_) {}
             }, delay);
           }

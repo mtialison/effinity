@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.9
+// @version      16.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.9';
+  const SCRIPT_VERSION = '16.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -191,8 +191,6 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
-      sideIndexTicketsFromPayload(payload);
-      sideCaptureRealTicketIdFromRequest(requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
         try {
@@ -206,57 +204,6 @@
     }
   }
 
-
-  const sideCapturedApiHeaders = {};
-
-  function sideRememberApiHeadersFromObject(headersLike) {
-    try {
-      if (!headersLike) return;
-
-      const applyHeader = (key, value) => {
-        const name = String(key || '').trim();
-        const lower = name.toLowerCase();
-        if (!name || value == null) return;
-
-        // Não reaproveitar headers que quebram GET manual.
-        if (['content-length', 'host', 'origin', 'referer', 'cookie'].includes(lower)) return;
-
-        // Content-Type só é necessário em POST; não forçamos no GET de arquivos.
-        if (lower === 'content-type') return;
-
-        sideCapturedApiHeaders[name] = String(value);
-      };
-
-      if (headersLike instanceof Headers) {
-        headersLike.forEach((value, key) => applyHeader(key, value));
-        return;
-      }
-
-      if (Array.isArray(headersLike)) {
-        for (const pair of headersLike) {
-          if (Array.isArray(pair) && pair.length >= 2) applyHeader(pair[0], pair[1]);
-        }
-        return;
-      }
-
-      if (typeof headersLike === 'object') {
-        for (const [key, value] of Object.entries(headersLike)) {
-          applyHeader(key, value);
-        }
-      }
-    } catch (_) {}
-  }
-
-  function sideRememberFetchRequestHeaders(args) {
-    try {
-      const req = args?.[0];
-      const init = args?.[1];
-
-      if (req?.headers) sideRememberApiHeadersFromObject(req.headers);
-      if (init?.headers) sideRememberApiHeadersFromObject(init.headers);
-    } catch (_) {}
-  }
-
   function installMessageApiInterceptors() {
     if (window.__tmEffinityMessageInterceptorsInstalled) return;
     window.__tmEffinityMessageInterceptorsInstalled = true;
@@ -264,7 +211,6 @@
     const nativeFetch = window.fetch;
     if (typeof nativeFetch === 'function') {
       window.fetch = async function tmEffinityFetchProxy(...args) {
-        sideRememberFetchRequestHeaders(args);
         const response = await nativeFetch.apply(this, args);
 
         try {
@@ -283,19 +229,6 @@
     if (typeof NativeXHR === 'function') {
       const nativeOpen = NativeXHR.prototype.open;
       const nativeSend = NativeXHR.prototype.send;
-      const nativeSetRequestHeader = NativeXHR.prototype.setRequestHeader;
-
-      if (typeof nativeSetRequestHeader === 'function') {
-        NativeXHR.prototype.setRequestHeader = function tmEffinityXhrSetRequestHeader(name, value) {
-          try {
-            this.__tmEffinityHeaders = this.__tmEffinityHeaders || {};
-            this.__tmEffinityHeaders[name] = value;
-            sideRememberApiHeadersFromObject({ [name]: value });
-          } catch (_) {}
-
-          return nativeSetRequestHeader.apply(this, arguments);
-        };
-      }
 
       NativeXHR.prototype.open = function tmEffinityXhrOpen(...args) {
         this.__tmEffinityUrl = args[1];
@@ -2472,121 +2405,24 @@
   const SIDE_FILES_CACHE_LIMIT = 80;
   const SIDE_FILES_BY_TICKET_ID = new Map();
   let sideCurrentTicketId = '';
-  let sideVisibleTicketId = '';
-  let sideAwaitingNextFilesResponse = false;
-  let sideFilesAbortController = null;
-  let sideFilesRequestSeq = 0;
-  let sidePendingTicketCaptureUntil = 0;
-  const sideTicketIdByProtocol = new Map();
-  const sideTicketIdByProtocolSuffix = new Map();
+  let sideExpectedTicketId = '';
+  let sideDirectFilesAbortController = null;
+  let sideDirectFilesRequestSeq = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
-  function sideExtractTicketIdFromUrl(value) {
-    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
-    return match ? match[1] : '';
-  }
 
-
-  function sideNormalizeProtocol(value) {
-    const match = String(value || '').match(/\bCS\d{8,}\b/i);
-    return match ? match[0].toUpperCase() : '';
-  }
-
-  function sideProtocolSuffix(protocol) {
-    const digits = String(protocol || '').replace(/\D/g, '');
-    return digits.length >= 5 ? digits.slice(-5) : '';
-  }
-
-  function sideMaybeTicketIdFromObject(obj) {
-    if (!obj || typeof obj !== 'object') return '';
-
-    const candidates = [
-      obj.ticketId,
-      obj.ticket_id,
-      obj.id,
-      obj.ticket?.id,
-      obj.whatsappTicketId
-    ];
-
-    for (const value of candidates) {
-      const id = String(value || '').trim();
-      if (/^\d{4,8}$/.test(id)) return id;
-    }
-
-    return '';
-  }
-
-  function sideIndexTicketObject(obj) {
+  function sideExtractExpectedTicketIdFromText(text) {
     try {
-      if (!obj || typeof obj !== 'object') return;
+      const value = String(text || '');
 
-      const text = [
-        obj.protocol,
-        obj.protocolNumber,
-        obj.ticketProtocol,
-        obj.code,
-        obj.number,
-        obj.identifier,
-        obj.title,
-        obj.description,
-        obj.displayName,
-        obj.name,
-        obj.customerName,
-        obj.contactName
-      ].filter(Boolean).join(' ');
+      // Protocolo padrão observado: CS + data + ticketId no final.
+      const full = value.match(/\bCS(\d{10,})\b/i);
+      if (full) return full[1].slice(-5);
 
-      const protocol = sideNormalizeProtocol(text || JSON.stringify(obj).slice(0, 600));
-      if (!protocol) return;
-
-      const id = sideMaybeTicketIdFromObject(obj);
-      if (!id) return;
-
-      sideTicketIdByProtocol.set(protocol, id);
-
-      const suffix = sideProtocolSuffix(protocol);
-      if (suffix) sideTicketIdByProtocolSuffix.set(suffix, id);
+      const loose = value.match(/\bCS\d{3,}(\d{5})\b/i);
+      if (loose) return loose[1];
     } catch (_) {}
-  }
-
-  function sideIndexTicketsFromPayload(payload) {
-    try {
-      if (!payload || typeof payload !== 'object') return;
-
-      const stack = [payload];
-      let scanned = 0;
-
-      while (stack.length && scanned < 1200) {
-        const item = stack.pop();
-        scanned += 1;
-
-        if (!item || typeof item !== 'object') continue;
-
-        if (!Array.isArray(item)) {
-          sideIndexTicketObject(item);
-        }
-
-        for (const value of Object.values(item)) {
-          if (value && typeof value === 'object') stack.push(value);
-        }
-      }
-    } catch (_) {}
-  }
-
-  function sideResolveTicketIdFromProtocolText(text) {
-    const protocol = sideNormalizeProtocol(text);
-    if (protocol && sideTicketIdByProtocol.has(protocol)) {
-      return sideTicketIdByProtocol.get(protocol);
-    }
-
-    const suffix = sideProtocolSuffix(protocol || text);
-    if (suffix && sideTicketIdByProtocolSuffix.has(suffix)) {
-      return sideTicketIdByProtocolSuffix.get(suffix);
-    }
-
-    // Fallback final: em muitos protocolos CS... os 5 últimos dígitos são o ticketId,
-    // mas só é usado se ainda não houver mapeamento real por API.
-    if (suffix) return suffix;
 
     return '';
   }
@@ -2598,9 +2434,7 @@
 
       while (node && depth < 8) {
         const text = normalizeText(node.textContent || '');
-        if (/\bCS\d{8,}\b/i.test(text)) {
-          return node;
-        }
+        if (/\bCS\d{8,}\b/i.test(text)) return node;
 
         node = node.parentElement;
         depth += 1;
@@ -2610,174 +2444,44 @@
     return null;
   }
 
-  function sideExtractTicketIdFromProtocolText(text) {
-    return sideResolveTicketIdFromProtocolText(text);
+  function sideExtractTicketIdFromUrl(value) {
+    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
+    return match ? match[1] : '';
   }
 
-  function sideFindSelectedTicketCard() {
-    try {
-      const direct =
-        document.querySelector('div.p-2.border.rounded.cursor-pointer.border-blue-500') ||
-        document.querySelector('div.p-2.border.rounded.cursor-pointer.bg-blue-500') ||
-        document.querySelector('div.p-2.border.rounded.cursor-pointer[class*="border-primary"]') ||
-        document.querySelector('div.p-2.border.rounded.cursor-pointer[aria-selected="true"]');
-
-      if (direct) return direct;
-
-      const candidates = Array.from(document.querySelectorAll('div, button, [role="button"]'))
-        .filter(node => /\bCS\d{8,}\b/i.test(node.textContent || ''));
-
-      return candidates.find(node =>
-        /border-blue|bg-blue|primary|selected|active/i.test(node.className || '') ||
-        node.getAttribute('aria-selected') === 'true'
-      ) || null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function sideExtractVisibleTicketIdFromHeader() {
-    // v15.5: extrai do protocolo visível CS..., que no sistema carrega o ticketId
-    // nos 5 últimos dígitos. Ex: CS00120260427029266 -> ticketId 29266.
-    try {
-      const selected = sideFindSelectedTicketCard();
-      const selectedId = sideExtractTicketIdFromProtocolText(selected?.textContent || '');
-      if (selectedId) return selectedId;
-
-      const headerCandidates = [
-        document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4'),
-        document.querySelector('[class*="px-4"][class*="py-3"]')
-      ].filter(Boolean);
-
-      for (const header of headerCandidates) {
-        const id = sideExtractTicketIdFromProtocolText(header.textContent || '');
-        if (id) return id;
-      }
-    } catch (_) {}
-
-    return '';
-  }
-
-  function sideSetVisibleTicketId(ticketId, source = '') {
-    const id = String(ticketId || '').trim();
-    if (!id) return false;
-
-    if (id === sideVisibleTicketId && id === sideCurrentTicketId) return true;
-
-    sideVisibleTicketId = id;
-    sideCurrentTicketId = id;
-    sideClearRenderedFilesImmediately();
-    sideScheduleRender();
-
-    try {
-      console.debug(`[${SCRIPT_NAME}] ticket visível definido (${source || 'unknown'}):`, id);
-    } catch (_) {}
-
-    return true;
-  }
-
-  function sideGetCurrentTicketId() {
-    return sideVisibleTicketId || sideCurrentTicketId || '';
-  }
-
-  async function sideFetchFilesForTicket(ticketId, source = '') {
+  function sideSetCurrentTicketId(ticketId) {
     const id = String(ticketId || '').trim();
     if (!id) return;
 
-    try {
-      if (sideFilesAbortController) {
-        sideFilesAbortController.abort();
-      }
-    } catch (_) {}
+    if (sideExpectedTicketId && id !== sideExpectedTicketId) return;
 
-    const seq = ++sideFilesRequestSeq;
-    sideFilesAbortController = new AbortController();
-
-    try {
-      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          ...sideCapturedApiHeaders,
-          'Accept': 'application/json'
-        },
-        signal: sideFilesAbortController.signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const payload = await response.json();
-
-      if (seq !== sideFilesRequestSeq || String(sideVisibleTicketId) !== id) {
-        return;
-      }
-
-      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error(`[${SCRIPT_NAME}] falha ao buscar arquivos do ticket ${id} (${source || 'manual'})`, error);
-
-      if (seq === sideFilesRequestSeq && String(sideVisibleTicketId) === id && !String(source || '').includes('retry')) {
-        window.setTimeout(() => {
-          try {
-            if (String(sideVisibleTicketId) === id) {
-              sideFetchFilesForTicket(id, `${source || 'manual'}-retry`);
-            }
-          } catch (_) {}
-        }, 350);
-      }
-    }
-  }
-
-  function sideSetVisibleTicketAndFetch(ticketId, source = '') {
-    const id = String(ticketId || '').trim();
-    if (!id) return false;
-
-    const changed = id !== sideVisibleTicketId;
-    sideVisibleTicketId = id;
+    const changed = id !== sideCurrentTicketId;
     sideCurrentTicketId = id;
-    sideAwaitingNextFilesResponse = false;
 
     if (changed) {
       sideClearRenderedFilesImmediately();
     }
 
     sideScheduleRender();
-    sideFetchFilesForTicket(id, source);
-    return true;
   }
 
-  function sideCaptureRealTicketIdFromRequest(requestUrl) {
+  function sideGetCurrentTicketId() {
+    if (sideCurrentTicketId) return sideCurrentTicketId;
+
     try {
-      if (!sidePendingTicketCaptureUntil || Date.now() > sidePendingTicketCaptureUntil) return false;
-
-      const id = sideExtractTicketIdFromUrl(requestUrl);
-      if (!id) return false;
-
-      // Se o sistema revelou um ticketId real durante a troca, ele vence o fallback.
-      if (id !== sideVisibleTicketId) {
-        sideSetVisibleTicketAndFetch(id, 'captured-real-request');
+      const entries = performance.getEntriesByType('resource') || [];
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        const url = entries[i]?.name || '';
+        if (!url.includes('/tickets/')) continue;
+        const id = sideExtractTicketIdFromUrl(url);
+        if (id) {
+          sideCurrentTicketId = id;
+          return id;
+        }
       }
+    } catch (_) {}
 
-      sidePendingTicketCaptureUntil = 0;
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
-    const id = sideExtractVisibleTicketIdFromHeader();
-    if (id) {
-      if (id !== sideVisibleTicketId) {
-        sideSetVisibleTicketAndFetch(id, source);
-      }
-      return id;
-    }
-
-    return sideGetCurrentTicketId();
+    return '';
   }
 
   function sideClearRenderedFilesImmediately() {
@@ -2801,42 +2505,72 @@
     }
   }
 
+  async function sideFetchExpectedFilesDirect(ticketId, source = '') {
+    const id = String(ticketId || '').trim();
+    if (!id) return;
+
+    try {
+      if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
+    } catch (_) {}
+
+    const seq = ++sideDirectFilesRequestSeq;
+    sideDirectFilesAbortController = new AbortController();
+
+    try {
+      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        },
+        signal: sideDirectFilesAbortController.signal
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const payload = await response.json();
+
+      if (seq !== sideDirectFilesRequestSeq) return;
+      if (sideExpectedTicketId && id !== sideExpectedTicketId) return;
+
+      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.error(`[${SCRIPT_NAME}] falha no fallback direto de arquivos`, { id, source, error });
+    }
+  }
+
   function processTicketFilesPayload(payload, requestUrl = '') {
     try {
       if (!payload || typeof payload !== 'object') return;
       if (!Array.isArray(payload.files) && !String(requestUrl || '').includes('/files')) return;
 
       const ticketId = sideExtractTicketIdFromUrl(requestUrl) ||
-        String(payload.files?.[0]?.ticketId || '').trim();
+        String(payload.files?.[0]?.ticketId || sideGetCurrentTicketId() || '').trim();
 
       if (!ticketId) return;
+
+      // v16.0: se houve clique em ticket e temos um ticket esperado,
+      // respostas atrasadas de outro ticket ficam em cache, mas não renderizam.
+      if (sideExpectedTicketId && String(ticketId) !== String(sideExpectedTicketId)) {
+        const staleFiles = Array.isArray(payload.files)
+          ? payload.files.map(sideNormalizeFile).filter(Boolean)
+          : [];
+
+        SIDE_FILES_BY_TICKET_ID.set(String(ticketId), staleFiles);
+        return;
+      }
 
       const files = Array.isArray(payload.files)
         ? payload.files.map(sideNormalizeFile).filter(Boolean)
         : [];
 
-      SIDE_FILES_BY_TICKET_ID.set(ticketId, files);
-
-      if (!sideVisibleTicketId && sideAwaitingNextFilesResponse) {
-        sideVisibleTicketId = String(ticketId);
-        sideCurrentTicketId = String(ticketId);
-        sideAwaitingNextFilesResponse = false;
-      }
+      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), files);
+      sideSetCurrentTicketId(ticketId);
 
       if (SIDE_FILES_BY_TICKET_ID.size > SIDE_FILES_CACHE_LIMIT) {
         const overflow = SIDE_FILES_BY_TICKET_ID.size - SIDE_FILES_CACHE_LIMIT;
         Array.from(SIDE_FILES_BY_TICKET_ID.keys()).slice(0, overflow).forEach(key => SIDE_FILES_BY_TICKET_ID.delete(key));
-      }
-
-      const visibleId = sideVisibleTicketId;
-
-      // Anti-race: depois que o ticket visível foi definido, respostas atrasadas
-      // de outros tickets ficam em cache, mas não renderizam.
-      if (!visibleId || String(ticketId) !== String(visibleId)) {
-        try {
-          console.debug(`[${SCRIPT_NAME}] arquivos ignorados por anti-race`, { ticketId, visibleId });
-        } catch (_) {}
-        return;
       }
 
       sideScheduleRender();
@@ -3059,7 +2793,7 @@
   }
 
   function sideGetFiles() {
-    const ticketId = sideVisibleTicketId;
+    const ticketId = sideCurrentTicketId;
     return ticketId ? (SIDE_FILES_BY_TICKET_ID.get(ticketId) || []) : [];
   }
 
@@ -3873,12 +3607,9 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
-    if (!sideVisibleTicketId) {
-      sideRefreshVisibleTicketIdFromDom('sync-files-missing-id');
-      if (!sideVisibleTicketId) {
-        sideClearRenderedFilesImmediately();
-        return;
-      }
+    if (!sideCurrentTicketId) {
+      sideClearRenderedFilesImmediately();
+      return;
     }
 
     const files = sideGetFiles();
@@ -3901,6 +3632,7 @@
   function sideApplyView() {
     try {
       sideMarkTabs();
+
       const host = sideFindHost();
       if (!host) return;
 
@@ -3962,26 +3694,6 @@
     sideSetNotesMode(true);
   }
 
-
-  window.tmEffinityFilesDebug = {
-    getVisibleTicketId() {
-      return sideVisibleTicketId;
-    },
-    getProtocolMap() {
-      return {
-        protocol: Array.from(sideTicketIdByProtocol.entries()),
-        suffix: Array.from(sideTicketIdByProtocolSuffix.entries())
-      };
-    },
-    getFiles() {
-      return SIDE_FILES_BY_TICKET_ID.get(sideVisibleTicketId) || [];
-    },
-    refetch() {
-      if (sideVisibleTicketId) sideFetchFilesForTicket(sideVisibleTicketId, 'manual-debug');
-    }
-  };
-
-
   function sideInstallTabHandlers() {
     if (window.__tmEffinitySideTabsInstalled) return;
     window.__tmEffinitySideTabsInstalled = true;
@@ -4032,35 +3744,31 @@
 
         const clickedTicketCard = sideFindTicketCardFromTarget(target);
         if (clickedTicketCard) {
-          const clickedId = sideExtractTicketIdFromProtocolText(clickedTicketCard.textContent || '');
+          const expectedId = sideExtractExpectedTicketIdFromText(clickedTicketCard.textContent || '');
 
           sideCurrentTicketId = '';
-          sideVisibleTicketId = '';
-          sideAwaitingNextFilesResponse = true;
-          sidePendingTicketCaptureUntil = Date.now() + 1400;
+          sideExpectedTicketId = expectedId || '';
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          // Fallback imediato: garante exibição. Se uma requisição real aparecer
-          // logo depois, sideCaptureRealTicketIdFromRequest corrige automaticamente.
-          if (clickedId) {
+          // Se o React não disparar /files, usamos fallback direto para o ticket esperado.
+          if (sideExpectedTicketId) {
             window.setTimeout(() => {
-              if (!sideVisibleTicketId) {
-                sideSetVisibleTicketAndFetch(clickedId, 'ticket-click-cs-fallback');
-              }
-            }, 0);
+              try {
+                if (!sideCurrentTicketId && sideExpectedTicketId === expectedId) {
+                  sideFetchExpectedFilesDirect(expectedId, 'ticket-click-fallback');
+                }
+              } catch (_) {}
+            }, 350);
           }
 
           for (const delay of [80, 180, 360, 700, 1200]) {
             window.setTimeout(() => {
               try {
-                if (!sideVisibleTicketId) {
-                  const id = sideExtractVisibleTicketIdFromHeader();
-                  if (id) sideSetVisibleTicketAndFetch(id, 'ticket-click-poll-cs');
-                  else sideClearRenderedFilesImmediately();
+                if (!sideCurrentTicketId) {
+                  sideClearRenderedFilesImmediately();
                 }
-                sideScheduleRender();
               } catch (_) {}
             }, delay);
           }

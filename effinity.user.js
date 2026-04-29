@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      15.6
+// @version      15.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '15.6';
+  const SCRIPT_VERSION = '15.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -191,7 +191,7 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
-      sideResolvePendingTicketFromRequestUrl(requestUrl);
+      sideCaptureRealTicketIdFromRequest(requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
         try {
@@ -2410,14 +2410,12 @@
   let sideAwaitingNextFilesResponse = false;
   let sideFilesAbortController = null;
   let sideFilesRequestSeq = 0;
-  let sidePendingTicketToken = 0;
-  let sidePendingTicketUntil = 0;
+  let sidePendingTicketCaptureUntil = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
   function sideExtractTicketIdFromUrl(value) {
-    const text = String(value || '');
-    const match = text.match(/\/tickets\/(\d+)(?:\/|\?|#|$)/);
+    const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
     return match ? match[1] : '';
   }
 
@@ -2500,7 +2498,6 @@
 
     const seq = ++sideFilesRequestSeq;
     sideFilesAbortController = new AbortController();
-    sidePendingTicketUntil = 0;
 
     try {
       const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
@@ -2547,39 +2544,19 @@
     return true;
   }
 
-  function sideOpenPendingTicketCaptureWindow(source = 'ticket-click') {
-    sidePendingTicketToken += 1;
-    sidePendingTicketUntil = Date.now() + 1400;
-    sideAwaitingNextFilesResponse = true;
-
-    const token = sidePendingTicketToken;
-
-    window.setTimeout(() => {
-      try {
-        if (token !== sidePendingTicketToken) return;
-        if (sideVisibleTicketId) return;
-
-        const fallbackId = sideExtractVisibleTicketIdFromHeader();
-        if (fallbackId) {
-          sideSetVisibleTicketAndFetch(fallbackId, `${source}-fallback-cs`);
-        } else {
-          sideClearRenderedFilesImmediately();
-        }
-      } catch (_) {}
-    }, 900);
-  }
-
-  function sideResolvePendingTicketFromRequestUrl(requestUrl) {
+  function sideCaptureRealTicketIdFromRequest(requestUrl) {
     try {
-      if (!sidePendingTicketToken) return false;
-      if (Date.now() > sidePendingTicketUntil) return false;
+      if (!sidePendingTicketCaptureUntil || Date.now() > sidePendingTicketCaptureUntil) return false;
 
       const id = sideExtractTicketIdFromUrl(requestUrl);
       if (!id) return false;
 
-      sidePendingTicketToken += 1;
-      sidePendingTicketUntil = 0;
-      sideSetVisibleTicketAndFetch(id, 'captured-real-request');
+      // Se o sistema revelou um ticketId real durante a troca, ele vence o fallback.
+      if (id !== sideVisibleTicketId) {
+        sideSetVisibleTicketAndFetch(id, 'captured-real-request');
+      }
+
+      sidePendingTicketCaptureUntil = 0;
       return true;
     } catch (_) {
       return false;
@@ -2587,12 +2564,8 @@
   }
 
   function sideRefreshVisibleTicketIdFromDom(source = 'dom') {
-    if (sidePendingTicketToken && Date.now() <= sidePendingTicketUntil) {
-      return sideGetCurrentTicketId();
-    }
-
     const id = sideExtractVisibleTicketIdFromHeader();
-    if (id && !sideVisibleTicketId) {
+    if (id) {
       sideSetVisibleTicketAndFetch(id, source);
       return id;
     }
@@ -3832,18 +3805,34 @@
 
         const clickedTicketCard = target.closest('div.p-2.border.rounded.cursor-pointer');
         if (clickedTicketCard) {
+          const clickedId = sideExtractTicketIdFromProtocolText(clickedTicketCard.textContent || '');
+
           sideCurrentTicketId = '';
           sideVisibleTicketId = '';
+          sideAwaitingNextFilesResponse = true;
+          sidePendingTicketCaptureUntil = Date.now() + 1400;
           sideClearRenderedFilesImmediately();
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          sideOpenPendingTicketCaptureWindow('ticket-click');
+          // Fallback imediato: garante exibição. Se uma requisição real aparecer
+          // logo depois, sideCaptureRealTicketIdFromRequest corrige automaticamente.
+          if (clickedId) {
+            window.setTimeout(() => {
+              if (!sideVisibleTicketId) {
+                sideSetVisibleTicketAndFetch(clickedId, 'ticket-click-cs-fallback');
+              }
+            }, 0);
+          }
 
-          for (const delay of [120, 260, 520, 900, 1400]) {
+          for (const delay of [80, 180, 360, 700, 1200]) {
             window.setTimeout(() => {
               try {
-                if (!sideVisibleTicketId) sideClearRenderedFilesImmediately();
+                if (!sideVisibleTicketId) {
+                  const id = sideExtractVisibleTicketIdFromHeader();
+                  if (id) sideSetVisibleTicketAndFetch(id, 'ticket-click-poll-cs');
+                  else sideClearRenderedFilesImmediately();
+                }
                 sideScheduleRender();
               } catch (_) {}
             }, delay);

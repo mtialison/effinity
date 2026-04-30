@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.7
+// @version      9.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.7';
+  const SCRIPT_VERSION = '9.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -76,6 +76,7 @@
 
   let PASTE_IMAGE_ACTIVE_TICKET_ID = '';
   let PASTE_IMAGE_ACTIVE_USER_NAME = 'Alison';
+  let PASTE_IMAGE_ACTIVE_CUSTOMER_ID = '';
   let PASTE_IMAGE_UPLOAD_LOCK = false;
 
   function normalizeApiMessageText(value) {
@@ -281,6 +282,11 @@
           PASTE_IMAGE_ACTIVE_TICKET_ID = ticketId;
         }
 
+        const customerId = String(message?.customerId || '').trim();
+        if (/^\d+$/.test(customerId)) {
+          PASTE_IMAGE_ACTIVE_CUSTOMER_ID = customerId;
+        }
+
         const userName = String(message?.createdByUser?.name || message?.userName || '').trim();
         if (userName) {
           PASTE_IMAGE_ACTIVE_USER_NAME = userName;
@@ -328,6 +334,27 @@
     }
   }
 
+
+  function getStoredJsonValue(key, field) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return '';
+      const parsed = JSON.parse(raw);
+      return String(parsed?.[field] || '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function getEffinitySecurityToken() {
+    return String(localStorage.getItem('security_token') || '').trim();
+  }
+
+  function getEffinityUserEmail() {
+    return String(localStorage.getItem('temp_login_email') || '').trim() ||
+      getStoredJsonValue('user', 'email');
+  }
+
   async function uploadPastedImage(file) {
     const imageFile = buildPastedImageFile(file);
     const formData = new FormData();
@@ -335,12 +362,28 @@
     formData.append('file', imageFile);
     formData.append('description', 'WhatsApp image upload');
     formData.append('accessLevel', 'COMPANY');
-    formData.append('suggestedPath', 'whatsapp/company_3/customer_332');
+    formData.append('suggestedPath', `whatsapp/company_3/customer_${PASTE_IMAGE_ACTIVE_CUSTOMER_ID || 'unknown'}`);
     formData.append('category', 'WHATSAPP_MEDIA');
+
+    const securityToken = getEffinitySecurityToken();
+    const userEmail = getEffinityUserEmail();
+
+    const headers = {
+      'Accept': 'application/json, text/plain, */*'
+    };
+
+    if (securityToken) {
+      headers.Authorization = `Bearer ${securityToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
 
     const response = await fetch('https://api.sono.effinity.com.br/api/files/upload', {
       method: 'POST',
       credentials: 'include',
+      headers,
       body: formData
     });
 

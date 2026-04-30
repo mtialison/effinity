@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.8
+// @version      8.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.8';
+  const SCRIPT_VERSION = '8.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -42,6 +42,10 @@
   const FAVORITE_ATTR = 'data-tm-favorite';
   const FAVORITE_ACTIVE_ATTR = 'data-tm-favorite-active';
   const FAVORITE_STAR_ATTR = 'data-tm-favorite-star';
+
+  const NOTES_TAB_ATTR = 'data-tm-notes-tab';
+  const NOTES_TAB_ACTIVE_ATTR = 'data-tm-notes-active';
+  const NOTES_TABS_ROOT_ATTR = 'data-tm-notes-tabs-root';
 
   const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
   const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
@@ -440,6 +444,26 @@
       align-items: center !important;
       line-height: 1 !important;
       transform: translateY(-1px) !important;
+    }
+
+    /* ── Aba Notas adicionada pelo script ─────────────────────────────── */
+    [${NOTES_TAB_ATTR}="true"] {
+      cursor: pointer !important;
+    }
+
+    [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] [role="tab"],
+    [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] button {
+      color: hsl(var(--muted-foreground)) !important;
+    }
+
+    [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] [${NOTES_TAB_ATTR}="true"] {
+      color: #ffffff !important;
+    }
+
+    [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] [${NOTES_TAB_ATTR}="true"] svg,
+    [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] [${NOTES_TAB_ATTR}="true"] span {
+      color: #ffffff !important;
+      stroke: currentColor !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -2113,9 +2137,156 @@
   }
 
   /* ========================================================================
+   * SEÇÃO: ABA NOTAS
+   * Etapa 1: cria somente a aba Notas, usando o mesmo ícone da aba Arquivos.
+   * ====================================================================== */
+  function isSidePanelTabsRoot(root) {
+    if (!root || !(root instanceof HTMLElement)) return false;
+
+    const text = normalizeText(root.textContent).toLowerCase();
+    return (
+      text.includes('geral') &&
+      text.includes('timeline') &&
+      text.includes('arquivos')
+    );
+  }
+
+  function findSidePanelTabsRoot() {
+    const candidates = Array.from(document.querySelectorAll('[role="tablist"], div.flex, div.inline-flex'));
+    return candidates.find(isSidePanelTabsRoot) || null;
+  }
+
+  function getTabText(tab) {
+    return normalizeText(tab?.textContent || '').toLowerCase();
+  }
+
+  function findSidePanelTabs() {
+    const root = findSidePanelTabsRoot();
+    if (!root) return [];
+
+    const directTabs = Array.from(root.querySelectorAll('[role="tab"], button, a'))
+      .filter(tab => {
+        const text = getTabText(tab);
+        return ['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs', 'notas'].includes(text);
+      });
+
+    return directTabs;
+  }
+
+  function replaceTabVisibleText(tab, fromText, toText) {
+    try {
+      const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+
+      while (walker.nextNode()) {
+        nodes.push(walker.currentNode);
+      }
+
+      for (const node of nodes) {
+        if (new RegExp(fromText, 'i').test(node.nodeValue || '')) {
+          node.nodeValue = String(node.nodeValue || '').replace(new RegExp(fromText, 'i'), toText);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function clearNativeSideTabsActiveState(root) {
+    try {
+      for (const tab of Array.from(root.querySelectorAll('[role="tab"], button, a'))) {
+        if (!(tab instanceof HTMLElement)) continue;
+        if (tab.getAttribute(NOTES_TAB_ATTR) === 'true') continue;
+
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('data-state', 'inactive');
+        tab.classList.remove('text-white', 'text-primary-foreground', 'data-[state=active]:text-primary-foreground');
+      }
+    } catch (_) {}
+  }
+
+  function setNotesTabActive(isActive) {
+    const root = findSidePanelTabsRoot();
+    if (!root) return;
+
+    if (isActive) {
+      root.setAttribute(NOTES_TAB_ACTIVE_ATTR, 'true');
+    } else {
+      root.removeAttribute(NOTES_TAB_ACTIVE_ATTR);
+    }
+
+    const notesTab = root.querySelector(`[${NOTES_TAB_ATTR}="true"]`);
+    if (notesTab instanceof HTMLElement) {
+      notesTab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      notesTab.setAttribute('data-state', isActive ? 'active' : 'inactive');
+      notesTab.classList.toggle('text-white', isActive);
+    }
+
+    if (isActive) {
+      clearNativeSideTabsActiveState(root);
+    }
+  }
+
+  function ensureNotesTab() {
+    try {
+      const root = findSidePanelTabsRoot();
+      if (!root) return;
+
+      root.setAttribute(NOTES_TABS_ROOT_ATTR, 'true');
+
+      if (root.querySelector(`[${NOTES_TAB_ATTR}="true"]`)) return;
+
+      const tabs = findSidePanelTabs();
+      const filesTab = tabs.find(tab => getTabText(tab) === 'arquivos');
+      if (!filesTab || !filesTab.parentElement) return;
+
+      const notesTab = filesTab.cloneNode(true);
+      if (!(notesTab instanceof HTMLElement)) return;
+
+      notesTab.setAttribute(NOTES_TAB_ATTR, 'true');
+      notesTab.setAttribute('aria-selected', 'false');
+      notesTab.setAttribute('data-state', 'inactive');
+      notesTab.removeAttribute('id');
+      notesTab.removeAttribute('aria-controls');
+      notesTab.classList.remove('text-white', 'text-primary-foreground');
+
+      replaceTabVisibleText(notesTab, 'Arquivos', 'Notas');
+
+      notesTab.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setNotesTabActive(true);
+      }, true);
+
+      filesTab.parentElement.insertBefore(notesTab, filesTab.nextSibling);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao criar aba Notas`, error);
+    }
+  }
+
+  function installNotesTabClickReset() {
+    if (window.__tmEffinityNotesTabClickResetInstalled) return;
+    window.__tmEffinityNotesTabClickResetInstalled = true;
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const tab = target.closest('[role="tab"], button, a');
+      if (!tab) return;
+
+      if (tab.getAttribute(NOTES_TAB_ATTR) === 'true') return;
+
+      const text = getTabText(tab);
+      if (['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs'].includes(text)) {
+        setNotesTabActive(false);
+      }
+    }, true);
+  }
+
+  /* ========================================================================
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
   function applySelectedFeatures() {
+    ensureNotesTab();
     hideSelectedCards();
     applyDateToMessages();
     reorganizeAgentArea();
@@ -2132,6 +2303,7 @@
   }
 
   function applyFastAntiFlickerPass() {
+    ensureNotesTab();
     hideSelectedCards();
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();
@@ -2174,7 +2346,7 @@
     if (!trigger) return false;
 
     const text = normalizeText(trigger.textContent).toLowerCase();
-    return ['geral', 'timeline', 'arquivos', 'histórico', 'historico', 'msgs'].includes(text);
+    return ['geral', 'timeline', 'arquivos', 'notas', 'histórico', 'historico', 'msgs'].includes(text);
   }
 
   function startObserver() {
@@ -2210,6 +2382,7 @@
     init();
     startObserver();
     startFavoriteLayer();
+    installNotesTabClickReset();
   }
 
   installMessageApiInterceptors();

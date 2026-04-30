@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.3
+// @version      9.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.3';
+  const SCRIPT_VERSION = '9.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -882,6 +882,10 @@
       overflow: hidden !important;
       cursor: default !important;
       touch-action: none !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-body="true"] {
+      padding: 10px !important;
     }
 
     [data-tm-image-popup-body="true"][data-tm-pannable="true"] {
@@ -3315,9 +3319,26 @@
           sideSetPopupSizeToImageFit(popup, false, true);
         } else {
           popup.setAttribute('data-tm-maximized', 'true');
+
+          const width = Math.min(920, window.innerWidth - 48);
+          const height = Math.min(720, window.innerHeight - 48);
+          const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
+          const top = Math.max(8, Math.round((window.innerHeight - height) / 2));
+
+          popup.style.setProperty('width', `${width}px`, 'important');
+          popup.style.setProperty('height', `${height}px`, 'important');
+          popup.style.setProperty('left', `${left}px`, 'important');
+          popup.style.setProperty('top', `${top}px`, 'important');
+          popup.style.setProperty('transform', 'none', 'important');
+
+          popup.dataset.tmImageUserZoom = '1';
+          popup.dataset.tmImagePanX = '0';
+          popup.dataset.tmImagePanY = '0';
+
           maximize.title = 'Restaurar';
           maximize.setAttribute('aria-label', 'Restaurar');
-          sideSetPopupSizeToImageFit(popup, true, true);
+
+          window.setTimeout(() => sideRecalculatePopupFit(popup, true), 0);
         }
       }, true);
 

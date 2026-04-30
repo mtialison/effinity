@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.8
+// @version      9.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.8';
+  const SCRIPT_VERSION = '9.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -403,13 +403,26 @@
     const id = String(ticketId || '').trim();
     if (!id) throw new Error('TicketId não encontrado');
 
+    const securityToken = getEffinitySecurityToken();
+    const userEmail = getEffinityUserEmail();
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*'
+    };
+
+    if (securityToken) {
+      headers.Authorization = `Bearer ${securityToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+
     const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/messages`, {
       method: 'POST',
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         content: '',
         type: 'IMAGE',

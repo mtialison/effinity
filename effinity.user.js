@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.4
+// @version      9.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.4';
+  const SCRIPT_VERSION = '9.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2666,6 +2666,16 @@
   }
 
   let imagePopupCounter = 0;
+
+  function sideResetPopupCascadeIfNeeded() {
+    try {
+      const active = document.querySelectorAll('[data-tm-image-popup="true"]').length;
+      if (active === 0) {
+        imagePopupCounter = 0;
+      }
+    } catch (_) {}
+  }
+
   let imagePopupZIndex = 99990;
 
   function sideIsPreviewableImage(file) {
@@ -3226,6 +3236,7 @@
         return;
       }
 
+      sideResetPopupCascadeIfNeeded();
       imagePopupCounter += 1;
       imagePopupZIndex += 1;
 

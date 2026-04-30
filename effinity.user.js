@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.3
+// @version      16.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.3';
+  const SCRIPT_VERSION = '16.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -188,9 +188,105 @@
     if (payload.result && typeof payload.result === 'object') extractApiMessages(payload.result);
   }
 
+
+  function sideIsTicketListUrl(requestUrl = '') {
+    const url = String(requestUrl || '');
+    return /\/api\/whatsapp\/tickets(?:\?|$)/.test(url) &&
+      (url.includes('page=') || url.includes('size=') || url.includes('agentId=') || url.includes('queueIds='));
+  }
+
+  function sideLooksLikeOpenTicketPayload(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+
+    // Payload de ticket aberto normalmente tem id + ticketNumber/customer/conversation,
+    // enquanto lista vem em content[] e arquivos vêm em files[].
+    if (Array.isArray(payload.content) || Array.isArray(payload.files) || Array.isArray(payload.notes)) return false;
+
+    const id = String(payload.id || payload.ticketId || '').trim();
+    if (!/^\d{4,8}$/.test(id)) return false;
+
+    return !!(
+      payload.ticketNumber ||
+      payload.conversationId ||
+      payload.customerId ||
+      payload.customerName ||
+      payload.customerPhone ||
+      payload.currentQueueId ||
+      payload.currentStatusSlug
+    );
+  }
+
+  function sideExtractTicketIdFromOpenPayload(payload) {
+    try {
+      if (!sideLooksLikeOpenTicketPayload(payload)) return '';
+
+      const id = String(payload.id || payload.ticketId || '').trim();
+      if (/^\d{4,8}$/.test(id)) return id;
+    } catch (_) {}
+
+    return '';
+  }
+
+  function sideIsOpenTicketDetailUrl(requestUrl = '') {
+    const url = String(requestUrl || '');
+
+    if (!/\/api\/whatsapp\/tickets\/\d+/.test(url)) return false;
+
+    // Não considerar arquivos/notas como fonte primária do "ticket ativo";
+    // elas podem chegar atrasadas.
+    if (/\/files(?:\?|$)/.test(url)) return false;
+    if (/\/notes(?:\?|$)/.test(url)) return false;
+
+    return true;
+  }
+
+  function sideResolveActiveTicketFromOpenRequest(payload, requestUrl = '') {
+    try {
+      const url = String(requestUrl || '');
+      if (!url.includes('/api/whatsapp/tickets')) return false;
+      if (sideIsTicketListUrl(url)) return false;
+
+      let id = '';
+
+      if (sideIsOpenTicketDetailUrl(url)) {
+        id = sideExtractTicketIdFromUrl(url);
+      }
+
+      if (!id) {
+        id = sideExtractTicketIdFromOpenPayload(payload);
+      }
+
+      if (!id) return false;
+
+      // Esse é o ticket realmente aberto pelo app.
+      sideActiveTicketIdFromOpenRequest = id;
+      sideLastOpenTicketRequestAt = Date.now();
+
+      if (sideExpectedTicketId && sideExpectedTicketId !== id) {
+        // Se clique/lista resolveu errado, a requisição real vence.
+        sideExpectedTicketId = id;
+        sideCurrentTicketId = '';
+        sideClearRenderedFilesImmediately();
+      } else if (!sideExpectedTicketId) {
+        sideExpectedTicketId = id;
+      }
+
+      if (!sideCurrentTicketId || sideCurrentTicketId !== id) {
+        sideFetchExpectedFilesDirect(id, 'active-ticket-request');
+      }
+
+      sideScheduleRender();
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao resolver ticket ativo por requisição aberta`, error);
+      return false;
+    }
+  }
+
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      sideResolveActiveTicketFromOpenRequest(payload, requestUrl);
       sideIndexTicketsFromListPayload(payload, requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
@@ -218,7 +314,10 @@
           const clone = response.clone();
           const contentType = clone.headers?.get?.('content-type') || '';
           if (contentType.includes('application/json')) {
-            clone.json().then(payload => processApiPayload(payload, String(args?.[0]?.url || args?.[0] || ''))).catch(() => {});
+            clone.json().then(payload => {
+              const requestUrl = String(args?.[0]?.url || args?.[0] || response?.url || '');
+              processApiPayload(payload, requestUrl);
+            }).catch(() => {});
           }
         } catch (_) {}
 
@@ -2414,6 +2513,8 @@
   const sideTicketIdByPhone = new Map();
   const sideTicketIdByName = new Map();
   let sideLastTicketListIndexAt = 0;
+  let sideActiveTicketIdFromOpenRequest = '';
+  let sideLastOpenTicketRequestAt = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2712,13 +2813,19 @@
 
       // v16.0: se houve clique em ticket e temos um ticket esperado,
       // respostas atrasadas de outro ticket ficam em cache, mas não renderizam.
-      if (sideExpectedTicketId && String(ticketId) !== String(sideExpectedTicketId)) {
+      const authoritativeId = sideActiveTicketIdFromOpenRequest || sideExpectedTicketId;
+
+      if (authoritativeId && String(ticketId) !== String(authoritativeId)) {
         const staleFiles = Array.isArray(payload.files)
           ? payload.files.map(sideNormalizeFile).filter(Boolean)
           : [];
 
         SIDE_FILES_BY_TICKET_ID.set(String(ticketId), staleFiles);
         return;
+      }
+
+      if (sideActiveTicketIdFromOpenRequest && String(ticketId) === String(sideActiveTicketIdFromOpenRequest)) {
+        sideExpectedTicketId = String(ticketId);
       }
 
       const files = Array.isArray(payload.files)
@@ -3876,6 +3983,14 @@
     size() {
       return sideTicketIdByNumber.size;
     },
+    active() {
+      return {
+        activeFromOpenRequest: sideActiveTicketIdFromOpenRequest,
+        lastOpenRequestAt: sideLastOpenTicketRequestAt,
+        expected: sideExpectedTicketId,
+        current: sideCurrentTicketId
+      };
+    },
     entries() {
       return {
         number: Array.from(sideTicketIdByNumber.entries()),
@@ -3951,6 +4066,8 @@
 
           sideCurrentTicketId = '';
           sideExpectedTicketId = expectedId || '';
+          sideActiveTicketIdFromOpenRequest = '';
+          sideLastOpenTicketRequestAt = 0;
           sideDirectFilesRequestSeq += 1;
           try {
             if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
@@ -3963,11 +4080,13 @@
           // O fetch direto passa a ser a fonte principal, e a resposta nativa /files
           // continua aceita apenas se bater com o ticket esperado.
           if (sideExpectedTicketId) {
-            for (const delay of [0, 180, 600]) {
+            for (const delay of [220, 650, 1100]) {
               window.setTimeout(() => {
                 try {
-                  if (!sideCurrentTicketId && sideExpectedTicketId === expectedId) {
-                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-indexed-${delay}`);
+                  // A requisição real do ticket aberto tem prioridade.
+                  // Se ela não apareceu, usamos o mapa/lista como fallback.
+                  if (!sideCurrentTicketId && sideExpectedTicketId === expectedId && !sideActiveTicketIdFromOpenRequest) {
+                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-fallback-after-open-request-${delay}`);
                   }
                 } catch (_) {}
               }, delay);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      8.9
+// @version      9.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.9';
+  const SCRIPT_VERSION = '9.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -46,6 +46,8 @@
   const NOTES_TAB_ATTR = 'data-tm-notes-tab';
   const NOTES_TAB_ACTIVE_ATTR = 'data-tm-notes-active';
   const NOTES_TABS_ROOT_ATTR = 'data-tm-notes-tabs-root';
+  const NOTES_CONTENT_ATTR = 'data-tm-notes-content';
+  const NOTES_NATIVE_CONTENT_ATTR = 'data-tm-notes-native-content';
 
   const TICKET_HEADER_ATTR = 'data-tm-ticket-header';
   const TICKET_INFO_ROW_HIDDEN_ATTR = 'data-tm-ticket-info-row-hidden';
@@ -464,6 +466,19 @@
     [${NOTES_TABS_ROOT_ATTR}="true"][${NOTES_TAB_ACTIVE_ATTR}="true"] [${NOTES_TAB_ATTR}="true"] span {
       color: #ffffff !important;
       stroke: currentColor !important;
+    }
+
+    [${NOTES_CONTENT_ATTR}="true"] {
+      display: none !important;
+      padding: 16px !important;
+    }
+
+    [${NOTES_CONTENT_ATTR}="true"][data-tm-notes-visible="true"] {
+      display: block !important;
+    }
+
+    [${NOTES_NATIVE_CONTENT_ATTR}="true"][data-tm-notes-native-hidden="true"] {
+      display: none !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -2203,6 +2218,71 @@
     } catch (_) {}
   }
 
+  function findSidePanelContentHost() {
+    const tabsRoot = findSidePanelTabsRoot();
+    if (!tabsRoot) return null;
+
+    let node = tabsRoot.parentElement;
+    while (node && node !== document.body) {
+      const children = Array.from(node.children).filter(child => child instanceof HTMLElement);
+      const tabsIndex = children.indexOf(tabsRoot);
+
+      if (tabsIndex >= 0 && children.length > tabsIndex + 1) {
+        const afterTabs = children.slice(tabsIndex + 1).find(child => {
+          const text = normalizeText(child.textContent || '');
+          return text && !isSidePanelTabsRoot(child);
+        });
+
+        if (afterTabs) return afterTabs.parentElement || node;
+      }
+
+      node = node.parentElement;
+    }
+
+    return tabsRoot.parentElement || null;
+  }
+
+  function ensureNotesContentContainer() {
+    const host = findSidePanelContentHost();
+    if (!host) return null;
+
+    let notesContent = host.querySelector(`:scope > [${NOTES_CONTENT_ATTR}="true"]`);
+    if (!notesContent) {
+      notesContent = document.createElement('div');
+      notesContent.setAttribute(NOTES_CONTENT_ATTR, 'true');
+      host.appendChild(notesContent);
+    }
+
+    return notesContent;
+  }
+
+  function setNotesContentVisible(isVisible) {
+    const host = findSidePanelContentHost();
+    if (!host) return;
+
+    const notesContent = ensureNotesContentContainer();
+
+    for (const child of Array.from(host.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+
+      if (child.getAttribute(NOTES_CONTENT_ATTR) === 'true') {
+        child.setAttribute('data-tm-notes-visible', isVisible ? 'true' : 'false');
+        continue;
+      }
+
+      if (isVisible) {
+        child.setAttribute(NOTES_NATIVE_CONTENT_ATTR, 'true');
+        child.setAttribute('data-tm-notes-native-hidden', 'true');
+      } else if (child.getAttribute(NOTES_NATIVE_CONTENT_ATTR) === 'true') {
+        child.removeAttribute('data-tm-notes-native-hidden');
+      }
+    }
+
+    if (notesContent && isVisible) {
+      notesContent.innerHTML = '';
+    }
+  }
+
   function setNotesTabActive(isActive) {
     const root = findSidePanelTabsRoot();
     if (!root) return;
@@ -2222,6 +2302,9 @@
 
     if (isActive) {
       clearNativeSideTabsActiveState(root);
+      setNotesContentVisible(true);
+    } else {
+      setNotesContentVisible(false);
     }
   }
 

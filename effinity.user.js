@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.2
+// @version      16.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.2';
+  const SCRIPT_VERSION = '16.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2411,6 +2411,8 @@
   let sideDirectFilesRequestSeq = 0;
   const sideTicketIdByNumber = new Map();
   const sideTicketDataById = new Map();
+  const sideTicketIdByPhone = new Map();
+  const sideTicketIdByName = new Map();
   let sideLastTicketListIndexAt = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
@@ -2418,8 +2420,22 @@
 
 
   function sideNormalizeTicketNumber(value) {
-    const match = String(value || '').match(/\bCS\d{8,}\b/i);
+    const match = String(value || '').match(/\b[A-Z]{2}\d{8,}\b/i);
     return match ? match[0].toUpperCase() : '';
+  }
+
+  function sideNormalizePhone(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length < 8) return '';
+    return digits.slice(-11);
+  }
+
+  function sideNormalizeName(value) {
+    return normalizeText(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9À-ÿ\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function sideIndexTicketObject(ticket) {
@@ -2428,10 +2444,15 @@
 
       const id = String(ticket.id || ticket.ticketId || '').trim();
       const ticketNumber = sideNormalizeTicketNumber(ticket.ticketNumber || ticket.protocol || ticket.code || '');
+      const phone = sideNormalizePhone(ticket.customerPhone || ticket.phone || ticket.whatsapp || '');
+      const name = sideNormalizeName(ticket.customerName || ticket.name || ticket.patientName || '');
 
-      if (!id || !ticketNumber) return false;
+      if (!id) return false;
 
-      sideTicketIdByNumber.set(ticketNumber, id);
+      if (ticketNumber) sideTicketIdByNumber.set(ticketNumber, id);
+      if (phone) sideTicketIdByPhone.set(phone, id);
+      if (name) sideTicketIdByName.set(name, id);
+
       sideTicketDataById.set(id, {
         id,
         ticketNumber,
@@ -2440,7 +2461,7 @@
         title: String(ticket.title || '').trim()
       });
 
-      return true;
+      return !!(ticketNumber || phone || name);
     } catch (_) {
       return false;
     }
@@ -2449,7 +2470,6 @@
   function sideIndexTicketsFromListPayload(payload, requestUrl = '') {
     try {
       if (!payload || typeof payload !== 'object') return;
-      const url = String(requestUrl || '');
 
       const list =
         Array.isArray(payload.content) ? payload.content :
@@ -2468,8 +2488,9 @@
       if (indexed) {
         sideLastTicketListIndexAt = Date.now();
         window.setTimeout(sideStampTicketCardsWithIds, 0);
-        window.setTimeout(sideStampTicketCardsWithIds, 250);
-        window.setTimeout(sideStampTicketCardsWithIds, 800);
+        window.setTimeout(sideStampTicketCardsWithIds, 120);
+        window.setTimeout(sideStampTicketCardsWithIds, 350);
+        window.setTimeout(sideStampTicketCardsWithIds, 900);
       }
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao indexar lista de tickets`, error);
@@ -2482,7 +2503,10 @@
       if (cards.length) return cards;
 
       return Array.from(document.querySelectorAll('[role="button"], div, button'))
-        .filter(node => node instanceof HTMLElement && /\bCS\d{8,}\b/i.test(node.textContent || ''));
+        .filter(node => node instanceof HTMLElement && (
+          /\b[A-Z]{2}\d{8,}\b/i.test(node.textContent || '') ||
+          sideNormalizePhone(node.textContent || '')
+        ));
     } catch (_) {
       return [];
     }
@@ -2495,13 +2519,24 @@
     if (existing) return existing;
 
     const text = normalizeText(card.textContent || '');
-    const ticketNumber = sideNormalizeTicketNumber(text);
 
+    const ticketNumber = sideNormalizeTicketNumber(text);
     if (ticketNumber && sideTicketIdByNumber.has(ticketNumber)) {
       return sideTicketIdByNumber.get(ticketNumber);
     }
 
-    // Fallback consciente: pelo formato da response enviada, ticketNumber termina com o id real.
+    const phone = sideNormalizePhone(text);
+    if (phone && sideTicketIdByPhone.has(phone)) {
+      return sideTicketIdByPhone.get(phone);
+    }
+
+    const cardName = sideNormalizeName(text);
+    if (cardName) {
+      for (const [name, id] of sideTicketIdByName.entries()) {
+        if (name && cardName.includes(name)) return id;
+      }
+    }
+
     if (ticketNumber) {
       const digits = ticketNumber.replace(/\D/g, '');
       return digits.length >= 5 ? digits.slice(-5) : '';
@@ -2517,13 +2552,11 @@
 
         const text = normalizeText(card.textContent || '');
         const ticketNumber = sideNormalizeTicketNumber(text);
-        if (!ticketNumber) continue;
-
-        const id = sideTicketIdByNumber.get(ticketNumber) || sideResolveTicketIdFromCard(card);
+        const id = sideResolveTicketIdFromCard(card);
         if (!id) continue;
 
         card.setAttribute('data-tm-ticket-id', id);
-        card.setAttribute('data-tm-ticket-number', ticketNumber);
+        if (ticketNumber) card.setAttribute('data-tm-ticket-number', ticketNumber);
       }
     } catch (_) {}
   }
@@ -2538,6 +2571,9 @@
           if (node.matches?.('div.p-2.border.rounded.cursor-pointer')) return node;
           if (node.getAttribute('data-tm-ticket-id')) return node;
           if (sideNormalizeTicketNumber(node.textContent || '')) return node;
+
+          const possibleId = sideResolveTicketIdFromCard(node);
+          if (possibleId) return node;
         }
 
         node = node.parentElement;
@@ -2550,9 +2586,23 @@
 
   function sideExtractExpectedTicketIdFromText(text) {
     try {
-      const ticketNumber = sideNormalizeTicketNumber(text);
+      const value = String(text || '');
+
+      const ticketNumber = sideNormalizeTicketNumber(value);
       if (ticketNumber && sideTicketIdByNumber.has(ticketNumber)) {
         return sideTicketIdByNumber.get(ticketNumber);
+      }
+
+      const phone = sideNormalizePhone(value);
+      if (phone && sideTicketIdByPhone.has(phone)) {
+        return sideTicketIdByPhone.get(phone);
+      }
+
+      const nameText = sideNormalizeName(value);
+      if (nameText) {
+        for (const [name, id] of sideTicketIdByName.entries()) {
+          if (name && nameText.includes(name)) return id;
+        }
       }
 
       if (ticketNumber) {
@@ -3827,7 +3877,11 @@
       return sideTicketIdByNumber.size;
     },
     entries() {
-      return Array.from(sideTicketIdByNumber.entries());
+      return {
+        number: Array.from(sideTicketIdByNumber.entries()),
+        phone: Array.from(sideTicketIdByPhone.entries()),
+        name: Array.from(sideTicketIdByName.entries())
+      };
     },
     stamp() {
       sideStampTicketCardsWithIds();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.9
+// @version      17.0
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.9';
+  const SCRIPT_VERSION = '17.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3103,34 +3103,44 @@
     const seq = ++sideStrictFilesSeq;
     sideStrictActiveFilesTicketId = id;
 
+    const url = `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`;
+
     try {
-      if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
-    } catch (_) {}
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.timeout = 8000;
 
-    sideDirectFilesAbortController = new AbortController();
+      xhr.onload = function tmEffinityFilesXhrLoad() {
+        try {
+          if (seq !== sideStrictFilesSeq) return;
+          if (String(sideStrictActiveFilesTicketId) !== id) return;
 
-    fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json'
-      },
-      signal: sideDirectFilesAbortController.signal
-    })
-      .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(payload => {
-        if (seq !== sideStrictFilesSeq) return;
-        if (String(sideStrictActiveFilesTicketId) !== id) return;
+          if (xhr.status < 200 || xhr.status >= 300) {
+            console.error(`[${SCRIPT_NAME}] XHR /files falhou`, { id, source, status: xhr.status, response: xhr.responseText });
+            return;
+          }
 
-        processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
-      })
-      .catch(error => {
-        if (error?.name === 'AbortError') return;
-        console.error(`[${SCRIPT_NAME}] falha ao buscar arquivos nativos`, { id, source, error });
-      });
+          const payload = JSON.parse(xhr.responseText || '{}');
+          processTicketFilesPayload(payload, url);
+        } catch (error) {
+          console.error(`[${SCRIPT_NAME}] erro ao processar XHR /files`, { id, source, error });
+        }
+      };
+
+      xhr.onerror = function tmEffinityFilesXhrError() {
+        console.error(`[${SCRIPT_NAME}] XHR /files erro de rede`, { id, source });
+      };
+
+      xhr.ontimeout = function tmEffinityFilesXhrTimeout() {
+        console.error(`[${SCRIPT_NAME}] XHR /files timeout`, { id, source });
+      };
+
+      xhr.send();
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao iniciar XHR /files`, { id, source, error });
+    }
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {

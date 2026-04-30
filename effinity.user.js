@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.7
+// @version      16.8
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.7';
+  const SCRIPT_VERSION = '16.8';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2518,6 +2518,8 @@
   let sideLastOpenTicketRequestAt = 0;
   let sideActiveHeaderPhone = '';
   let sideActiveHeaderName = '';
+  let sideStrictActiveFilesTicketId = '';
+  let sideStrictFilesSeq = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2932,23 +2934,10 @@
       sideDirectFilesRequestSeq += 1;
       sideClearRenderedFilesImmediately();
 
-      const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
-      if (metadataFiles.length) {
-        SIDE_FILES_BY_TICKET_ID.set(
-          String(ticketId),
-          sideMergeFileLists(metadataFiles, SIDE_FILES_BY_TICKET_ID.get(String(ticketId)) || [])
-        );
-      }
-
+      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), []);
       sideScheduleRender();
 
-      window.setTimeout(() => {
-        try {
-          if (sideExpectedTicketId === String(ticketId)) {
-            sideFetchExpectedFilesDirect(ticketId, `header-identity-${source || 'auto'}`);
-          }
-        } catch (_) {}
-      }, 120);
+      sideFetchExpectedFilesDirect(ticketId, `header-identity-${source || 'auto'}`);
 
       return true;
     } catch (error) {
@@ -3038,39 +3027,41 @@
     }
   }
 
-  async function sideFetchExpectedFilesDirect(ticketId, source = '') {
+  function sideFetchExpectedFilesDirect(ticketId, source = '') {
     const id = String(ticketId || '').trim();
     if (!id) return;
+
+    const seq = ++sideStrictFilesSeq;
+    sideStrictActiveFilesTicketId = id;
 
     try {
       if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
     } catch (_) {}
 
-    const seq = ++sideDirectFilesRequestSeq;
     sideDirectFilesAbortController = new AbortController();
 
-    try {
-      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json'
-        },
-        signal: sideDirectFilesAbortController.signal
+    fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: sideDirectFilesAbortController.signal
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(payload => {
+        if (seq !== sideStrictFilesSeq) return;
+        if (String(sideStrictActiveFilesTicketId) !== id) return;
+
+        processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
+      })
+      .catch(error => {
+        if (error?.name === 'AbortError') return;
+        console.error(`[${SCRIPT_NAME}] falha ao buscar arquivos nativos`, { id, source, error });
       });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const payload = await response.json();
-
-      if (seq !== sideDirectFilesRequestSeq) return;
-      if (sideExpectedTicketId && id !== sideExpectedTicketId) return;
-
-      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error(`[${SCRIPT_NAME}] falha no fallback direto de arquivos`, { id, source, error });
-    }
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
@@ -3104,8 +3095,7 @@
         ? payload.files.map(sideNormalizeFile).filter(Boolean)
         : [];
 
-      const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
-      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), sideMergeFileLists(metadataFiles, files));
+      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), files);
       sideSetCurrentTicketId(ticketId);
 
       if (SIDE_FILES_BY_TICKET_ID.size > SIDE_FILES_CACHE_LIMIT) {
@@ -3349,15 +3339,13 @@
   }
 
   function sideGetFiles() {
-    const ticketId = sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
+    const ticketId = sideStrictActiveFilesTicketId || sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
 
     if (!ticketId) return [];
+    if (sideStrictActiveFilesTicketId && String(ticketId) !== String(sideStrictActiveFilesTicketId)) return [];
     if (sideExpectedTicketId && String(ticketId) !== String(sideExpectedTicketId)) return [];
 
-    const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
-    const apiFiles = SIDE_FILES_BY_TICKET_ID.get(String(ticketId)) || [];
-
-    return sideMergeFileLists(metadataFiles, apiFiles);
+    return SIDE_FILES_BY_TICKET_ID.get(String(ticketId)) || [];
   }
 
   function sideFormatDate(value) {
@@ -4173,7 +4161,7 @@
 
     sideApplyActiveTicketFromHeaderIdentity('sync-files');
 
-    const renderTicketId = sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
+    const renderTicketId = sideStrictActiveFilesTicketId || sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
 
     if (!renderTicketId) {
       sideClearRenderedFilesImmediately();
@@ -4298,7 +4286,9 @@
         current: sideCurrentTicketId,
         metadataFiles: sideMetadataFilesByTicketId.get(sideExpectedTicketId || sideCurrentTicketId || '') || [],
         activeHeaderPhone: sideActiveHeaderPhone,
-        activeHeaderName: sideActiveHeaderName
+        activeHeaderName: sideActiveHeaderName,
+        strictActiveFilesTicketId: sideStrictActiveFilesTicketId,
+        strictFiles: SIDE_FILES_BY_TICKET_ID.get(sideStrictActiveFilesTicketId) || []
       };
     },
     entries() {
@@ -4379,8 +4369,10 @@
           sideActiveTicketIdFromOpenRequest = '';
           sideActiveHeaderPhone = '';
           sideActiveHeaderName = '';
+          sideStrictActiveFilesTicketId = '';
           sideLastOpenTicketRequestAt = 0;
           sideDirectFilesRequestSeq += 1;
+          sideStrictFilesSeq += 1;
           try {
             if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
           } catch (_) {}
@@ -4407,14 +4399,7 @@
                   sideExpectedTicketId = String(expectedId);
                   sideCurrentTicketId = String(expectedId);
 
-                  const metadataFiles = sideMetadataFilesByTicketId.get(String(expectedId)) || [];
-                  if (metadataFiles.length) {
-                    SIDE_FILES_BY_TICKET_ID.set(
-                      String(expectedId),
-                      sideMergeFileLists(metadataFiles, SIDE_FILES_BY_TICKET_ID.get(String(expectedId)) || [])
-                    );
-                  }
-
+                  SIDE_FILES_BY_TICKET_ID.set(String(expectedId), []);
                   sideScheduleRender();
                   sideFetchExpectedFilesDirect(expectedId, 'ticket-click-card-fallback');
                 }

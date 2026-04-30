@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.5
+// @version      16.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.5';
+  const SCRIPT_VERSION = '16.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2516,6 +2516,8 @@
   let sideLastTicketListIndexAt = 0;
   let sideActiveTicketIdFromOpenRequest = '';
   let sideLastOpenTicketRequestAt = 0;
+  let sideActiveHeaderPhone = '';
+  let sideActiveHeaderName = '';
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
@@ -2813,6 +2815,146 @@
     } catch (_) {}
 
     return null;
+  }
+
+  function sideExtractHeaderIdentity() {
+    try {
+      // Na versão com script, o cabeçalho central mantém nome + telefone do ticket aberto.
+      // Evita depender de protocolo visual.
+      const roots = Array.from(document.querySelectorAll('div, section, main'))
+        .filter(node => node instanceof HTMLElement);
+
+      const candidates = roots
+        .map(node => {
+          const text = normalizeText(node.textContent || '');
+          const phone = sideNormalizePhone(text);
+          const score =
+            (phone ? 10 : 0) +
+            (/Cliente/i.test(text) ? 2 : 0) +
+            (/Detalhes/i.test(text) ? 2 : 0) +
+            (/Transferir/i.test(text) ? 2 : 0) +
+            (/Finalizar/i.test(text) ? 2 : 0) -
+            (/Gestão de Tickets|Buscar por cliente|Espera|Atribuído|Atendimento/i.test(text) ? 8 : 0);
+
+          return { node, text, phone, score };
+        })
+        .filter(item => item.phone && item.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      for (const item of candidates) {
+        const lines = item.text
+          .split(/\s{2,}|\n/)
+          .map(line => normalizeText(line))
+          .filter(Boolean);
+
+        let name = '';
+
+        for (const line of lines) {
+          if (line.includes(item.phone)) continue;
+          if (/Cliente|Detalhes|Transferir|Finalizar|Criado|Atualizado|Clínica|Normal/i.test(line)) continue;
+          if (/^\d+$/.test(line.replace(/\D/g, ''))) continue;
+
+          const normalizedName = sideNormalizeName(line);
+          if (normalizedName.length >= 4) {
+            name = normalizedName;
+            break;
+          }
+        }
+
+        if (!name) {
+          // fallback: procurar nomes indexados que aparecem no cabeçalho
+          const lowerText = sideNormalizeName(item.text);
+          for (const [indexedName] of sideTicketIdByName.entries()) {
+            if (indexedName && lowerText.includes(indexedName)) {
+              name = indexedName;
+              break;
+            }
+          }
+        }
+
+        return {
+          phone: item.phone,
+          name,
+          raw: item.text.slice(0, 240)
+        };
+      }
+    } catch (_) {}
+
+    return { phone: '', name: '', raw: '' };
+  }
+
+  function sideResolveTicketIdFromHeaderIdentity(identity) {
+    try {
+      const phone = sideNormalizePhone(identity?.phone || '');
+      if (phone && sideTicketIdByPhone.has(phone)) {
+        return sideTicketIdByPhone.get(phone);
+      }
+
+      const name = sideNormalizeName(identity?.name || '');
+      if (name) {
+        if (sideTicketIdByName.has(name)) return sideTicketIdByName.get(name);
+
+        for (const [indexedName, id] of sideTicketIdByName.entries()) {
+          if (!indexedName) continue;
+          if (indexedName.includes(name) || name.includes(indexedName)) return id;
+        }
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  function sideApplyActiveTicketFromHeaderIdentity(source = '') {
+    try {
+      const identity = sideExtractHeaderIdentity();
+      const ticketId = sideResolveTicketIdFromHeaderIdentity(identity);
+
+      if (!ticketId) return false;
+
+      const same =
+        String(ticketId) === String(sideExpectedTicketId || '') &&
+        identity.phone === sideActiveHeaderPhone &&
+        identity.name === sideActiveHeaderName;
+
+      if (same) return true;
+
+      sideActiveHeaderPhone = identity.phone || '';
+      sideActiveHeaderName = identity.name || '';
+
+      sideExpectedTicketId = String(ticketId);
+      sideActiveTicketIdFromOpenRequest = String(ticketId);
+      sideCurrentTicketId = String(ticketId);
+
+      try {
+        if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
+      } catch (_) {}
+
+      sideDirectFilesRequestSeq += 1;
+      sideClearRenderedFilesImmediately();
+
+      const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
+      if (metadataFiles.length) {
+        SIDE_FILES_BY_TICKET_ID.set(
+          String(ticketId),
+          sideMergeFileLists(metadataFiles, SIDE_FILES_BY_TICKET_ID.get(String(ticketId)) || [])
+        );
+      }
+
+      sideScheduleRender();
+
+      window.setTimeout(() => {
+        try {
+          if (sideExpectedTicketId === String(ticketId)) {
+            sideFetchExpectedFilesDirect(ticketId, `header-identity-${source || 'auto'}`);
+          }
+        } catch (_) {}
+      }, 120);
+
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar ticket ativo pelo cabeçalho nome/telefone`, error);
+      return false;
+    }
   }
 
   function sideExtractExpectedTicketIdFromText(text) {
@@ -4029,6 +4171,8 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
+    sideApplyActiveTicketFromHeaderIdentity('sync-files');
+
     const renderTicketId = sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
 
     if (!renderTicketId) {
@@ -4074,6 +4218,8 @@
   function sideApplyView() {
     try {
       sideMarkTabs();
+      sideStampTicketCardsWithIds();
+      sideApplyActiveTicketFromHeaderIdentity('apply-view');
 
       const host = sideFindHost();
       if (!host) return;
@@ -4150,7 +4296,9 @@
         lastOpenRequestAt: sideLastOpenTicketRequestAt,
         expected: sideExpectedTicketId,
         current: sideCurrentTicketId,
-        metadataFiles: sideMetadataFilesByTicketId.get(sideExpectedTicketId || sideCurrentTicketId || '') || []
+        metadataFiles: sideMetadataFilesByTicketId.get(sideExpectedTicketId || sideCurrentTicketId || '') || [],
+        activeHeaderPhone: sideActiveHeaderPhone,
+        activeHeaderName: sideActiveHeaderName
       };
     },
     entries() {
@@ -4227,8 +4375,10 @@
             sideExtractExpectedTicketIdFromText(clickedTicketCard.textContent || '');
 
           sideCurrentTicketId = '';
-          sideExpectedTicketId = expectedId || '';
+          sideExpectedTicketId = '';
           sideActiveTicketIdFromOpenRequest = '';
+          sideActiveHeaderPhone = '';
+          sideActiveHeaderName = '';
           sideLastOpenTicketRequestAt = 0;
           sideDirectFilesRequestSeq += 1;
           try {
@@ -4241,23 +4391,35 @@
           // Com a lista de tickets indexada, o ID real é conhecido no clique.
           // O fetch direto passa a ser a fonte principal, e a resposta nativa /files
           // continua aceita apenas se bater com o ticket esperado.
-          if (sideExpectedTicketId) {
-            // Metadata da lista é fonte primária dos anexos.
-            if ((sideMetadataFilesByTicketId.get(String(sideExpectedTicketId)) || []).length) {
-              sideCurrentTicketId = String(sideExpectedTicketId);
-              sideScheduleRender();
-            }
+          for (const delay of [0, 50, 120, 250, 500, 900]) {
+            window.setTimeout(() => {
+              try {
+                sideApplyActiveTicketFromHeaderIdentity(`ticket-click-${delay}`);
+              } catch (_) {}
+            }, delay);
+          }
 
-            for (const delay of [220, 650, 1100]) {
-              window.setTimeout(() => {
-                try {
-                  // /files agora é complemento, não fonte obrigatória.
-                  if (sideExpectedTicketId === expectedId) {
-                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-complement-files-${delay}`);
+          // Fallback final pelo card clicado somente se nome/telefone do cabeçalho ainda não resolveu.
+          if (expectedId) {
+            window.setTimeout(() => {
+              try {
+                if (!sideExpectedTicketId && !sideCurrentTicketId) {
+                  sideExpectedTicketId = String(expectedId);
+                  sideCurrentTicketId = String(expectedId);
+
+                  const metadataFiles = sideMetadataFilesByTicketId.get(String(expectedId)) || [];
+                  if (metadataFiles.length) {
+                    SIDE_FILES_BY_TICKET_ID.set(
+                      String(expectedId),
+                      sideMergeFileLists(metadataFiles, SIDE_FILES_BY_TICKET_ID.get(String(expectedId)) || [])
+                    );
                   }
-                } catch (_) {}
-              }, delay);
-            }
+
+                  sideScheduleRender();
+                  sideFetchExpectedFilesDirect(expectedId, 'ticket-click-card-fallback');
+                }
+              } catch (_) {}
+            }, 1000);
           }
 
           for (const delay of [80, 180, 360, 700, 1200]) {

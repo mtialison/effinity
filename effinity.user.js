@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.1
+// @version      9.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.1';
+  const SCRIPT_VERSION = '9.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -479,6 +479,15 @@
 
     [${NOTES_NATIVE_CONTENT_ATTR}="true"][data-tm-notes-native-hidden="true"] {
       display: none !important;
+    }
+
+    [data-tm-notes-owned-panel="true"] {
+      display: none !important;
+      padding: 16px !important;
+    }
+
+    [data-tm-notes-owned-panel="true"][data-tm-notes-visible="true"] {
+      display: block !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -2218,89 +2227,66 @@
     } catch (_) {}
   }
 
-  function findSidePanelContentHost() {
+  function findNativePanelAfterTabs() {
     const tabsRoot = findSidePanelTabsRoot();
     if (!tabsRoot) return null;
 
-    // O conteúdo da aba fica no próximo bloco/irmão depois da barra de abas.
-    // Nunca usar ancestrais amplos, porque isso apaga a tela inteira.
-    let sibling = tabsRoot.nextElementSibling;
-    while (sibling) {
-      if (sibling instanceof HTMLElement) {
-        const text = normalizeText(sibling.textContent || '');
-        if (text && !isSidePanelTabsRoot(sibling)) {
-          return sibling.parentElement || null;
+    let node = tabsRoot.nextElementSibling;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.getAttribute('data-tm-notes-owned-panel') === 'true') {
+          node = node.nextElementSibling;
+          continue;
+        }
+
+        if (!isSidePanelTabsRoot(node)) {
+          return node;
         }
       }
-      sibling = sibling.nextElementSibling;
-    }
 
-    const parent = tabsRoot.parentElement;
-    if (!parent) return null;
-
-    const children = Array.from(parent.children).filter(child => child instanceof HTMLElement);
-    const index = children.indexOf(tabsRoot);
-
-    if (index >= 0) {
-      const nextContent = children.slice(index + 1).find(child => {
-        const text = normalizeText(child.textContent || '');
-        return text && !isSidePanelTabsRoot(child);
-      });
-
-      if (nextContent instanceof HTMLElement) {
-        return parent;
-      }
+      node = node.nextElementSibling;
     }
 
     return null;
   }
 
   function ensureNotesContentContainer() {
-    const host = findSidePanelContentHost();
-    if (!host) return null;
+    const tabsRoot = findSidePanelTabsRoot();
+    if (!tabsRoot || !tabsRoot.parentElement) return null;
 
-    let notesContent = host.querySelector(`:scope > [${NOTES_CONTENT_ATTR}="true"]`);
-    if (!notesContent) {
-      notesContent = document.createElement('div');
-      notesContent.setAttribute(NOTES_CONTENT_ATTR, 'true');
-      host.appendChild(notesContent);
+    let notesPanel = tabsRoot.parentElement.querySelector(':scope > [data-tm-notes-owned-panel="true"]');
+    if (!notesPanel) {
+      notesPanel = document.createElement('div');
+      notesPanel.setAttribute('data-tm-notes-owned-panel', 'true');
+      notesPanel.setAttribute(NOTES_CONTENT_ATTR, 'true');
+
+      const nativePanel = findNativePanelAfterTabs();
+      if (nativePanel && nativePanel.parentElement === tabsRoot.parentElement) {
+        tabsRoot.parentElement.insertBefore(notesPanel, nativePanel);
+      } else {
+        tabsRoot.parentElement.appendChild(notesPanel);
+      }
     }
 
-    return notesContent;
+    return notesPanel;
   }
 
   function setNotesContentVisible(isVisible) {
-    const tabsRoot = findSidePanelTabsRoot();
-    const host = findSidePanelContentHost();
-    if (!tabsRoot || !host) return;
+    const nativePanel = findNativePanelAfterTabs();
+    const notesPanel = ensureNotesContentContainer();
 
-    const notesContent = ensureNotesContentContainer();
-    const children = Array.from(host.children).filter(child => child instanceof HTMLElement);
-    const tabsIndex = children.indexOf(tabsRoot);
-
-    for (const child of children) {
-      if (!(child instanceof HTMLElement)) continue;
-
-      if (child.getAttribute(NOTES_CONTENT_ATTR) === 'true') {
-        child.setAttribute('data-tm-notes-visible', isVisible ? 'true' : 'false');
-        continue;
-      }
-
-      // Nunca esconder a própria barra de abas nem elementos antes dela.
-      if (child === tabsRoot || (tabsIndex >= 0 && children.indexOf(child) <= tabsIndex)) {
-        continue;
-      }
-
-      if (isVisible) {
-        child.setAttribute(NOTES_NATIVE_CONTENT_ATTR, 'true');
-        child.setAttribute('data-tm-notes-native-hidden', 'true');
-      } else if (child.getAttribute(NOTES_NATIVE_CONTENT_ATTR) === 'true') {
-        child.removeAttribute('data-tm-notes-native-hidden');
-      }
+    if (notesPanel) {
+      notesPanel.setAttribute('data-tm-notes-visible', isVisible ? 'true' : 'false');
+      if (isVisible) notesPanel.innerHTML = '';
     }
 
-    if (notesContent && isVisible) {
-      notesContent.innerHTML = '';
+    if (nativePanel instanceof HTMLElement) {
+      if (isVisible) {
+        nativePanel.setAttribute(NOTES_NATIVE_CONTENT_ATTR, 'true');
+        nativePanel.setAttribute('data-tm-notes-native-hidden', 'true');
+      } else {
+        nativePanel.removeAttribute('data-tm-notes-native-hidden');
+      }
     }
   }
 

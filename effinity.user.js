@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      9.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '8.9';
+  const SCRIPT_VERSION = '9.0';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -743,7 +743,535 @@
       user-select: none !important;
     }
 
-    /* ── 21. Tags de fila com cor por tipo ─────────────────────────────── */
+/* ── Visualizador flutuante de imagens dos arquivos ──────────────── */
+    [data-tm-image-popup="true"] {
+      position: fixed !important;
+      width: 420px !important;
+      height: 520px !important;
+      max-width: calc(100vw - 40px) !important;
+      max-height: calc(100vh - 40px) !important;
+      background: #111827 !important;
+      border: 1px solid rgba(148, 163, 184, 0.35) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45) !important;
+      overflow: hidden !important;
+      z-index: 99990 !important;
+      color: #f9fafb !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] {
+      left: 50% !important;
+      top: 50% !important;
+      width: min(1100px, calc(100vw - 48px)) !important;
+      height: min(820px, calc(100vh - 48px)) !important;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-header="true"] {
+      cursor: default !important;
+    }
+
+    [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-resize="true"] {
+      display: none !important;
+      pointer-events: none !important;
+    }
+
+    [data-tm-image-popup-header="true"] {
+      height: 42px !important;
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) auto auto !important;
+      align-items: center !important;
+      gap: 10px !important;
+      padding: 0 10px 0 12px !important;
+      background: rgba(15, 23, 42, 0.98) !important;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25) !important;
+      user-select: none !important;
+      cursor: move !important;
+    }
+
+    [data-tm-image-popup-title="true"] {
+      min-width: 0 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      color: #e5e7eb !important;
+    }
+
+    [data-tm-image-popup-actions-center="true"],
+    [data-tm-image-popup-actions-right="true"] {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+
+    [data-tm-image-popup-actions-right="true"] {
+      justify-content: flex-end !important;
+    }
+
+    [data-tm-image-popup-icon="true"],
+    [data-tm-image-popup-download="true"] {
+      width: 30px !important;
+      height: 30px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border: 0 !important;
+      background: transparent !important;
+      cursor: pointer !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border-radius: 7px !important;
+      line-height: 1 !important;
+      transition: background 0.12s ease, opacity 0.12s ease, transform 0.08s ease !important;
+      vertical-align: middle !important;
+      flex: 0 0 30px !important;
+    }
+
+    [data-tm-image-popup-icon="true"]:hover,
+    [data-tm-image-popup-download="true"]:hover {
+      background: rgba(148, 163, 184, 0.12) !important;
+      opacity: 0.95 !important;
+    }
+
+    [data-tm-image-popup-icon="true"]:active,
+    [data-tm-image-popup-download="true"]:active {
+      transform: scale(0.96) !important;
+    }
+
+    [data-tm-image-popup-icon-svg="true"] {
+      width: 21px !important;
+      height: 21px !important;
+      display: block !important;
+      flex: 0 0 21px !important;
+      color: currentColor !important;
+      stroke: currentColor !important;
+      fill: none !important;
+      stroke-width: 2 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      pointer-events: none !important;
+    }
+
+    [data-tm-image-popup-download="true"] {
+      color: #22c55e !important;
+    }
+
+    [data-tm-image-popup-maximize="true"] {
+      color: #f8fafc !important;
+    }
+    [data-tm-image-popup-rotate="true"] {
+      color: #f8fafc !important;
+    }
+
+
+    [data-tm-image-popup-close="true"] {
+      color: #ef4444 !important;
+    }
+
+    [data-tm-image-popup-close="true"]:hover {
+      background: rgba(239, 68, 68, 0.12) !important;
+    }
+
+    [data-tm-image-popup-body="true"] {
+      height: calc(100% - 42px) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: #020617 !important;
+      padding: 10px !important;
+      overflow: hidden !important;
+      cursor: default !important;
+      touch-action: none !important;
+    }
+
+    [data-tm-image-popup-body="true"][data-tm-pannable="true"] {
+      cursor: grab !important;
+    }
+
+    [data-tm-image-popup-body="true"][data-tm-panning="true"] {
+      cursor: grabbing !important;
+    }
+
+    [data-tm-image-popup-body="true"] img {
+      max-width: none !important;
+      max-height: none !important;
+      width: auto !important;
+      height: auto !important;
+      object-fit: contain !important;
+      border-radius: 6px !important;
+      transform-origin: center center !important;
+      user-select: none !important;
+      -webkit-user-drag: none !important;
+      will-change: transform !important;
+      transition: none !important;
+    }
+
+    [data-tm-image-popup-resize="true"] {
+      position: absolute !important;
+      z-index: 4 !important;
+      background: transparent !important;
+    }
+
+    [data-tm-image-popup-resize-dir="n"] {
+      top: 0 !important;
+      left: 10px !important;
+      right: 10px !important;
+      height: 8px !important;
+      cursor: ns-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="s"] {
+      bottom: 0 !important;
+      left: 10px !important;
+      right: 10px !important;
+      height: 8px !important;
+      cursor: ns-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="e"] {
+      top: 10px !important;
+      right: 0 !important;
+      bottom: 10px !important;
+      width: 8px !important;
+      cursor: ew-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="w"] {
+      top: 10px !important;
+      left: 0 !important;
+      bottom: 10px !important;
+      width: 8px !important;
+      cursor: ew-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="ne"],
+    [data-tm-image-popup-resize-dir="nw"],
+    [data-tm-image-popup-resize-dir="se"],
+    [data-tm-image-popup-resize-dir="sw"] {
+      width: 12px !important;
+      height: 12px !important;
+    }
+
+    [data-tm-image-popup-resize-dir="ne"] {
+      top: 0 !important;
+      right: 0 !important;
+      cursor: nesw-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="nw"] {
+      top: 0 !important;
+      left: 0 !important;
+      cursor: nwse-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="se"] {
+      right: 0 !important;
+      bottom: 0 !important;
+      cursor: nwse-resize !important;
+    }
+
+    [data-tm-image-popup-resize-dir="sw"] {
+      left: 0 !important;
+      bottom: 0 !important;
+      cursor: nesw-resize !important;
+    }
+
+    /* ── 9. Uppercase controlado por atributo ──────────────────────────── */
+    [${UPPERCASE_NAME_ATTR}="true"] {
+      text-transform: uppercase !important;
+    }
+
+    /* ── Telefone formatado em Dados do Atendimento ───────────────────── */
+    [${PHONE_FORMATTED_ATTR}="true"] {
+      white-space: normal !important;
+    }
+
+    /* ── 10 + 11. Área do Agente reorganizada e ações enxutas ─────────── */
+    [${AGENT_AREA_ATTR}="true"] {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 0 !important;
+    }
+
+    [${AGENT_TOP_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: nowrap !important;
+      gap: 24px !important;
+      min-height: 40px !important;
+      margin: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > span.text-xs.text-muted-foreground.mr-2 {
+      margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > div:not([${AGENT_ACTIONS_MIRROR_ATTR}="true"]) {
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 16px !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] > * {
+      flex-shrink: 0 !important;
+    }
+
+
+    /* ── Área do Agente: ordem visual fixa sem mover nós do app ───────── */
+    [${AGENT_BOTTOM_ATTR}="true"] > span.text-xs.text-muted-foreground.mr-2 {
+      order: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > div:not([${AGENT_ACTIONS_MIRROR_ATTR}="true"]) {
+      order: 1 !important;
+    }
+
+    [${AGENT_ACTIONS_MIRROR_ATTR}="true"] {
+      order: 99 !important;
+      margin-left: auto !important;
+    }
+
+    [${AGENT_VERSION_ATTR}="true"] {
+      order: 50 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: 0.75rem !important;
+      line-height: 1rem !important;
+      font-weight: 600 !important;
+      color: rgb(134 239 172) !important;
+      white-space: nowrap !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      pointer-events: none !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+    }
+
+    [${AGENT_PROXY_ATTR}="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: nowrap !important;
+      gap: 24px !important;
+      min-height: 40px !important;
+      margin: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] > .tm-agent-left {
+      display: flex !important;
+      align-items: center !important;
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+    }
+
+    [${AGENT_ACTIONS_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 16px !important;
+      flex: 0 0 auto !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+    }
+
+    [${AGENT_ACTIONS_ATTR}="true"] button,
+    [${AGENT_ACTIONS_ATTR}="true"] > div,
+    [${AGENT_ACTIONS_ATTR}="true"] > span {
+      flex-shrink: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      flex-wrap: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    [${AGENT_BOTTOM_ATTR}="true"] .flex.items-center.gap-3.flex-wrap > span.text-xs.text-muted-foreground.mr-2 {
+      margin-right: 4px !important;
+      flex-shrink: 0 !important;
+    }
+
+    .tm-agent-hidden {
+      display: none !important;
+    }
+
+    /* ── Header do ticket: anti-flicker da versão sem script ──────────── */
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.w-10.h-10.flex-shrink-0.rounded-full {
+      display: none !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.min-w-0.flex-1 {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: center !important;
+      gap: 2px !important;
+      min-width: 0 !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4
+      div.min-w-0.flex-1
+      > h2.font-semibold.text-card-foreground.truncate {
+      text-transform: uppercase !important;
+      margin: 0 !important;
+    }
+
+    div.px-4.py-3.flex.items-center.justify-between.gap-4 + div.px-4.py-2.border-t.border-border.bg-muted\/30 {
+      display: none !important;
+    }
+
+    /* ── Header do ticket: mover "Criado há" e ocultar linha inferior ── */
+    [${TICKET_INFO_ROW_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: center !important;
+      gap: 2px !important;
+      min-width: 0 !important;
+    }
+
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > h2,
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a,
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > div {
+      margin: 0 !important;
+    }
+
+    [${TICKET_CONTACT_BLOCK_ATTR}="true"] > a {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] {
+      display: flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin-top: 0 !important;
+      min-height: 14px !important;
+      color: hsl(var(--muted-foreground)) !important;
+      font-size: 11px !important;
+      line-height: 1.2 !important;
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
+    [${TICKET_CREATED_MOVED_ATTR}="true"] {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin: 0 !important;
+      color: inherit !important;
+      font-size: 0.875rem !important; line-height: inherit !important;
+      line-height: inherit !important;
+      white-space: nowrap !important;
+    }
+
+    [${TICKET_CREATED_MOVED_ATTR}="true"] svg {
+      width: 12px !important;
+      height: 12px !important;
+      flex-shrink: 0 !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] span.flex.items-center.gap-1 {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin: 0 !important;
+      color: inherit !important;
+      font-size: inherit !important;
+      line-height: inherit !important;
+      white-space: nowrap !important;
+    }
+
+    [${TICKET_CREATED_HOST_ATTR}="true"] svg {
+      width: 12px !important;
+      height: 12px !important;
+      flex-shrink: 0 !important;
+    }
+
+    /* ── 19. Feedback visual de cópia ──────────────────────────────────── */
+    [${COPY_CARD_ATTR}="true"] {
+      position: relative !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"] {
+      cursor: pointer !important;
+      user-select: none !important;
+      transition: opacity 0.18s ease, transform 0.18s ease !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"]:hover {
+      opacity: 0.88 !important;
+    }
+
+    [${COPY_VALUE_ATTR}="true"]:active {
+      transform: scale(0.985) !important;
+    }
+
+    [${COPY_TOAST_ATTR}="true"] {
+      position: absolute !important;
+      top: 12px !important;
+      right: 12px !important;
+      width: 40px !important;
+      height: 40px !important;
+      opacity: 0 !important;
+      transform: scale(0.96) !important;
+      transition: opacity 0.18s ease, transform 0.18s ease !important;
+      pointer-events: none !important;
+      z-index: 30 !important;
+    }
+
+    [${COPY_TOAST_VISIBLE_ATTR}="true"] {
+      opacity: 1 !important;
+      transform: scale(1) !important;
+    }
+
+    [${COPY_TOAST_ATTR}="true"] img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      pointer-events: none !important;
+      user-select: none !important;
+    }
+
+
+
+        /* ── 21. Tags de fila com cor por tipo ─────────────────────────────── */
     [${QUEUE_TAG_ATTR}="true"] {
       background-image: none !important;
       box-shadow: none !important;
@@ -2135,6 +2663,798 @@
     }
   }
 
+  let imagePopupCounter = 0;
+  let imagePopupZIndex = 99990;
+
+  function sideIsPreviewableImage(file) {
+    const mimeType = String(file?.mimeType || '').toLowerCase();
+    const fileName = String(file?.fileName || '').toLowerCase();
+    const icon = String(file?.icon || '').toLowerCase();
+
+    return mimeType.startsWith('image/') ||
+      icon === 'image' ||
+      /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(fileName);
+  }
+
+  function sideDownloadFile(url, fileName) {
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || 'imagem';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => {
+        try { link.remove(); } catch (_) {}
+      }, 0);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao baixar imagem`, error);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  function sideGetPopupPanBounds(popup) {
+    const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+    const img = body?.querySelector('img');
+    if (!body || !img) return { maxX: 0, maxY: 0, pannableX: false, pannableY: false };
+
+    const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
+    const naturalW = Number(popup.dataset.tmImageNaturalW || img.naturalWidth || img.offsetWidth || 1);
+    const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || img.offsetHeight || 1);
+    const bodyRect = body.getBoundingClientRect();
+
+    const scaledW = naturalW * zoom;
+    const scaledH = naturalH * zoom;
+
+    const overflowX = Math.max(0, scaledW - bodyRect.width);
+    const overflowY = Math.max(0, scaledH - bodyRect.height);
+
+    return {
+      maxX: overflowX / 2,
+      maxY: overflowY / 2,
+      pannableX: overflowX > 1,
+      pannableY: overflowY > 1
+    };
+  }
+
+  function sideClampPopupPan(popup) {
+    const bounds = sideGetPopupPanBounds(popup);
+
+    let panX = Number(popup.dataset.tmImagePanX || '0') || 0;
+    let panY = Number(popup.dataset.tmImagePanY || '0') || 0;
+
+    panX = bounds.pannableX ? Math.max(-bounds.maxX, Math.min(bounds.maxX, panX)) : 0;
+    panY = bounds.pannableY ? Math.max(-bounds.maxY, Math.min(bounds.maxY, panY)) : 0;
+
+    popup.dataset.tmImagePanX = String(panX);
+    popup.dataset.tmImagePanY = String(panY);
+
+    const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+    if (body) {
+      if (bounds.pannableX || bounds.pannableY) {
+        body.setAttribute('data-tm-pannable', 'true');
+      } else {
+        body.removeAttribute('data-tm-pannable');
+      }
+    }
+
+    return { panX, panY };
+  }
+
+  function sideApplyPopupImageTransform(popup) {
+    try {
+      const img = popup.querySelector('[data-tm-image-popup-body="true"] img');
+      if (!img) return;
+
+      const zoom = Number(popup.dataset.tmImageZoom || '1') || 1;
+      const { panX, panY } = sideClampPopupPan(popup);
+
+      const rotation = Number(popup.dataset.tmImageRotation || '0') || 0;
+      const container = popup.querySelector('[data-tm-image-popup-body="true"]');
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+
+      img.style.maxWidth = cw + 'px';
+      img.style.maxHeight = ch + 'px';
+
+      img.style.transform = `translate3d(${panX}px, ${panY}px, 0) rotate(${rotation}deg) scale(${zoom})`;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);
+    }
+  }
+
+  function sideRecalculatePopupFit(popup, resetPan = false) {
+    try {
+      const body = popup.querySelector('[data-tm-image-popup-body="true"]');
+      const img = body?.querySelector('img');
+      if (!body || !img) return;
+
+      const naturalW = Number(popup.dataset.tmImageNaturalW || img.naturalWidth || 1);
+      const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || 1);
+      const bodyRect = body.getBoundingClientRect();
+
+      const maxW = Math.max(1, bodyRect.width - 20);
+      const maxH = Math.max(1, bodyRect.height - 20);
+      const fit = Math.max(0.05, Math.min(maxW / naturalW, maxH / naturalH));
+
+      const userZoom = Number(popup.dataset.tmImageUserZoom || '1') || 1;
+
+      popup.dataset.tmImageBaseFit = String(fit);
+      popup.dataset.tmImageZoom = String(fit * userZoom);
+
+      if (resetPan) {
+        popup.dataset.tmImagePanX = '0';
+        popup.dataset.tmImagePanY = '0';
+      }
+
+      sideApplyPopupImageTransform(popup);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao recalcular encaixe da imagem`, error);
+    }
+  }
+
+  function sideSetPopupImageZoom(popup, nextUserZoom) {
+    try {
+      const userZoom = Math.max(1, Math.min(8, Number(nextUserZoom) || 1));
+      popup.dataset.tmImageUserZoom = String(userZoom);
+      sideRecalculatePopupFit(popup, false);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar zoom`, error);
+    }
+  }
+
+  function sideInstallPopupDrag(popup, header) {
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    header.addEventListener('mousedown', (event) => {
+      try {
+        if (event.button !== 0) return;
+        if (event.target.closest('button')) return;
+        if (event.target.closest('[data-tm-image-popup-resize="true"]')) return;
+        if (popup.getAttribute('data-tm-maximized') === 'true') return;
+
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = popup.offsetLeft;
+        startTop = popup.offsetTop;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mousemove', (event) => {
+      if (!dragging) return;
+
+      try {
+        const nextLeft = startLeft + (event.clientX - startX);
+        const nextTop = startTop + (event.clientY - startY);
+
+        const maxLeft = Math.max(0, window.innerWidth - popup.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - popup.offsetHeight);
+
+        popup.style.setProperty('left', `${Math.max(0, Math.min(maxLeft, nextLeft))}px`, 'important');
+        popup.style.setProperty('top', `${Math.max(0, Math.min(maxTop, nextTop))}px`, 'important');
+
+        event.preventDefault();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      dragging = false;
+    }, true);
+  }
+
+
+  function sideInstallImagePan(popup, body) {
+    let panning = false;
+    let startX = 0;
+    let startY = 0;
+    let startPanX = 0;
+    let startPanY = 0;
+    let pendingX = 0;
+    let pendingY = 0;
+    let rafId = 0;
+
+    const flushPan = () => {
+      rafId = 0;
+      popup.dataset.tmImagePanX = String(pendingX);
+      popup.dataset.tmImagePanY = String(pendingY);
+      sideApplyPopupImageTransform(popup);
+    };
+
+    body.addEventListener('mousedown', (event) => {
+      try {
+        if (event.button !== 0) return;
+        if (event.target.closest('button')) return;
+
+        const bounds = sideGetPopupPanBounds(popup);
+        if (!bounds.pannableX && !bounds.pannableY) return;
+
+        panning = true;
+        body.setAttribute('data-tm-panning', 'true');
+
+        startX = event.clientX;
+        startY = event.clientY;
+        startPanX = Number(popup.dataset.tmImagePanX || '0') || 0;
+        startPanY = Number(popup.dataset.tmImagePanY || '0') || 0;
+        pendingX = startPanX;
+        pendingY = startPanY;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mousemove', (event) => {
+      if (!panning) return;
+
+      try {
+        const bounds = sideGetPopupPanBounds(popup);
+        const rawX = startPanX + (event.clientX - startX);
+        const rawY = startPanY + (event.clientY - startY);
+
+        pendingX = bounds.pannableX ? Math.max(-bounds.maxX, Math.min(bounds.maxX, rawX)) : 0;
+        pendingY = bounds.pannableY ? Math.max(-bounds.maxY, Math.min(bounds.maxY, rawY)) : 0;
+
+        if (!rafId) {
+          rafId = window.requestAnimationFrame(flushPan);
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      if (!panning) return;
+      panning = false;
+      body.removeAttribute('data-tm-panning');
+    }, true);
+  }
+
+
+  function sideInstallPopupResize(popup) {
+    const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+    let resizing = false;
+    let dir = '';
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    const minW = 300;
+    const minH = 260;
+
+    const beginResize = (event, direction) => {
+      try {
+        if (event.button !== 0) return;
+        if (popup.getAttribute('data-tm-maximized') === 'true') return;
+
+        resizing = true;
+        dir = direction;
+        startX = event.clientX;
+        startY = event.clientY;
+        startW = popup.offsetWidth;
+        startH = popup.offsetHeight;
+        startLeft = popup.offsetLeft;
+        startTop = popup.offsetTop;
+
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      } catch (_) {}
+    };
+
+    for (const direction of directions) {
+      const handle = document.createElement('div');
+      handle.setAttribute('data-tm-image-popup-resize', 'true');
+      handle.setAttribute('data-tm-image-popup-resize-dir', direction);
+      handle.addEventListener('mousedown', (event) => beginResize(event, direction), true);
+      popup.appendChild(handle);
+    }
+
+    document.addEventListener('mousemove', (event) => {
+      if (!resizing) return;
+
+      try {
+        let nextLeft = startLeft;
+        let nextTop = startTop;
+        let nextW = startW;
+        let nextH = startH;
+
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+
+        if (dir.includes('e')) {
+          nextW = startW + dx;
+        }
+
+        if (dir.includes('s')) {
+          nextH = startH + dy;
+        }
+
+        if (dir.includes('w')) {
+          nextW = startW - dx;
+          nextLeft = startLeft + dx;
+        }
+
+        if (dir.includes('n')) {
+          nextH = startH - dy;
+          nextTop = startTop + dy;
+        }
+
+        if (nextW < minW) {
+          if (dir.includes('w')) nextLeft -= (minW - nextW);
+          nextW = minW;
+        }
+
+        if (nextH < minH) {
+          if (dir.includes('n')) nextTop -= (minH - nextH);
+          nextH = minH;
+        }
+
+        const maxW = window.innerWidth - nextLeft - 8;
+        const maxH = window.innerHeight - nextTop - 8;
+
+        nextW = Math.min(nextW, Math.max(minW, maxW));
+        nextH = Math.min(nextH, Math.max(minH, maxH));
+
+        nextLeft = Math.max(0, Math.min(nextLeft, window.innerWidth - nextW));
+        nextTop = Math.max(0, Math.min(nextTop, window.innerHeight - nextH));
+
+        popup.style.setProperty('left', `${nextLeft}px`, 'important');
+        popup.style.setProperty('top', `${nextTop}px`, 'important');
+        popup.style.setProperty('width', `${nextW}px`, 'important');
+        popup.style.setProperty('height', `${nextH}px`, 'important');
+
+        sideRecalculatePopupFit(popup, false);
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    document.addEventListener('mouseup', () => {
+      resizing = false;
+      dir = '';
+    }, true);
+  }
+
+  function sideCloseTopImagePopup() {
+    try {
+      const popups = Array.from(document.querySelectorAll('[data-tm-image-popup="true"]'))
+        .filter(node => node instanceof HTMLElement);
+
+      if (!popups.length) return false;
+
+      popups.sort((a, b) => {
+        const za = Number(getComputedStyle(a).zIndex || a.style.zIndex || '0') || 0;
+        const zb = Number(getComputedStyle(b).zIndex || b.style.zIndex || '0') || 0;
+        return zb - za;
+      });
+
+      popups[0].remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function sideInstallPopupEscClose() {
+    if (window.__tmEffinityImagePopupEscInstalled) return;
+    window.__tmEffinityImagePopupEscInstalled = true;
+
+    document.addEventListener('keydown', (event) => {
+      try {
+        if (event.key !== 'Escape') return;
+        if (!sideCloseTopImagePopup()) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+      } catch (_) {}
+    }, true);
+  }
+
+
+  function sideCreatePopupSvgIcon(type) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('data-tm-image-popup-icon-svg', 'true');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const makePath = (d) => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      return path;
+    };
+
+    const makeLine = (x1, y1, x2, y2) => {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      return line;
+    };
+
+    const makeRect = (x, y, width, height) => {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', width);
+      rect.setAttribute('height', height);
+      rect.setAttribute('rx', '1.8');
+      return rect;
+    };
+
+    if (type === 'download') {
+      svg.appendChild(makePath('M12 3v11'));
+      svg.appendChild(makePath('M7 10l5 5 5-5'));
+      svg.appendChild(makePath('M5 20h14'));
+      return svg;
+    }
+
+    if (type === 'close') {
+      svg.appendChild(makeLine('6', '6', '18', '18'));
+      svg.appendChild(makeLine('18', '6', '6', '18'));
+      return svg;
+    }
+
+    if (type === 'rotate') {
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.setAttribute('transform', 'translate(2.4 2.4) scale(0.80)');
+
+      const arc = makePath('M19 12a7 7 0 1 1-2.05-4.95');
+      const arrow = makePath('M19 5v5h-5');
+      const diamond = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      diamond.setAttribute('d', 'M12 8.4 15.6 12 12 15.6 8.4 12Z');
+
+      group.appendChild(arc);
+      group.appendChild(arrow);
+      group.appendChild(diamond);
+      svg.appendChild(group);
+      return svg;
+    }
+
+    svg.appendChild(makeRect('6', '6', '12', '12'));
+    return svg;
+  }
+
+  function sideOpenImagePopup(file) {
+    try {
+      if (!sideIsPreviewableImage(file)) {
+        window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      imagePopupCounter += 1;
+      imagePopupZIndex += 1;
+
+      const popup = document.createElement('div');
+      popup.setAttribute('data-tm-image-popup', 'true');
+      popup.dataset.tmImageZoom = '1';
+      popup.dataset.tmImageBaseFit = '1';
+      popup.dataset.tmImageUserZoom = '1';
+      popup.dataset.tmImagePanX = '0';
+      popup.dataset.tmImagePanY = '0';
+      popup.dataset.tmImageRotation = '0';
+      popup.style.setProperty('left', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
+      popup.style.setProperty('top', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
+      popup.style.zIndex = String(imagePopupZIndex);
+
+      const header = document.createElement('div');
+      header.setAttribute('data-tm-image-popup-header', 'true');
+
+      const title = document.createElement('div');
+      title.setAttribute('data-tm-image-popup-title', 'true');
+      title.title = file.fileName || 'Imagem';
+      title.textContent = file.fileName || 'Imagem';
+
+      const center = document.createElement('div');
+      center.setAttribute('data-tm-image-popup-actions-center', 'true');
+
+      const download = document.createElement('button');
+      download.type = 'button';
+      download.setAttribute('data-tm-image-popup-download', 'true');
+      download.title = 'Download';
+      download.setAttribute('aria-label', 'Download');
+      download.appendChild(sideCreatePopupSvgIcon('download'));
+      download.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        sideDownloadFile(file.downloadUrl, file.fileName);
+      }, true);
+
+      center.appendChild(download);
+
+      const right = document.createElement('div');
+      right.setAttribute('data-tm-image-popup-actions-right', 'true');
+
+      const rotate = document.createElement('button');
+      rotate.type = 'button';
+      rotate.setAttribute('data-tm-image-popup-icon', 'true');
+      rotate.setAttribute('data-tm-image-popup-rotate', 'true');
+      rotate.title = 'Girar';
+      rotate.setAttribute('aria-label', 'Girar');
+      const rotateIcon = document.createElement('span');
+      rotateIcon.textContent = '↻';
+      rotateIcon.setAttribute('aria-hidden', 'true');
+      rotateIcon.style.display = 'inline-flex';
+      rotateIcon.style.alignItems = 'center';
+      rotateIcon.style.justifyContent = 'center';
+      rotateIcon.style.width = '19px';
+      rotateIcon.style.height = '19px';
+      rotateIcon.style.fontSize = '19px';
+      rotateIcon.style.lineHeight = '19px';
+      rotateIcon.style.fontWeight = '400';
+      rotateIcon.style.textAlign = 'center';
+      rotateIcon.style.margin = '0';
+      rotateIcon.style.transform = 'translateY(-1px)';
+      rotate.appendChild(rotateIcon);
+      rotate.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const currentRotation = Number(popup.dataset.tmImageRotation || '0') || 0;
+        popup.dataset.tmImageRotation = String((currentRotation + 90) % 360);
+        sideApplyPopupImageTransform(popup);
+      }, true);
+
+      const maximize = document.createElement('button');
+      maximize.type = 'button';
+      maximize.setAttribute('data-tm-image-popup-icon', 'true');
+      maximize.setAttribute('data-tm-image-popup-maximize', 'true');
+      maximize.title = 'Maximizar';
+      maximize.setAttribute('aria-label', 'Maximizar');
+      maximize.appendChild(sideCreatePopupSvgIcon('maximize'));
+      maximize.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const isMax = popup.getAttribute('data-tm-maximized') === 'true';
+
+        if (isMax) {
+          popup.removeAttribute('data-tm-maximized');
+
+          const previous = popup.__tmPreviousGeometry || {};
+          popup.style.setProperty('left', previous.left || '24px', 'important');
+          popup.style.setProperty('top', previous.top || '24px', 'important');
+          popup.style.setProperty('width', previous.width || '420px', 'important');
+          popup.style.setProperty('height', previous.height || '520px', 'important');
+          popup.style.removeProperty('transform');
+
+          maximize.title = 'Maximizar';
+          maximize.setAttribute('aria-label', 'Maximizar');
+        } else {
+          popup.__tmPreviousGeometry = {
+            left: popup.style.left || `${popup.offsetLeft}px`,
+            top: popup.style.top || `${popup.offsetTop}px`,
+            width: popup.style.width || `${popup.offsetWidth}px`,
+            height: popup.style.height || `${popup.offsetHeight}px`
+          };
+
+          popup.setAttribute('data-tm-maximized', 'true');
+          popup.style.setProperty('left', '50%', 'important');
+          popup.style.setProperty('top', '50%', 'important');
+          popup.style.setProperty('width', 'min(1100px, calc(100vw - 48px))', 'important');
+          popup.style.setProperty('height', 'min(820px, calc(100vh - 48px))', 'important');
+          popup.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+
+          maximize.title = 'Restaurar';
+          maximize.setAttribute('aria-label', 'Restaurar');
+        }
+
+        window.setTimeout(() => sideRecalculatePopupFit(popup, false), 0);
+      }, true);
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.setAttribute('data-tm-image-popup-icon', 'true');
+      close.setAttribute('data-tm-image-popup-close', 'true');
+      close.title = 'Fechar';
+      close.setAttribute('aria-label', 'Fechar');
+      close.appendChild(sideCreatePopupSvgIcon('close'));
+      close.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        popup.remove();
+      }, true);
+
+      right.appendChild(rotate);
+      right.appendChild(maximize);
+      right.appendChild(close);
+
+      header.appendChild(title);
+      header.appendChild(center);
+      header.appendChild(right);
+
+      const body = document.createElement('div');
+      body.setAttribute('data-tm-image-popup-body', 'true');
+
+      const img = document.createElement('img');
+      img.src = file.downloadUrl;
+      img.alt = file.fileName || 'Imagem';
+      img.draggable = false;
+
+      img.addEventListener('load', () => {
+        try {
+          const naturalW = img.naturalWidth || 1;
+          const naturalH = img.naturalHeight || 1;
+
+          popup.dataset.tmImageNaturalW = String(naturalW);
+          popup.dataset.tmImageNaturalH = String(naturalH);
+          popup.dataset.tmImageUserZoom = '1';
+          img.style.width = `${naturalW}px`;
+          img.style.height = `${naturalH}px`;
+          popup.dataset.tmImagePanX = '0';
+          popup.dataset.tmImagePanY = '0';
+          sideRecalculatePopupFit(popup, true);
+        } catch (_) {
+          sideSetPopupImageZoom(popup, 1);
+        }
+      }, { once: true });
+
+      body.addEventListener('wheel', (event) => {
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const current = Number(popup.dataset.tmImageUserZoom || '1') || 1;
+          const factor = event.deltaY < 0 ? 1.12 : 0.88;
+          sideSetPopupImageZoom(popup, current * factor);
+        } catch (error) {
+          console.error(`[${SCRIPT_NAME}] falha no zoom por scroll`, error);
+        }
+      }, { passive: false, capture: true });
+
+      sideInstallImagePan(popup, body);
+
+      body.appendChild(img);
+      popup.appendChild(header);
+      popup.appendChild(body);
+
+      popup.addEventListener('mousedown', () => {
+        imagePopupZIndex += 1;
+        popup.style.zIndex = String(imagePopupZIndex);
+      }, true);
+
+      sideInstallPopupDrag(popup, header);
+      sideInstallPopupResize(popup);
+      sideInstallPopupEscClose();
+      document.body.appendChild(popup);
+
+      window.addEventListener('resize', () => {
+        try {
+          if (document.body.contains(popup)) sideRecalculatePopupFit(popup, false);
+        } catch (_) {}
+      });
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao abrir visualizador de imagem`, error);
+      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+
+
+  function tmFileCardLooksLikeImage(card) {
+    try {
+      if (!(card instanceof HTMLElement)) return false;
+      const text = normalizeText(card.textContent || '').toLowerCase();
+
+      if (!text.includes('abrir')) return false;
+
+      const img = card.querySelector('img[src]');
+      const imgSrc = img?.getAttribute?.('src') || '';
+
+      return /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(imgSrc) ||
+        /filename=.*\.(png|jpe?g|webp|gif|bmp|avif)/i.test(imgSrc) ||
+        /\bimage\b|mídia whatsapp|midia whatsapp|whatsapp_media_|\.png|\.jpg|\.jpeg|\.webp|\.gif/i.test(text);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function tmFindNativeFileCardFromOpenButton(button) {
+    try {
+      let node = button instanceof Element ? button : null;
+      let depth = 0;
+
+      while (node && depth < 8) {
+        if (node instanceof HTMLElement && node.classList.contains('rounded-xl') && tmFileCardLooksLikeImage(node)) {
+          return node;
+        }
+
+        node = node.parentElement;
+        depth += 1;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function tmGetNativeFileInfoFromCard(card) {
+    try {
+      const img = card.querySelector('img[src]');
+      const imgSrc = img?.getAttribute?.('src') || '';
+
+      let fileName = '';
+      const title = Array.from(card.querySelectorAll('p, span, div'))
+        .map(el => normalizeText(el.textContent || ''))
+        .find(text => /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(text) || /^whatsapp_media_/i.test(text));
+
+      if (title) fileName = title;
+
+      if (!fileName) {
+        try {
+          const url = new URL(imgSrc, location.href);
+          fileName = url.searchParams.get('filename') || '';
+        } catch (_) {}
+      }
+
+      if (!fileName) fileName = 'imagem';
+
+      return {
+        id: `native-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        fileName,
+        mimeType: 'image/jpeg',
+        icon: 'image',
+        thumbnailUrl: imgSrc,
+        downloadUrl: imgSrc
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function installNativeArquivoImagePopup() {
+    if (window.__tmEffinityNativeArquivoImagePopupInstalled) return;
+    window.__tmEffinityNativeArquivoImagePopupInstalled = true;
+
+    document.addEventListener('click', (event) => {
+      try {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const button = target.closest('button');
+        if (!button) return;
+        if (!/\bAbrir\b/i.test(normalizeText(button.textContent || ''))) return;
+
+        const card = tmFindNativeFileCardFromOpenButton(button);
+        if (!card) return;
+
+        const file = tmGetNativeFileInfoFromCard(card);
+        if (!file || !file.downloadUrl) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        sideOpenImagePopup(file);
+      } catch (error) {
+        console.error(`[${SCRIPT_NAME}] falha ao abrir imagem em popup`, error);
+      }
+    }, true);
+  }
+
+
   /* ========================================================================
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
@@ -2235,6 +3555,7 @@
     init();
     startObserver();
     startFavoriteLayer();
+    installNativeArquivoImagePopup();
   }
 
   installMessageApiInterceptors();

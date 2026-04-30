@@ -191,6 +191,7 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      sideIndexTicketsFromListPayload(payload, requestUrl);
       processTicketFilesPayload(payload, requestUrl);
       window.setTimeout(() => {
         try {
@@ -2408,36 +2409,123 @@
   let sideExpectedTicketId = '';
   let sideDirectFilesAbortController = null;
   let sideDirectFilesRequestSeq = 0;
-  let sideLastClickedTicketText = '';
+  const sideTicketIdByNumber = new Map();
+  const sideTicketDataById = new Map();
+  let sideLastTicketListIndexAt = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
 
 
-  function sideFilesDebugLog(label, data = {}) {
-    try {
-      console.debug(`[${SCRIPT_NAME}] [files] ${label}`, {
-        current: sideCurrentTicketId,
-        expected: sideExpectedTicketId,
-        lastClicked: sideLastClickedTicketText,
-        ...data
-      });
-    } catch (_) {}
+  function sideNormalizeTicketNumber(value) {
+    const match = String(value || '').match(/\bCS\d{8,}\b/i);
+    return match ? match[0].toUpperCase() : '';
   }
 
-  function sideExtractExpectedTicketIdFromText(text) {
+  function sideIndexTicketObject(ticket) {
     try {
-      const value = String(text || '');
+      if (!ticket || typeof ticket !== 'object') return false;
 
-      // Protocolo padrão observado: CS + data + ticketId no final.
-      const full = value.match(/\bCS(\d{10,})\b/i);
-      if (full) return full[1].slice(-5);
+      const id = String(ticket.id || ticket.ticketId || '').trim();
+      const ticketNumber = sideNormalizeTicketNumber(ticket.ticketNumber || ticket.protocol || ticket.code || '');
 
-      const loose = value.match(/\bCS\d{3,}(\d{5})\b/i);
-      if (loose) return loose[1];
-    } catch (_) {}
+      if (!id || !ticketNumber) return false;
+
+      sideTicketIdByNumber.set(ticketNumber, id);
+      sideTicketDataById.set(id, {
+        id,
+        ticketNumber,
+        customerName: String(ticket.customerName || '').trim(),
+        customerPhone: String(ticket.customerPhone || '').trim(),
+        title: String(ticket.title || '').trim()
+      });
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function sideIndexTicketsFromListPayload(payload, requestUrl = '') {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+      const url = String(requestUrl || '');
+
+      const list =
+        Array.isArray(payload.content) ? payload.content :
+        Array.isArray(payload.data?.content) ? payload.data.content :
+        Array.isArray(payload.data) ? payload.data :
+        Array.isArray(payload.tickets) ? payload.tickets :
+        [];
+
+      if (!list.length) return;
+
+      let indexed = 0;
+      for (const item of list) {
+        if (sideIndexTicketObject(item)) indexed += 1;
+      }
+
+      if (indexed) {
+        sideLastTicketListIndexAt = Date.now();
+        window.setTimeout(sideStampTicketCardsWithIds, 0);
+        window.setTimeout(sideStampTicketCardsWithIds, 250);
+        window.setTimeout(sideStampTicketCardsWithIds, 800);
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao indexar lista de tickets`, error);
+    }
+  }
+
+  function sideGetAllTicketCards() {
+    try {
+      const cards = Array.from(document.querySelectorAll('div.p-2.border.rounded.cursor-pointer'));
+      if (cards.length) return cards;
+
+      return Array.from(document.querySelectorAll('[role="button"], div, button'))
+        .filter(node => node instanceof HTMLElement && /\bCS\d{8,}\b/i.test(node.textContent || ''));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function sideResolveTicketIdFromCard(card) {
+    if (!card) return '';
+
+    const existing = card.getAttribute?.('data-tm-ticket-id');
+    if (existing) return existing;
+
+    const text = normalizeText(card.textContent || '');
+    const ticketNumber = sideNormalizeTicketNumber(text);
+
+    if (ticketNumber && sideTicketIdByNumber.has(ticketNumber)) {
+      return sideTicketIdByNumber.get(ticketNumber);
+    }
+
+    // Fallback consciente: pelo formato da response enviada, ticketNumber termina com o id real.
+    if (ticketNumber) {
+      const digits = ticketNumber.replace(/\D/g, '');
+      return digits.length >= 5 ? digits.slice(-5) : '';
+    }
 
     return '';
+  }
+
+  function sideStampTicketCardsWithIds() {
+    try {
+      for (const card of sideGetAllTicketCards()) {
+        if (!(card instanceof HTMLElement)) continue;
+
+        const text = normalizeText(card.textContent || '');
+        const ticketNumber = sideNormalizeTicketNumber(text);
+        if (!ticketNumber) continue;
+
+        const id = sideTicketIdByNumber.get(ticketNumber) || sideResolveTicketIdFromCard(card);
+        if (!id) continue;
+
+        card.setAttribute('data-tm-ticket-id', id);
+        card.setAttribute('data-tm-ticket-number', ticketNumber);
+      }
+    } catch (_) {}
   }
 
   function sideFindTicketCardFromTarget(target) {
@@ -2445,9 +2533,12 @@
       let node = target instanceof Element ? target : null;
       let depth = 0;
 
-      while (node && depth < 8) {
-        const text = normalizeText(node.textContent || '');
-        if (/\bCS\d{8,}\b/i.test(text)) return node;
+      while (node && depth < 10) {
+        if (node instanceof HTMLElement) {
+          if (node.matches?.('div.p-2.border.rounded.cursor-pointer')) return node;
+          if (node.getAttribute('data-tm-ticket-id')) return node;
+          if (sideNormalizeTicketNumber(node.textContent || '')) return node;
+        }
 
         node = node.parentElement;
         depth += 1;
@@ -2456,6 +2547,24 @@
 
     return null;
   }
+
+  function sideExtractExpectedTicketIdFromText(text) {
+    try {
+      const ticketNumber = sideNormalizeTicketNumber(text);
+      if (ticketNumber && sideTicketIdByNumber.has(ticketNumber)) {
+        return sideTicketIdByNumber.get(ticketNumber);
+      }
+
+      if (ticketNumber) {
+        const digits = ticketNumber.replace(/\D/g, '');
+        return digits.length >= 5 ? digits.slice(-5) : '';
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+
 
   function sideExtractTicketIdFromUrl(value) {
     const match = String(value || '').match(/\/tickets\/(\d+)(?:\/|$)/);
@@ -2506,99 +2615,39 @@
     }
   }
 
-  function sideApplyFilesPayloadForTicket(ticketId, payload, source = '') {
-    const id = String(ticketId || '').trim();
-    if (!id || !payload || typeof payload !== 'object') return false;
-
-    if (sideExpectedTicketId && id !== sideExpectedTicketId) {
-      sideFilesDebugLog('payload ignorado por ticket diferente', { id, source });
-      return false;
-    }
-
-    if (!Array.isArray(payload.files)) {
-      sideFilesDebugLog('payload sem array files', { id, source, keys: Object.keys(payload || {}) });
-      return false;
-    }
-
-    processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
-    sideFilesDebugLog('payload aplicado', { id, source, total: payload.files.length });
-    return true;
-  }
-
-  function sideFetchExpectedFilesDirect(ticketId, source = '') {
+  async function sideFetchExpectedFilesDirect(ticketId, source = '') {
     const id = String(ticketId || '').trim();
     if (!id) return;
-
-    const seq = ++sideDirectFilesRequestSeq;
 
     try {
       if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
     } catch (_) {}
 
+    const seq = ++sideDirectFilesRequestSeq;
     sideDirectFilesAbortController = new AbortController();
-    const url = `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`;
 
-    sideFilesDebugLog('buscando arquivos direto', { id, source, seq });
-
-    fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json'
-      },
-      signal: sideDirectFilesAbortController.signal
-    })
-      .then(async response => {
-        if (!response.ok) throw new Error(`fetch HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(payload => {
-        if (seq !== sideDirectFilesRequestSeq) return;
-        sideApplyFilesPayloadForTicket(id, payload, `${source || 'manual'}-fetch`);
-      })
-      .catch(error => {
-        if (error?.name === 'AbortError') return;
-
-        sideFilesDebugLog('fetch direto falhou, tentando XHR', { id, source, error: String(error?.message || error) });
-
-        if (seq !== sideDirectFilesRequestSeq) return;
-
-        try {
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', url, true);
-          xhr.withCredentials = true;
-          xhr.setRequestHeader('Accept', 'application/json');
-          xhr.timeout = 6000;
-
-          xhr.onload = function tmEffinityDirectFilesXhrLoad() {
-            try {
-              if (seq !== sideDirectFilesRequestSeq) return;
-
-              if (xhr.status < 200 || xhr.status >= 300) {
-                sideFilesDebugLog('XHR direto falhou', { id, source, status: xhr.status });
-                return;
-              }
-
-              const payload = JSON.parse(xhr.responseText || '{}');
-              sideApplyFilesPayloadForTicket(id, payload, `${source || 'manual'}-xhr`);
-            } catch (parseError) {
-              sideFilesDebugLog('XHR direto parse falhou', { id, source, error: String(parseError?.message || parseError) });
-            }
-          };
-
-          xhr.onerror = function tmEffinityDirectFilesXhrError() {
-            sideFilesDebugLog('XHR direto erro de rede', { id, source });
-          };
-
-          xhr.ontimeout = function tmEffinityDirectFilesXhrTimeout() {
-            sideFilesDebugLog('XHR direto timeout', { id, source });
-          };
-
-          xhr.send();
-        } catch (xhrError) {
-          sideFilesDebugLog('XHR direto exceção', { id, source, error: String(xhrError?.message || xhrError) });
-        }
+    try {
+      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        },
+        signal: sideDirectFilesAbortController.signal
       });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const payload = await response.json();
+
+      if (seq !== sideDirectFilesRequestSeq) return;
+      if (sideExpectedTicketId && id !== sideExpectedTicketId) return;
+
+      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.error(`[${SCRIPT_NAME}] falha no fallback direto de arquivos`, { id, source, error });
+    }
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
@@ -2619,7 +2668,6 @@
           : [];
 
         SIDE_FILES_BY_TICKET_ID.set(String(ticketId), staleFiles);
-        sideFilesDebugLog('resposta /files ignorada: não é o ticket esperado', { ticketId, expected: sideExpectedTicketId });
         return;
       }
 
@@ -3740,7 +3788,10 @@
     sideRenderTimers.forEach(clearTimeout);
     sideRenderTimers = [];
     for (const delay of [0, 60, 180, 420]) {
-      sideRenderTimers.push(window.setTimeout(sideApplyView, delay));
+      sideRenderTimers.push(window.setTimeout(() => {
+        sideStampTicketCardsWithIds();
+        sideApplyView();
+      }, delay));
     }
   }
 
@@ -3771,24 +3822,20 @@
   }
 
 
-  window.tmEffinityFilesDebug = {
-    getState() {
-      return {
-        current: sideCurrentTicketId,
-        expected: sideExpectedTicketId,
-        lastClicked: sideLastClickedTicketText,
-        files: SIDE_FILES_BY_TICKET_ID.get(sideCurrentTicketId) || [],
-        expectedFiles: SIDE_FILES_BY_TICKET_ID.get(sideExpectedTicketId) || []
-      };
+  window.tmEffinityTicketMapDebug = {
+    size() {
+      return sideTicketIdByNumber.size;
     },
-    refetch() {
-      const id = sideExpectedTicketId || sideCurrentTicketId;
-      if (id) sideFetchExpectedFilesDirect(id, 'debug-refetch');
+    entries() {
+      return Array.from(sideTicketIdByNumber.entries());
     },
-    clear() {
-      sideCurrentTicketId = '';
-      sideExpectedTicketId = '';
-      sideClearRenderedFilesImmediately();
+    stamp() {
+      sideStampTicketCardsWithIds();
+      return Array.from(document.querySelectorAll('[data-tm-ticket-id]')).map(node => ({
+        id: node.getAttribute('data-tm-ticket-id'),
+        number: node.getAttribute('data-tm-ticket-number'),
+        text: normalizeText(node.textContent || '').slice(0, 120)
+      }));
     }
   };
 
@@ -3841,10 +3888,12 @@
           }
         }
 
+        sideStampTicketCardsWithIds();
+
         const clickedTicketCard = sideFindTicketCardFromTarget(target);
         if (clickedTicketCard) {
-          sideLastClickedTicketText = normalizeText(clickedTicketCard.textContent || '').slice(0, 220);
-          const expectedId = sideExtractExpectedTicketIdFromText(sideLastClickedTicketText);
+          const expectedId = sideResolveTicketIdFromCard(clickedTicketCard) ||
+            sideExtractExpectedTicketIdFromText(clickedTicketCard.textContent || '');
 
           sideCurrentTicketId = '';
           sideExpectedTicketId = expectedId || '';
@@ -3856,14 +3905,15 @@
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          sideFilesDebugLog('ticket clicado', { expectedId, clickedText: sideLastClickedTicketText });
-
+          // Com a lista de tickets indexada, o ID real é conhecido no clique.
+          // O fetch direto passa a ser a fonte principal, e a resposta nativa /files
+          // continua aceita apenas se bater com o ticket esperado.
           if (sideExpectedTicketId) {
-            for (const delay of [80, 350, 900]) {
+            for (const delay of [0, 180, 600]) {
               window.setTimeout(() => {
                 try {
                   if (!sideCurrentTicketId && sideExpectedTicketId === expectedId) {
-                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-fallback-${delay}`);
+                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-indexed-${delay}`);
                   }
                 } catch (_) {}
               }, delay);

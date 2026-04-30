@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.5
+// @version      9.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.5';
+  const SCRIPT_VERSION = '9.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3128,277 +3128,33 @@
     document.addEventListener('keydown', (event) => {
       try {
         if (event.key !== 'Escape') return;
-        if (!sideCloseTopImagePopup()) return;
+
+        const popups = Array.from(document.querySelectorAll('[data-tm-image-popup="true"]'));
+        if (!popups.length) return;
+
+        // find popup with highest z-index (top-most)
+        let topPopup = popups[0];
+        let maxZ = Number(topPopup.style.zIndex || 0);
+
+        for (const p of popups) {
+          const z = Number(p.style.zIndex || 0);
+          if (z >= maxZ) {
+            maxZ = z;
+            topPopup = p;
+          }
+        }
+
+        const closeBtn = topPopup.querySelector('[data-tm-image-popup-close="true"]');
+        if (closeBtn) {
+          closeBtn.click();
+        } else {
+          topPopup.remove();
+        }
 
         event.preventDefault();
         event.stopPropagation();
       } catch (_) {}
-    }, true);
-  }
-
-
-  function sideCreatePopupSvgIcon(type) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('data-tm-image-popup-icon-svg', 'true');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-
-    const makePath = (d) => {
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', d);
-      return path;
-    };
-
-    const makeLine = (x1, y1, x2, y2) => {
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', x1);
-      line.setAttribute('y1', y1);
-      line.setAttribute('x2', x2);
-      line.setAttribute('y2', y2);
-      return line;
-    };
-
-    const makeRect = (x, y, width, height) => {
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', x);
-      rect.setAttribute('y', y);
-      rect.setAttribute('width', width);
-      rect.setAttribute('height', height);
-      rect.setAttribute('rx', '1.8');
-      return rect;
-    };
-
-    if (type === 'download') {
-      svg.appendChild(makePath('M12 3v11'));
-      svg.appendChild(makePath('M7 10l5 5 5-5'));
-      svg.appendChild(makePath('M5 20h14'));
-      return svg;
-    }
-
-    if (type === 'close') {
-      svg.appendChild(makeLine('6', '6', '18', '18'));
-      svg.appendChild(makeLine('18', '6', '6', '18'));
-      return svg;
-    }
-
-    if (type === 'rotate') {
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.setAttribute('transform', 'translate(2.4 2.4) scale(0.80)');
-
-      const arc = makePath('M19 12a7 7 0 1 1-2.05-4.95');
-      const arrow = makePath('M19 5v5h-5');
-      const diamond = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      diamond.setAttribute('d', 'M12 8.4 15.6 12 12 15.6 8.4 12Z');
-
-      group.appendChild(arc);
-      group.appendChild(arrow);
-      group.appendChild(diamond);
-      svg.appendChild(group);
-      return svg;
-    }
-
-    svg.appendChild(makeRect('6', '6', '12', '12'));
-    return svg;
-  }
-
-
-  function sideMaximizePopupAsMovableWindow(popup) {
-    try {
-      const width = Math.min(920, window.innerWidth - 48);
-      const height = Math.min(720, window.innerHeight - 48);
-      const left = Math.max(16, Math.round((window.innerWidth - width) / 2));
-      const top = Math.max(16, Math.round((window.innerHeight - height) / 2));
-
-      popup.style.width = `${width}px`;
-      popup.style.height = `${height}px`;
-      popup.style.left = `${left}px`;
-      popup.style.top = `${top}px`;
-      popup.style.transform = 'none';
-      popup.setAttribute('data-tm-maximized', 'true');
-      sideRecalculatePopupFit(popup, true);
-    } catch (_) {}
-  }
-
-  function sideRestorePopupAsMovableWindow(popup) {
-    try {
-      popup.removeAttribute('data-tm-maximized');
-      popup.style.width = '420px';
-      popup.style.height = '520px';
-      popup.style.transform = 'none';
-      sideRecalculatePopupFit(popup, true);
-    } catch (_) {}
-  }
-
-  function sideOpenImagePopup(file) {
-    try {
-      if (!sideIsPreviewableImage(file)) {
-        window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-
-      sideResetPopupCascadeIfNeeded();
-      imagePopupCounter += 1;
-      imagePopupZIndex += 1;
-
-      const popup = document.createElement('div');
-      popup.setAttribute('data-tm-image-popup', 'true');
-      popup.dataset.tmImageZoom = '1';
-      popup.dataset.tmImageBaseFit = '1';
-      popup.dataset.tmImageUserZoom = '1';
-      popup.dataset.tmImagePanX = '0';
-      popup.dataset.tmImagePanY = '0';
-      popup.dataset.tmImageRotation = '0';
-      popup.style.setProperty('left', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
-      popup.style.setProperty('top', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
-      popup.style.zIndex = String(imagePopupZIndex);
-
-      const header = document.createElement('div');
-      header.setAttribute('data-tm-image-popup-header', 'true');
-
-      const title = document.createElement('div');
-      title.setAttribute('data-tm-image-popup-title', 'true');
-      title.title = file.fileName || 'Imagem';
-      title.textContent = file.fileName || 'Imagem';
-
-      const center = document.createElement('div');
-      center.setAttribute('data-tm-image-popup-actions-center', 'true');
-
-      const download = document.createElement('button');
-      download.type = 'button';
-      download.setAttribute('data-tm-image-popup-download', 'true');
-      download.title = 'Download';
-      download.setAttribute('aria-label', 'Download');
-      download.appendChild(sideCreatePopupSvgIcon('download'));
-      download.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        sideDownloadFile(file.downloadUrl, file.fileName);
-      }, true);
-
-      center.appendChild(download);
-
-      const right = document.createElement('div');
-      right.setAttribute('data-tm-image-popup-actions-right', 'true');
-
-      const rotate = document.createElement('button');
-      rotate.type = 'button';
-      rotate.setAttribute('data-tm-image-popup-icon', 'true');
-      rotate.setAttribute('data-tm-image-popup-rotate', 'true');
-      rotate.title = 'Girar';
-      rotate.setAttribute('aria-label', 'Girar');
-      const rotateIcon = document.createElement('span');
-      rotateIcon.textContent = '↻';
-      rotateIcon.setAttribute('aria-hidden', 'true');
-      rotateIcon.style.display = 'inline-flex';
-      rotateIcon.style.alignItems = 'center';
-      rotateIcon.style.justifyContent = 'center';
-      rotateIcon.style.width = '19px';
-      rotateIcon.style.height = '19px';
-      rotateIcon.style.fontSize = '19px';
-      rotateIcon.style.lineHeight = '19px';
-      rotateIcon.style.fontWeight = '400';
-      rotateIcon.style.textAlign = 'center';
-      rotateIcon.style.margin = '0';
-      rotateIcon.style.transform = 'translateY(-1px)';
-      rotate.appendChild(rotateIcon);
-      rotate.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const currentRotation = Number(popup.dataset.tmImageRotation || '0') || 0;
-        popup.dataset.tmImageRotation = String((currentRotation + 90) % 360);
-        sideApplyPopupImageTransform(popup);
-      }, true);
-
-      const maximize = document.createElement('button');
-      maximize.type = 'button';
-      maximize.setAttribute('data-tm-image-popup-icon', 'true');
-      maximize.setAttribute('data-tm-image-popup-maximize', 'true');
-      maximize.title = 'Maximizar';
-      maximize.setAttribute('aria-label', 'Maximizar');
-      maximize.appendChild(sideCreatePopupSvgIcon('maximize'));
-      maximize.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const isMax = popup.getAttribute('data-tm-maximized') === 'true';
-
-        if (isMax) {
-          popup.removeAttribute('data-tm-maximized');
-          maximize.title = 'Maximizar';
-          maximize.setAttribute('aria-label', 'Maximizar');
-          sideSetPopupSizeToImageFit(popup, false, true);
-        } else {
-          popup.setAttribute('data-tm-maximized', 'true');
-
-          const width = Math.min(920, window.innerWidth - 48);
-          const height = Math.min(720, window.innerHeight - 48);
-          const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
-          const top = Math.max(8, Math.round((window.innerHeight - height) / 2));
-
-          popup.style.setProperty('width', `${width}px`, 'important');
-          popup.style.setProperty('height', `${height}px`, 'important');
-          popup.style.setProperty('left', `${left}px`, 'important');
-          popup.style.setProperty('top', `${top}px`, 'important');
-          popup.style.setProperty('transform', 'none', 'important');
-
-          popup.dataset.tmImageUserZoom = '1';
-          popup.dataset.tmImagePanX = '0';
-          popup.dataset.tmImagePanY = '0';
-
-          maximize.title = 'Restaurar';
-          maximize.setAttribute('aria-label', 'Restaurar');
-
-          window.setTimeout(() => sideRecalculatePopupFit(popup, true), 0);
-        }
-      }, true);
-
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.setAttribute('data-tm-image-popup-icon', 'true');
-      close.setAttribute('data-tm-image-popup-close', 'true');
-      close.title = 'Fechar';
-      close.setAttribute('aria-label', 'Fechar');
-      close.appendChild(sideCreatePopupSvgIcon('close'));
-      close.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        popup.remove();
-      }, true);
-
-      right.appendChild(rotate);
-      right.appendChild(maximize);
-      right.appendChild(close);
-
-      header.appendChild(title);
-      header.appendChild(center);
-      header.appendChild(right);
-
-      const body = document.createElement('div');
-      body.setAttribute('data-tm-image-popup-body', 'true');
-
-      const img = document.createElement('img');
-      img.src = file.downloadUrl;
-      img.alt = file.fileName || 'Imagem';
-      img.draggable = false;
-
-      img.addEventListener('load', () => {
-        try {
-          const naturalW = img.naturalWidth || 1;
-          const naturalH = img.naturalHeight || 1;
-
-          popup.dataset.tmImageNaturalW = String(naturalW);
-          popup.dataset.tmImageNaturalH = String(naturalH);
-          popup.dataset.tmImageUserZoom = '1';
-          img.style.width = `${naturalW}px`;
-          img.style.height = `${naturalH}px`;
-          popup.dataset.tmImagePanX = '0';
-          popup.dataset.tmImagePanY = '0';
-          sideSetPopupSizeToImageFit(popup, popup.getAttribute('data-tm-maximized') === 'true', false);
-        } catch (_) {
-          sideSetPopupImageZoom(popup, 1);
-        }
-      }, { once: true });
+    });
 
       body.addEventListener('wheel', (event) => {
         try {

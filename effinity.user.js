@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      17.0
+// @version      17.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '17.0';
+  const SCRIPT_VERSION = '17.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -3097,50 +3097,10 @@
   }
 
   function sideFetchExpectedFilesDirect(ticketId, source = '') {
-    const id = String(ticketId || '').trim();
-    if (!id) return;
-
-    const seq = ++sideStrictFilesSeq;
-    sideStrictActiveFilesTicketId = id;
-
-    const url = `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`;
-
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.withCredentials = true;
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.timeout = 8000;
-
-      xhr.onload = function tmEffinityFilesXhrLoad() {
-        try {
-          if (seq !== sideStrictFilesSeq) return;
-          if (String(sideStrictActiveFilesTicketId) !== id) return;
-
-          if (xhr.status < 200 || xhr.status >= 300) {
-            console.error(`[${SCRIPT_NAME}] XHR /files falhou`, { id, source, status: xhr.status, response: xhr.responseText });
-            return;
-          }
-
-          const payload = JSON.parse(xhr.responseText || '{}');
-          processTicketFilesPayload(payload, url);
-        } catch (error) {
-          console.error(`[${SCRIPT_NAME}] erro ao processar XHR /files`, { id, source, error });
-        }
-      };
-
-      xhr.onerror = function tmEffinityFilesXhrError() {
-        console.error(`[${SCRIPT_NAME}] XHR /files erro de rede`, { id, source });
-      };
-
-      xhr.ontimeout = function tmEffinityFilesXhrTimeout() {
-        console.error(`[${SCRIPT_NAME}] XHR /files timeout`, { id, source });
-      };
-
-      xhr.send();
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao iniciar XHR /files`, { id, source, error });
-    }
+    // v17.1: não chamar /files manualmente.
+    // O site nativo já carrega os arquivos com o contexto correto.
+    // A estratégia agora é clonar os cards nativos da aba Arquivos para a aba Geral.
+    return;
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
@@ -4235,50 +4195,165 @@
     return card;
   }
 
+
+  function sideLooksLikeNativeFileCard(node) {
+    try {
+      if (!(node instanceof HTMLElement)) return false;
+      if (node.getAttribute('data-tm-api-file-card') === 'true') return false;
+      if (node.getAttribute('data-tm-native-file-clone') === 'true') return false;
+
+      const text = normalizeText(node.textContent || '');
+      if (!text) return false;
+
+      const hasOpen = /\bAbrir\b/i.test(text);
+      const hasMedia = /Mídia WhatsApp|IMAGE|DOCUMENT|Arquivo recebido|Mídia recebida|whatsapp_media_|\.jpg|\.jpeg|\.png|\.pdf/i.test(text);
+      const hasImage = !!node.querySelector('img[src*="/public/files/"], img[src*="filename="]');
+      const hasButton = !!Array.from(node.querySelectorAll('button')).find(btn => /\bAbrir\b/i.test(btn.textContent || ''));
+
+      return hasOpen && hasButton && (hasMedia || hasImage);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function sideFindNativeFilesHost() {
+    try {
+      const cards = Array.from(document.querySelectorAll('.rounded-xl.bg-card.border.border-border, [class*="rounded-xl"][class*="bg-card"][class*="border"]'))
+        .filter(sideLooksLikeNativeFileCard);
+
+      if (!cards.length) return null;
+
+      let host = cards[0].parentElement;
+      while (host && host !== document.body) {
+        const nativeCount = Array.from(host.children).filter(sideLooksLikeNativeFileCard).length;
+        if (nativeCount >= 1) return host;
+        host = host.parentElement;
+      }
+
+      return cards[0].parentElement || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function sideGetNativeFileCards() {
+    try {
+      const host = sideFindNativeFilesHost();
+      if (!host) return [];
+
+      return Array.from(host.children)
+        .filter(sideLooksLikeNativeFileCard)
+        .filter(node => !node.closest('[data-tm-side-file-clone-zone="true"]'));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function sideEnsureNativeCloneZone(host) {
+    try {
+      if (!host) return null;
+
+      let zone = host.querySelector(':scope > [data-tm-side-file-clone-zone="true"]');
+      if (!zone) {
+        zone = document.createElement('div');
+        zone.setAttribute('data-tm-side-file-clone-zone', 'true');
+        zone.style.display = 'contents';
+        host.appendChild(zone);
+      }
+
+      return zone;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function sideCloneNativeFileCardsToGeneral(host) {
+    try {
+      if (!host) return false;
+
+      const nativeCards = sideGetNativeFileCards();
+      const zone = sideEnsureNativeCloneZone(host);
+      if (!zone) return false;
+
+      zone.innerHTML = '';
+
+      if (!nativeCards.length) {
+        return false;
+      }
+
+      for (const card of nativeCards) {
+        const clone = card.cloneNode(true);
+        if (!(clone instanceof HTMLElement)) continue;
+
+        clone.setAttribute('data-tm-native-file-clone', 'true');
+        clone.removeAttribute(HIDDEN_ATTR);
+
+        // Preservar comportamento visual e impedir que o clone seja confundido com card nativo.
+        clone.querySelectorAll('[data-tm-api-file-card], [data-tm-native-file-clone]').forEach(node => {
+          if (node instanceof HTMLElement) node.removeAttribute('data-tm-api-file-card');
+        });
+
+        zone.appendChild(clone);
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao clonar arquivos nativos`, error);
+      return false;
+    }
+  }
+
+  function sideTryOpenNativeFilesTabTemporarily() {
+    try {
+      const buttons = Array.from(document.querySelectorAll('button, [role="tab"], [role="button"], a'));
+      const arquivosTab = buttons.find(btn => {
+        const text = normalizeText(btn.textContent || '');
+        return /^Arquivos$/i.test(text) || /\bArquivos\b/i.test(text);
+      });
+
+      if (!arquivosTab) return false;
+
+      const geralTab = buttons.find(btn => {
+        const text = normalizeText(btn.textContent || '');
+        return /^Geral$/i.test(text) || /\bGeral\b/i.test(text);
+      });
+
+      arquivosTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+
+      window.setTimeout(() => {
+        try {
+          const host = sideFindHost();
+          if (host) sideCloneNativeFileCardsToGeneral(host);
+
+          if (geralTab) {
+            geralTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          }
+        } catch (_) {}
+      }, 80);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function sideSyncFiles(host) {
     if (!host) return;
 
-    sideApplyActiveTicketFromHeaderIdentity('sync-files');
-
-    const renderTicketId = sideStrictActiveFilesTicketId || sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
-
-    if (!renderTicketId) {
-      sideClearRenderedFilesImmediately();
+    // v17.1: fonte primária = DOM nativo da aba Arquivos.
+    // Se os cards nativos já existem em algum lugar da página, clonamos para a aba Geral.
+    if (sideCloneNativeFileCardsToGeneral(host)) {
       return;
     }
 
-    if (sideExpectedTicketId && String(renderTicketId) !== String(sideExpectedTicketId)) {
-      sideClearRenderedFilesImmediately();
-      return;
-    }
+    // Se ainda não existem, abrimos Arquivos rapidamente para o React nativo renderizar,
+    // clonamos os cards e voltamos para Geral. Não chama API manual.
+    sideTryOpenNativeFilesTabTemporarily();
 
-    if (!sideCurrentTicketId) {
-      sideCurrentTicketId = String(renderTicketId);
-    }
-
-    const files = sideGetFiles();
-    const wanted = new Set(files.map(file => file.id));
-
-    for (const node of Array.from(host.querySelectorAll('[data-tm-api-file-card="true"]'))) {
-      if (!(node instanceof HTMLElement)) continue;
-
-      const id = node.getAttribute('data-tm-api-file-id') || '';
-      const ticketId = node.getAttribute('data-tm-api-ticket-id') || '';
-
-      if (ticketId && String(ticketId) !== String(sideCurrentTicketId)) {
-        node.remove();
-        continue;
-      }
-
-      if (!wanted.has(id)) node.remove();
-    }
-
-    for (const file of files) {
-      let card = host.querySelector(`[data-tm-api-file-card="true"][data-tm-api-file-id="${CSS.escape(file.id)}"]`);
-      if (!card) card = sideCreateFileCard(file);
-      card.setAttribute('data-tm-api-ticket-id', sideCurrentTicketId || sideExpectedTicketId || '');
-      card.removeAttribute(HIDDEN_ATTR);
-      host.appendChild(card);
+    const zone = sideEnsureNativeCloneZone(host);
+    if (zone && !zone.children.length) {
+      // Evita manter arquivos antigos quando ainda não há card nativo do ticket atual.
+      zone.innerHTML = '';
     }
   }
 
@@ -4309,6 +4384,12 @@
         if (!(fileCard instanceof HTMLElement)) continue;
         if (sideNotesMode) fileCard.setAttribute(HIDDEN_ATTR, 'true');
         else fileCard.removeAttribute(HIDDEN_ATTR);
+      }
+
+      const cloneZone = host.querySelector('[data-tm-side-file-clone-zone="true"]');
+      if (cloneZone instanceof HTMLElement) {
+        if (sideNotesMode) cloneZone.setAttribute(HIDDEN_ATTR, 'true');
+        else cloneZone.removeAttribute(HIDDEN_ATTR);
       }
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar visão Geral/Notas`, error);
@@ -4458,6 +4539,11 @@
             if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
           } catch (_) {}
           sideClearRenderedFilesImmediately();
+          try {
+            const host = sideFindHost();
+            const zone = host?.querySelector?.('[data-tm-side-file-clone-zone="true"]');
+            if (zone instanceof HTMLElement) zone.innerHTML = '';
+          } catch (_) {}
           sideSetNotesMode(false);
           sideScheduleRender();
 

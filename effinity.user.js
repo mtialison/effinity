@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.2
+// @version      9.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.2';
+  const SCRIPT_VERSION = '9.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -878,7 +878,7 @@
       align-items: center !important;
       justify-content: center !important;
       background: #020617 !important;
-      padding: 10px !important;
+      padding: 0 !important;
       overflow: hidden !important;
       cursor: default !important;
       touch-action: none !important;
@@ -2762,6 +2762,53 @@
     }
   }
 
+  function sideSetPopupSizeToImageFit(popup, maximized = false, center = true) {
+    try {
+      const img = popup.querySelector('[data-tm-image-popup-body="true"] img');
+      if (!img) return;
+
+      const naturalW = Number(popup.dataset.tmImageNaturalW || img.naturalWidth || 1);
+      const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || 1);
+      const headerH = 42;
+
+      const margin = maximized ? 32 : 48;
+      const maxBodyW = Math.max(180, window.innerWidth - margin);
+      const maxBodyH = Math.max(180, window.innerHeight - headerH - margin);
+
+      let scale = Math.min(maxBodyW / naturalW, maxBodyH / naturalH);
+
+      if (!maximized) {
+        scale = Math.min(1, scale);
+      }
+
+      scale = Math.max(0.08, scale);
+
+      const bodyW = Math.max(160, Math.round(naturalW * scale));
+      const bodyH = Math.max(120, Math.round(naturalH * scale));
+      const popupW = bodyW;
+      const popupH = bodyH + headerH;
+
+      popup.style.setProperty('width', `${popupW}px`, 'important');
+      popup.style.setProperty('height', `${popupH}px`, 'important');
+      popup.style.setProperty('transform', 'none', 'important');
+
+      if (center) {
+        const left = Math.max(8, Math.round((window.innerWidth - popupW) / 2));
+        const top = Math.max(8, Math.round((window.innerHeight - popupH) / 2));
+        popup.style.setProperty('left', `${left}px`, 'important');
+        popup.style.setProperty('top', `${top}px`, 'important');
+      }
+
+      popup.dataset.tmImageUserZoom = '1';
+      popup.dataset.tmImagePanX = '0';
+      popup.dataset.tmImagePanY = '0';
+
+      sideRecalculatePopupFit(popup, true);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao ajustar popup ao tamanho da imagem`, error);
+    }
+  }
+
   function sideRecalculatePopupFit(popup, resetPan = false) {
     try {
       const body = popup.querySelector('[data-tm-image-popup-body="true"]');
@@ -2772,8 +2819,8 @@
       const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || 1);
       const bodyRect = body.getBoundingClientRect();
 
-      const maxW = Math.max(1, bodyRect.width - 20);
-      const maxH = Math.max(1, bodyRect.height - 20);
+      const maxW = Math.max(1, bodyRect.width);
+      const maxH = Math.max(1, bodyRect.height);
       const fit = Math.max(0.05, Math.min(maxW / naturalW, maxH / naturalH));
 
       const userZoom = Number(popup.dataset.tmImageUserZoom || '1') || 1;
@@ -3263,36 +3310,15 @@
 
         if (isMax) {
           popup.removeAttribute('data-tm-maximized');
-
-          const previous = popup.__tmPreviousGeometry || {};
-          popup.style.setProperty('left', previous.left || '24px', 'important');
-          popup.style.setProperty('top', previous.top || '24px', 'important');
-          popup.style.setProperty('width', previous.width || '420px', 'important');
-          popup.style.setProperty('height', previous.height || '520px', 'important');
-          popup.style.removeProperty('transform');
-
           maximize.title = 'Maximizar';
           maximize.setAttribute('aria-label', 'Maximizar');
+          sideSetPopupSizeToImageFit(popup, false, true);
         } else {
-          popup.__tmPreviousGeometry = {
-            left: popup.style.left || `${popup.offsetLeft}px`,
-            top: popup.style.top || `${popup.offsetTop}px`,
-            width: popup.style.width || `${popup.offsetWidth}px`,
-            height: popup.style.height || `${popup.offsetHeight}px`
-          };
-
           popup.setAttribute('data-tm-maximized', 'true');
-          popup.style.setProperty('left', '50%', 'important');
-          popup.style.setProperty('top', '50%', 'important');
-          popup.style.setProperty('width', 'min(1100px, calc(100vw - 48px))', 'important');
-          popup.style.setProperty('height', 'min(820px, calc(100vh - 48px))', 'important');
-          popup.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
-
           maximize.title = 'Restaurar';
           maximize.setAttribute('aria-label', 'Restaurar');
+          sideSetPopupSizeToImageFit(popup, true, true);
         }
-
-        window.setTimeout(() => sideRecalculatePopupFit(popup, false), 0);
       }, true);
 
       const close = document.createElement('button');
@@ -3336,7 +3362,7 @@
           img.style.height = `${naturalH}px`;
           popup.dataset.tmImagePanX = '0';
           popup.dataset.tmImagePanY = '0';
-          sideRecalculatePopupFit(popup, true);
+          sideSetPopupSizeToImageFit(popup, popup.getAttribute('data-tm-maximized') === 'true', false);
         } catch (_) {
           sideSetPopupImageZoom(popup, 1);
         }
@@ -3426,17 +3452,18 @@
       const imgSrc = img?.getAttribute?.('src') || '';
 
       let fileName = '';
-      const title = Array.from(card.querySelectorAll('p, span, div'))
-        .map(el => normalizeText(el.textContent || ''))
-        .find(text => /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(text) || /^whatsapp_media_/i.test(text));
 
-      if (title) fileName = title;
+      try {
+        const url = new URL(imgSrc, location.href);
+        fileName = url.searchParams.get('filename') || '';
+      } catch (_) {}
 
       if (!fileName) {
-        try {
-          const url = new URL(imgSrc, location.href);
-          fileName = url.searchParams.get('filename') || '';
-        } catch (_) {}
+        const title = Array.from(card.querySelectorAll('p, span, div'))
+          .map(el => normalizeText(el.textContent || ''))
+          .find(text => /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(text) || /^whatsapp_media_/i.test(text));
+
+        if (title) fileName = title;
       }
 
       if (!fileName) fileName = 'imagem';

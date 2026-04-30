@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.1
+// @version      16.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.1';
+  const SCRIPT_VERSION = '16.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2408,9 +2408,22 @@
   let sideExpectedTicketId = '';
   let sideDirectFilesAbortController = null;
   let sideDirectFilesRequestSeq = 0;
+  let sideLastClickedTicketText = '';
   let sideNotesMode = false;
   let sideRenderTimers = [];
 
+
+
+  function sideFilesDebugLog(label, data = {}) {
+    try {
+      console.debug(`[${SCRIPT_NAME}] [files] ${label}`, {
+        current: sideCurrentTicketId,
+        expected: sideExpectedTicketId,
+        lastClicked: sideLastClickedTicketText,
+        ...data
+      });
+    } catch (_) {}
+  }
 
   function sideExtractExpectedTicketIdFromText(text) {
     try {
@@ -2493,39 +2506,99 @@
     }
   }
 
-  async function sideFetchExpectedFilesDirect(ticketId, source = '') {
+  function sideApplyFilesPayloadForTicket(ticketId, payload, source = '') {
+    const id = String(ticketId || '').trim();
+    if (!id || !payload || typeof payload !== 'object') return false;
+
+    if (sideExpectedTicketId && id !== sideExpectedTicketId) {
+      sideFilesDebugLog('payload ignorado por ticket diferente', { id, source });
+      return false;
+    }
+
+    if (!Array.isArray(payload.files)) {
+      sideFilesDebugLog('payload sem array files', { id, source, keys: Object.keys(payload || {}) });
+      return false;
+    }
+
+    processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
+    sideFilesDebugLog('payload aplicado', { id, source, total: payload.files.length });
+    return true;
+  }
+
+  function sideFetchExpectedFilesDirect(ticketId, source = '') {
     const id = String(ticketId || '').trim();
     if (!id) return;
+
+    const seq = ++sideDirectFilesRequestSeq;
 
     try {
       if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
     } catch (_) {}
 
-    const seq = ++sideDirectFilesRequestSeq;
     sideDirectFilesAbortController = new AbortController();
+    const url = `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`;
 
-    try {
-      const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json'
-        },
-        signal: sideDirectFilesAbortController.signal
+    sideFilesDebugLog('buscando arquivos direto', { id, source, seq });
+
+    fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: sideDirectFilesAbortController.signal
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`fetch HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(payload => {
+        if (seq !== sideDirectFilesRequestSeq) return;
+        sideApplyFilesPayloadForTicket(id, payload, `${source || 'manual'}-fetch`);
+      })
+      .catch(error => {
+        if (error?.name === 'AbortError') return;
+
+        sideFilesDebugLog('fetch direto falhou, tentando XHR', { id, source, error: String(error?.message || error) });
+
+        if (seq !== sideDirectFilesRequestSeq) return;
+
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.withCredentials = true;
+          xhr.setRequestHeader('Accept', 'application/json');
+          xhr.timeout = 6000;
+
+          xhr.onload = function tmEffinityDirectFilesXhrLoad() {
+            try {
+              if (seq !== sideDirectFilesRequestSeq) return;
+
+              if (xhr.status < 200 || xhr.status >= 300) {
+                sideFilesDebugLog('XHR direto falhou', { id, source, status: xhr.status });
+                return;
+              }
+
+              const payload = JSON.parse(xhr.responseText || '{}');
+              sideApplyFilesPayloadForTicket(id, payload, `${source || 'manual'}-xhr`);
+            } catch (parseError) {
+              sideFilesDebugLog('XHR direto parse falhou', { id, source, error: String(parseError?.message || parseError) });
+            }
+          };
+
+          xhr.onerror = function tmEffinityDirectFilesXhrError() {
+            sideFilesDebugLog('XHR direto erro de rede', { id, source });
+          };
+
+          xhr.ontimeout = function tmEffinityDirectFilesXhrTimeout() {
+            sideFilesDebugLog('XHR direto timeout', { id, source });
+          };
+
+          xhr.send();
+        } catch (xhrError) {
+          sideFilesDebugLog('XHR direto exceção', { id, source, error: String(xhrError?.message || xhrError) });
+        }
       });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const payload = await response.json();
-
-      if (seq !== sideDirectFilesRequestSeq) return;
-      if (sideExpectedTicketId && id !== sideExpectedTicketId) return;
-
-      processTicketFilesPayload(payload, `https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/files`);
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error(`[${SCRIPT_NAME}] falha no fallback direto de arquivos`, { id, source, error });
-    }
   }
 
   function processTicketFilesPayload(payload, requestUrl = '') {
@@ -2546,6 +2619,7 @@
           : [];
 
         SIDE_FILES_BY_TICKET_ID.set(String(ticketId), staleFiles);
+        sideFilesDebugLog('resposta /files ignorada: não é o ticket esperado', { ticketId, expected: sideExpectedTicketId });
         return;
       }
 
@@ -3696,6 +3770,29 @@
     sideSetNotesMode(true);
   }
 
+
+  window.tmEffinityFilesDebug = {
+    getState() {
+      return {
+        current: sideCurrentTicketId,
+        expected: sideExpectedTicketId,
+        lastClicked: sideLastClickedTicketText,
+        files: SIDE_FILES_BY_TICKET_ID.get(sideCurrentTicketId) || [],
+        expectedFiles: SIDE_FILES_BY_TICKET_ID.get(sideExpectedTicketId) || []
+      };
+    },
+    refetch() {
+      const id = sideExpectedTicketId || sideCurrentTicketId;
+      if (id) sideFetchExpectedFilesDirect(id, 'debug-refetch');
+    },
+    clear() {
+      sideCurrentTicketId = '';
+      sideExpectedTicketId = '';
+      sideClearRenderedFilesImmediately();
+    }
+  };
+
+
   function sideInstallTabHandlers() {
     if (window.__tmEffinitySideTabsInstalled) return;
     window.__tmEffinitySideTabsInstalled = true;
@@ -3746,7 +3843,8 @@
 
         const clickedTicketCard = sideFindTicketCardFromTarget(target);
         if (clickedTicketCard) {
-          const expectedId = sideExtractExpectedTicketIdFromText(clickedTicketCard.textContent || '');
+          sideLastClickedTicketText = normalizeText(clickedTicketCard.textContent || '').slice(0, 220);
+          const expectedId = sideExtractExpectedTicketIdFromText(sideLastClickedTicketText);
 
           sideCurrentTicketId = '';
           sideExpectedTicketId = expectedId || '';
@@ -3758,15 +3856,18 @@
           sideSetNotesMode(false);
           sideScheduleRender();
 
-          // Se o React não disparar /files, usamos fallback direto para o ticket esperado.
+          sideFilesDebugLog('ticket clicado', { expectedId, clickedText: sideLastClickedTicketText });
+
           if (sideExpectedTicketId) {
-            window.setTimeout(() => {
-              try {
-                if (!sideCurrentTicketId && sideExpectedTicketId === expectedId) {
-                  sideFetchExpectedFilesDirect(expectedId, 'ticket-click-fallback');
-                }
-              } catch (_) {}
-            }, 350);
+            for (const delay of [80, 350, 900]) {
+              window.setTimeout(() => {
+                try {
+                  if (!sideCurrentTicketId && sideExpectedTicketId === expectedId) {
+                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-fallback-${delay}`);
+                  }
+                } catch (_) {}
+              }, delay);
+            }
           }
 
           for (const delay of [80, 180, 360, 700, 1200]) {

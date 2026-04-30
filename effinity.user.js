@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.6
+// @version      9.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.6';
+  const SCRIPT_VERSION = '9.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -73,6 +73,10 @@
 
   const MESSAGE_API_CACHE = new Map();
   const MESSAGE_API_CACHE_LIMIT = 1200;
+
+  let PASTE_IMAGE_ACTIVE_TICKET_ID = '';
+  let PASTE_IMAGE_ACTIVE_USER_NAME = 'Alison';
+  let PASTE_IMAGE_UPLOAD_LOCK = false;
 
   function normalizeApiMessageText(value) {
     return String(value || '')
@@ -188,8 +192,9 @@
     if (payload.result && typeof payload.result === 'object') extractApiMessages(payload.result);
   }
 
-  function processApiPayload(payload) {
+  function processApiPayload(payload, requestUrl = '') {
     try {
+      updatePasteImageActiveTicketFromPayload(payload, requestUrl);
       extractApiMessages(payload);
       window.setTimeout(() => {
         try {
@@ -216,7 +221,10 @@
           const clone = response.clone();
           const contentType = clone.headers?.get?.('content-type') || '';
           if (contentType.includes('application/json')) {
-            clone.json().then(processApiPayload).catch(() => {});
+            clone.json().then(payload => {
+              const requestUrl = String(response?.url || args?.[0]?.url || args?.[0] || '');
+              processApiPayload(payload, requestUrl);
+            }).catch(() => {});
           }
         } catch (_) {}
 
@@ -241,13 +249,218 @@
             if (!contentType.includes('application/json')) return;
 
             const payload = JSON.parse(this.responseText);
-            processApiPayload(payload);
+            processApiPayload(payload, String(this.__tmEffinityUrl || ''));
           } catch (_) {}
         });
 
         return nativeSend.apply(this, args);
       };
     }
+  }
+
+
+
+  function updatePasteImageActiveTicketFromPayload(payload, requestUrl = '') {
+    try {
+      const url = String(requestUrl || '');
+      const match = url.match(/\/api\/whatsapp\/tickets\/(\d+)\/messages(?:\?|$)/);
+      if (match?.[1]) {
+        PASTE_IMAGE_ACTIVE_TICKET_ID = match[1];
+      }
+
+      const list =
+        Array.isArray(payload?.messages) ? payload.messages :
+        Array.isArray(payload?.content) ? payload.content :
+        Array.isArray(payload?.data?.messages) ? payload.data.messages :
+        Array.isArray(payload?.data?.content) ? payload.data.content :
+        [];
+
+      for (const message of list) {
+        const ticketId = String(message?.ticketId || '').trim();
+        if (/^\d{4,8}$/.test(ticketId)) {
+          PASTE_IMAGE_ACTIVE_TICKET_ID = ticketId;
+        }
+
+        const userName = String(message?.createdByUser?.name || message?.userName || '').trim();
+        if (userName) {
+          PASTE_IMAGE_ACTIVE_USER_NAME = userName;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function findMessageTextarea() {
+    try {
+      return document.querySelector('textarea[placeholder*="Digite sua mensagem"]') ||
+        document.querySelector('textarea[maxlength="4096"]');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getClipboardImageFile(event) {
+    try {
+      const items = Array.from(event.clipboardData?.items || []);
+      for (const item of items) {
+        if (String(item.type || '').startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) return file;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function buildPastedImageFile(file) {
+    try {
+      const mime = String(file?.type || 'image/png').toLowerCase();
+      const ext =
+        mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' :
+        mime.includes('webp') ? 'webp' :
+        mime.includes('gif') ? 'gif' :
+        'png';
+
+      const name = `whatsapp_media_${Date.now()}.${ext}`;
+      return new File([file], name, { type: file.type || 'image/png' });
+    } catch (_) {
+      return file;
+    }
+  }
+
+  async function uploadPastedImage(file) {
+    const imageFile = buildPastedImageFile(file);
+    const formData = new FormData();
+
+    formData.append('file', imageFile);
+    formData.append('description', 'WhatsApp image upload');
+    formData.append('accessLevel', 'COMPANY');
+    formData.append('suggestedPath', 'whatsapp/company_3/customer_332');
+    formData.append('category', 'WHATSAPP_MEDIA');
+
+    const response = await fetch('https://api.sono.effinity.com.br/api/files/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload falhou: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (!payload?.publicUrl) {
+      throw new Error('Upload não retornou publicUrl');
+    }
+
+    return payload;
+  }
+
+  async function sendPastedImageMessage(ticketId, mediaUrl) {
+    const id = String(ticketId || '').trim();
+    if (!id) throw new Error('TicketId não encontrado');
+
+    const response = await fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${id}/messages`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        content: '',
+        type: 'IMAGE',
+        mediaUrl,
+        userName: PASTE_IMAGE_ACTIVE_USER_NAME || 'Alison'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Envio falhou: HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  function showPasteImageToast(message, isError = false) {
+    try {
+      let toast = document.querySelector('[data-tm-paste-image-toast="true"]');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.setAttribute('data-tm-paste-image-toast', 'true');
+        toast.style.position = 'fixed';
+        toast.style.right = '18px';
+        toast.style.bottom = '18px';
+        toast.style.zIndex = '999999';
+        toast.style.padding = '10px 14px';
+        toast.style.borderRadius = '10px';
+        toast.style.fontSize = '13px';
+        toast.style.fontWeight = '600';
+        toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.25)';
+        toast.style.transition = 'opacity 0.18s ease';
+        document.body.appendChild(toast);
+      }
+
+      toast.textContent = message;
+      toast.style.background = isError ? '#7f1d1d' : '#14532d';
+      toast.style.color = '#fff';
+      toast.style.opacity = '1';
+
+      window.clearTimeout(toast.__tmTimer);
+      toast.__tmTimer = window.setTimeout(() => {
+        try {
+          toast.style.opacity = '0';
+        } catch (_) {}
+      }, 2600);
+    } catch (_) {}
+  }
+
+  async function handlePasteImage(event) {
+    try {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const textarea = target.closest?.('textarea') || (target.tagName === 'TEXTAREA' ? target : null);
+      if (!textarea || textarea !== findMessageTextarea()) return;
+
+      const imageFile = getClipboardImageFile(event);
+      if (!imageFile) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (PASTE_IMAGE_UPLOAD_LOCK) return;
+      PASTE_IMAGE_UPLOAD_LOCK = true;
+
+      showPasteImageToast('Enviando imagem...');
+
+      const upload = await uploadPastedImage(imageFile);
+      await sendPastedImageMessage(PASTE_IMAGE_ACTIVE_TICKET_ID, upload.publicUrl);
+
+      showPasteImageToast('Imagem enviada');
+      window.setTimeout(() => {
+        try {
+          if (PASTE_IMAGE_ACTIVE_TICKET_ID) {
+            fetch(`https://webhook.sono.effinity.com.br/api/whatsapp/tickets/${PASTE_IMAGE_ACTIVE_TICKET_ID}/messages?page=0&size=20`, {
+              credentials: 'include',
+              headers: { 'Accept': 'application/json' }
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      }, 250);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao enviar imagem colada`, error);
+      showPasteImageToast(error?.message || 'Falha ao enviar imagem', true);
+    } finally {
+      PASTE_IMAGE_UPLOAD_LOCK = false;
+    }
+  }
+
+  function installPasteImageSender() {
+    if (window.__tmEffinityPasteImageSenderInstalled) return;
+    window.__tmEffinityPasteImageSenderInstalled = true;
+
+    document.addEventListener('paste', handlePasteImage, true);
   }
 
 
@@ -3648,6 +3861,7 @@
     startObserver();
     startFavoriteLayer();
     installNativeArquivoImagePopup();
+    installPasteImageSender();
   }
 
   installMessageApiInterceptors();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.8
+// @version      16.9
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.8';
+  const SCRIPT_VERSION = '16.9';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -245,6 +245,7 @@
       const url = String(requestUrl || '');
       if (!url.includes('/api/whatsapp/tickets')) return false;
       if (sideIsTicketListUrl(url)) return false;
+      if (sideIsTicketMessagesUrl(url)) return false;
 
       let id = '';
 
@@ -283,9 +284,72 @@
     }
   }
 
+
+  function sideIsTicketMessagesUrl(requestUrl = '') {
+    return /\/api\/whatsapp\/tickets\/\d+\/messages(?:\?|$)/.test(String(requestUrl || ''));
+  }
+
+  function sideExtractTicketIdFromMessagesPayload(payload, requestUrl = '') {
+    try {
+      const urlId = sideExtractTicketIdFromUrl(requestUrl);
+      if (urlId) return urlId;
+
+      const list =
+        Array.isArray(payload?.messages) ? payload.messages :
+        Array.isArray(payload?.content) ? payload.content :
+        Array.isArray(payload?.data?.messages) ? payload.data.messages :
+        Array.isArray(payload?.data?.content) ? payload.data.content :
+        [];
+
+      for (const message of list) {
+        const id = String(message?.ticketId || '').trim();
+        if (/^\d{4,8}$/.test(id)) return id;
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  function sideApplyActiveTicketFromMessages(payload, requestUrl = '') {
+    try {
+      if (!sideIsTicketMessagesUrl(requestUrl)) return false;
+
+      const ticketId = sideExtractTicketIdFromMessagesPayload(payload, requestUrl);
+      if (!ticketId) return false;
+
+      if (ticketId === sideActiveTicketIdFromMessages && ticketId === sideStrictActiveFilesTicketId) {
+        return true;
+      }
+
+      sideActiveTicketIdFromMessages = String(ticketId);
+      sideStrictActiveFilesTicketId = String(ticketId);
+      sideExpectedTicketId = String(ticketId);
+      sideActiveTicketIdFromOpenRequest = String(ticketId);
+      sideCurrentTicketId = String(ticketId);
+
+      try {
+        if (sideDirectFilesAbortController) sideDirectFilesAbortController.abort();
+      } catch (_) {}
+
+      sideStrictFilesSeq += 1;
+      sideDirectFilesRequestSeq += 1;
+
+      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), []);
+      sideClearRenderedFilesImmediately();
+      sideScheduleRender();
+
+      sideFetchExpectedFilesDirect(ticketId, 'messages-endpoint-active-ticket');
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao aplicar ticket ativo pela requisição de mensagens`, error);
+      return false;
+    }
+  }
+
   function processApiPayload(payload, requestUrl = '') {
     try {
       extractApiMessages(payload);
+      sideApplyActiveTicketFromMessages(payload, requestUrl);
       sideResolveActiveTicketFromOpenRequest(payload, requestUrl);
       sideIndexTicketsFromListPayload(payload, requestUrl);
       processTicketFilesPayload(payload, requestUrl);
@@ -315,7 +379,7 @@
           const contentType = clone.headers?.get?.('content-type') || '';
           if (contentType.includes('application/json')) {
             clone.json().then(payload => {
-              const requestUrl = String(args?.[0]?.url || args?.[0] || response?.url || '');
+              const requestUrl = String(response?.url || args?.[0]?.url || args?.[0] || '');
               processApiPayload(payload, requestUrl);
             }).catch(() => {});
           }
@@ -2519,6 +2583,7 @@
   let sideActiveHeaderPhone = '';
   let sideActiveHeaderName = '';
   let sideStrictActiveFilesTicketId = '';
+  let sideActiveTicketIdFromMessages = '';
   let sideStrictFilesSeq = 0;
   let sideNotesMode = false;
   let sideRenderTimers = [];
@@ -2908,6 +2973,10 @@
 
   function sideApplyActiveTicketFromHeaderIdentity(source = '') {
     try {
+      // A requisição /messages é a fonte principal do ticket ativo.
+      // Header por nome/telefone só atua enquanto ainda não houve /messages.
+      if (sideActiveTicketIdFromMessages) return true;
+
       const identity = sideExtractHeaderIdentity();
       const ticketId = sideResolveTicketIdFromHeaderIdentity(identity);
 
@@ -4288,6 +4357,7 @@
         activeHeaderPhone: sideActiveHeaderPhone,
         activeHeaderName: sideActiveHeaderName,
         strictActiveFilesTicketId: sideStrictActiveFilesTicketId,
+        activeTicketIdFromMessages: sideActiveTicketIdFromMessages,
         strictFiles: SIDE_FILES_BY_TICKET_ID.get(sideStrictActiveFilesTicketId) || []
       };
     },
@@ -4370,6 +4440,7 @@
           sideActiveHeaderPhone = '';
           sideActiveHeaderName = '';
           sideStrictActiveFilesTicketId = '';
+          sideActiveTicketIdFromMessages = '';
           sideLastOpenTicketRequestAt = 0;
           sideDirectFilesRequestSeq += 1;
           sideStrictFilesSeq += 1;

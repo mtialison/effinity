@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.1
+// @version      9.2
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.1';
+  const SCRIPT_VERSION = '9.2';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2814,13 +2814,17 @@
         if (event.button !== 0) return;
         if (event.target.closest('button')) return;
         if (event.target.closest('[data-tm-image-popup-resize="true"]')) return;
-        if (popup.getAttribute('data-tm-maximized') === 'true') return;
+
+        const rect = popup.getBoundingClientRect();
+        popup.style.setProperty('left', `${rect.left}px`, 'important');
+        popup.style.setProperty('top', `${rect.top}px`, 'important');
+        popup.style.setProperty('transform', 'none', 'important');
 
         dragging = true;
         startX = event.clientX;
         startY = event.clientY;
-        startLeft = popup.offsetLeft;
-        startTop = popup.offsetTop;
+        startLeft = rect.left;
+        startTop = rect.top;
 
         imagePopupZIndex += 1;
         popup.style.zIndex = String(imagePopupZIndex);
@@ -2837,11 +2841,11 @@
         const nextLeft = startLeft + (event.clientX - startX);
         const nextTop = startTop + (event.clientY - startY);
 
-        const maxLeft = Math.max(0, window.innerWidth - popup.offsetWidth);
-        const maxTop = Math.max(0, window.innerHeight - popup.offsetHeight);
+        const maxLeft = Math.max(8, window.innerWidth - popup.offsetWidth - 8);
+        const maxTop = Math.max(8, window.innerHeight - popup.offsetHeight - 8);
 
-        popup.style.setProperty('left', `${Math.max(0, Math.min(maxLeft, nextLeft))}px`, 'important');
-        popup.style.setProperty('top', `${Math.max(0, Math.min(maxTop, nextTop))}px`, 'important');
+        popup.style.setProperty('left', `${Math.max(8, Math.min(maxLeft, nextLeft))}px`, 'important');
+        popup.style.setProperty('top', `${Math.max(8, Math.min(maxTop, nextTop))}px`, 'important');
 
         event.preventDefault();
       } catch (_) {}

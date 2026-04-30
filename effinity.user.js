@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      9.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.0';
+  const SCRIPT_VERSION = '9.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2222,24 +2222,37 @@
     const tabsRoot = findSidePanelTabsRoot();
     if (!tabsRoot) return null;
 
-    let node = tabsRoot.parentElement;
-    while (node && node !== document.body) {
-      const children = Array.from(node.children).filter(child => child instanceof HTMLElement);
-      const tabsIndex = children.indexOf(tabsRoot);
-
-      if (tabsIndex >= 0 && children.length > tabsIndex + 1) {
-        const afterTabs = children.slice(tabsIndex + 1).find(child => {
-          const text = normalizeText(child.textContent || '');
-          return text && !isSidePanelTabsRoot(child);
-        });
-
-        if (afterTabs) return afterTabs.parentElement || node;
+    // O conteúdo da aba fica no próximo bloco/irmão depois da barra de abas.
+    // Nunca usar ancestrais amplos, porque isso apaga a tela inteira.
+    let sibling = tabsRoot.nextElementSibling;
+    while (sibling) {
+      if (sibling instanceof HTMLElement) {
+        const text = normalizeText(sibling.textContent || '');
+        if (text && !isSidePanelTabsRoot(sibling)) {
+          return sibling.parentElement || null;
+        }
       }
-
-      node = node.parentElement;
+      sibling = sibling.nextElementSibling;
     }
 
-    return tabsRoot.parentElement || null;
+    const parent = tabsRoot.parentElement;
+    if (!parent) return null;
+
+    const children = Array.from(parent.children).filter(child => child instanceof HTMLElement);
+    const index = children.indexOf(tabsRoot);
+
+    if (index >= 0) {
+      const nextContent = children.slice(index + 1).find(child => {
+        const text = normalizeText(child.textContent || '');
+        return text && !isSidePanelTabsRoot(child);
+      });
+
+      if (nextContent instanceof HTMLElement) {
+        return parent;
+      }
+    }
+
+    return null;
   }
 
   function ensureNotesContentContainer() {
@@ -2257,16 +2270,24 @@
   }
 
   function setNotesContentVisible(isVisible) {
+    const tabsRoot = findSidePanelTabsRoot();
     const host = findSidePanelContentHost();
-    if (!host) return;
+    if (!tabsRoot || !host) return;
 
     const notesContent = ensureNotesContentContainer();
+    const children = Array.from(host.children).filter(child => child instanceof HTMLElement);
+    const tabsIndex = children.indexOf(tabsRoot);
 
-    for (const child of Array.from(host.children)) {
+    for (const child of children) {
       if (!(child instanceof HTMLElement)) continue;
 
       if (child.getAttribute(NOTES_CONTENT_ATTR) === 'true') {
         child.setAttribute('data-tm-notes-visible', isVisible ? 'true' : 'false');
+        continue;
+      }
+
+      // Nunca esconder a própria barra de abas nem elementos antes dela.
+      if (child === tabsRoot || (tabsIndex >= 0 && children.indexOf(child) <= tabsIndex)) {
         continue;
       }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      16.4
+// @version      16.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '16.4';
+  const SCRIPT_VERSION = '16.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -2510,6 +2510,7 @@
   let sideDirectFilesRequestSeq = 0;
   const sideTicketIdByNumber = new Map();
   const sideTicketDataById = new Map();
+  const sideMetadataFilesByTicketId = new Map();
   const sideTicketIdByPhone = new Map();
   const sideTicketIdByName = new Map();
   let sideLastTicketListIndexAt = 0;
@@ -2539,6 +2540,126 @@
       .trim();
   }
 
+
+  function sideTryParseTicketMetadata(metadata) {
+    try {
+      if (!metadata) return {};
+      if (typeof metadata === 'object') return metadata;
+      if (typeof metadata === 'string') return JSON.parse(metadata);
+    } catch (_) {}
+
+    return {};
+  }
+
+  function sideGetFileExtFromUrl(url) {
+    try {
+      const clean = decodeURIComponent(String(url || '').split('?filename=').pop() || String(url || ''));
+      const match = clean.match(/\.([a-z0-9]{2,6})(?:$|\?)/i);
+      return match ? match[1].toLowerCase() : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function sideInferMimeFromUrl(url, type = '') {
+    const explicit = String(type || '').toUpperCase();
+
+    if (explicit === 'IMAGE') return 'image/jpeg';
+    if (explicit === 'PDF') return 'application/pdf';
+
+    const ext = sideGetFileExtFromUrl(url);
+    if (['jpg', 'jpeg'].includes(ext)) return 'image/jpeg';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'pdf') return 'application/pdf';
+
+    return '';
+  }
+
+  function sideBuildMetadataFile(ticketId, metadata, baseKey, label) {
+    try {
+      const url = String(metadata[baseKey] || '').trim();
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+
+      const mediaType = String(metadata[`${baseKey}Type`] || metadata[baseKey.replace(/Media$/, 'MediaType')] || '').trim();
+      const fileId = metadata[`${baseKey}FileId`] || metadata[baseKey.replace(/Media$/, 'MediaFileId')] || url;
+
+      const fileNameFromUrl = (() => {
+        try {
+          const match = decodeURIComponent(url).match(/[?&]filename=([^&]+)/i);
+          if (match) return match[1];
+        } catch (_) {}
+        return `${label || 'arquivo'}_${fileId || ticketId}`;
+      })();
+
+      const mimeType = sideInferMimeFromUrl(url, mediaType);
+      const isImage = /^image\//i.test(mimeType) || String(mediaType).toUpperCase() === 'IMAGE';
+
+      return {
+        id: `metadata-${ticketId}-${baseKey}-${fileId}`,
+        fileName: fileNameFromUrl,
+        description: label || 'Arquivo recebido via WhatsApp',
+        category: String(mediaType || (isImage ? 'IMAGE' : 'DOCUMENT')).toUpperCase(),
+        mimeType,
+        thumbnailUrl: isImage ? url : '',
+        downloadUrl: url,
+        createdAt: null,
+        icon: isImage ? 'image' : 'file'
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function sideExtractFilesFromTicketMetadata(ticket) {
+    try {
+      if (!ticket || typeof ticket !== 'object') return [];
+
+      const ticketId = String(ticket.id || ticket.ticketId || '').trim();
+      if (!ticketId) return [];
+
+      const metadata = sideTryParseTicketMetadata(ticket.metadata);
+      const files = [];
+
+      const known = [
+        ['carteirinhaMedia', 'Carteirinha'],
+        ['pedidoMedicoMedia', 'Pedido Médico'],
+        ['documentMedia', 'Documento'],
+        ['documentoMedia', 'Documento'],
+        ['whatsappMedia', 'Mídia WhatsApp'],
+        ['media', 'Mídia WhatsApp']
+      ];
+
+      for (const [key, label] of known) {
+        const file = sideBuildMetadataFile(ticketId, metadata, key, label);
+        if (file) files.push(file);
+      }
+
+      for (const [key, value] of Object.entries(metadata)) {
+        if (!/media$/i.test(key)) continue;
+        if (known.some(([knownKey]) => knownKey === key)) continue;
+
+        const file = sideBuildMetadataFile(ticketId, metadata, key, 'Arquivo recebido via WhatsApp');
+        if (file) files.push(file);
+      }
+
+      const unique = [];
+      const seen = new Set();
+
+      for (const file of files) {
+        const dedupeKey = file.downloadUrl || file.id;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        unique.push(file);
+      }
+
+      return unique;
+    } catch (_) {
+      return [];
+    }
+  }
+
   function sideIndexTicketObject(ticket) {
     try {
       if (!ticket || typeof ticket !== 'object') return false;
@@ -2562,7 +2683,16 @@
         title: String(ticket.title || '').trim()
       });
 
-      return !!(ticketNumber || phone || name);
+      const metadataFiles = sideExtractFilesFromTicketMetadata(ticket);
+      if (metadataFiles.length) {
+        sideMetadataFilesByTicketId.set(id, metadataFiles);
+
+        const existing = SIDE_FILES_BY_TICKET_ID.get(id) || [];
+        const merged = sideMergeFileLists(metadataFiles, existing);
+        SIDE_FILES_BY_TICKET_ID.set(id, merged);
+      }
+
+      return !!(ticketNumber || phone || name || metadataFiles.length);
     } catch (_) {
       return false;
     }
@@ -2832,7 +2962,8 @@
         ? payload.files.map(sideNormalizeFile).filter(Boolean)
         : [];
 
-      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), files);
+      const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
+      SIDE_FILES_BY_TICKET_ID.set(String(ticketId), sideMergeFileLists(metadataFiles, files));
       sideSetCurrentTicketId(ticketId);
 
       if (SIDE_FILES_BY_TICKET_ID.size > SIDE_FILES_CACHE_LIMIT) {
@@ -3059,13 +3190,32 @@
     }
   }
 
+
+  function sideMergeFileLists(primary = [], secondary = []) {
+    const merged = [];
+    const seen = new Set();
+
+    for (const file of [...primary, ...secondary]) {
+      if (!file) continue;
+      const key = file.downloadUrl || file.id || file.fileName;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(file);
+    }
+
+    return merged;
+  }
+
   function sideGetFiles() {
-    const ticketId = sideCurrentTicketId;
+    const ticketId = sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
 
     if (!ticketId) return [];
     if (sideExpectedTicketId && String(ticketId) !== String(sideExpectedTicketId)) return [];
 
-    return SIDE_FILES_BY_TICKET_ID.get(ticketId) || [];
+    const metadataFiles = sideMetadataFilesByTicketId.get(String(ticketId)) || [];
+    const apiFiles = SIDE_FILES_BY_TICKET_ID.get(String(ticketId)) || [];
+
+    return sideMergeFileLists(metadataFiles, apiFiles);
   }
 
   function sideFormatDate(value) {
@@ -3879,9 +4029,20 @@
   function sideSyncFiles(host) {
     if (!host) return;
 
-    if (!sideCurrentTicketId || (sideExpectedTicketId && String(sideCurrentTicketId) !== String(sideExpectedTicketId))) {
+    const renderTicketId = sideCurrentTicketId || sideExpectedTicketId || sideActiveTicketIdFromOpenRequest;
+
+    if (!renderTicketId) {
       sideClearRenderedFilesImmediately();
       return;
+    }
+
+    if (sideExpectedTicketId && String(renderTicketId) !== String(sideExpectedTicketId)) {
+      sideClearRenderedFilesImmediately();
+      return;
+    }
+
+    if (!sideCurrentTicketId) {
+      sideCurrentTicketId = String(renderTicketId);
     }
 
     const files = sideGetFiles();
@@ -3988,7 +4149,8 @@
         activeFromOpenRequest: sideActiveTicketIdFromOpenRequest,
         lastOpenRequestAt: sideLastOpenTicketRequestAt,
         expected: sideExpectedTicketId,
-        current: sideCurrentTicketId
+        current: sideCurrentTicketId,
+        metadataFiles: sideMetadataFilesByTicketId.get(sideExpectedTicketId || sideCurrentTicketId || '') || []
       };
     },
     entries() {
@@ -4080,13 +4242,18 @@
           // O fetch direto passa a ser a fonte principal, e a resposta nativa /files
           // continua aceita apenas se bater com o ticket esperado.
           if (sideExpectedTicketId) {
+            // Metadata da lista é fonte primária dos anexos.
+            if ((sideMetadataFilesByTicketId.get(String(sideExpectedTicketId)) || []).length) {
+              sideCurrentTicketId = String(sideExpectedTicketId);
+              sideScheduleRender();
+            }
+
             for (const delay of [220, 650, 1100]) {
               window.setTimeout(() => {
                 try {
-                  // A requisição real do ticket aberto tem prioridade.
-                  // Se ela não apareceu, usamos o mapa/lista como fallback.
-                  if (!sideCurrentTicketId && sideExpectedTicketId === expectedId && !sideActiveTicketIdFromOpenRequest) {
-                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-fallback-after-open-request-${delay}`);
+                  // /files agora é complemento, não fonte obrigatória.
+                  if (sideExpectedTicketId === expectedId) {
+                    sideFetchExpectedFilesDirect(expectedId, `ticket-click-complement-files-${delay}`);
                   }
                 } catch (_) {}
               }, delay);

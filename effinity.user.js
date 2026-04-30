@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.0';
+  const SCRIPT_VERSION = '9.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -760,20 +760,18 @@
     }
 
     [data-tm-image-popup="true"][data-tm-maximized="true"] {
-      left: 50% !important;
-      top: 50% !important;
-      width: min(1100px, calc(100vw - 48px)) !important;
-      height: min(820px, calc(100vh - 48px)) !important;
-      transform: translate(-50%, -50%) !important;
+      width: min(920px, calc(100vw - 48px)) !important;
+      height: min(720px, calc(100vh - 48px)) !important;
+      transform: none !important;
     }
 
     [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-header="true"] {
-      cursor: default !important;
+      cursor: move !important;
     }
 
     [data-tm-image-popup="true"][data-tm-maximized="true"] [data-tm-image-popup-resize="true"] {
-      display: none !important;
-      pointer-events: none !important;
+      display: block !important;
+      pointer-events: auto !important;
     }
 
     [data-tm-image-popup-header="true"] {
@@ -3136,6 +3134,34 @@
 
     svg.appendChild(makeRect('6', '6', '12', '12'));
     return svg;
+  }
+
+
+  function sideMaximizePopupAsMovableWindow(popup) {
+    try {
+      const width = Math.min(920, window.innerWidth - 48);
+      const height = Math.min(720, window.innerHeight - 48);
+      const left = Math.max(16, Math.round((window.innerWidth - width) / 2));
+      const top = Math.max(16, Math.round((window.innerHeight - height) / 2));
+
+      popup.style.width = `${width}px`;
+      popup.style.height = `${height}px`;
+      popup.style.left = `${left}px`;
+      popup.style.top = `${top}px`;
+      popup.style.transform = 'none';
+      popup.setAttribute('data-tm-maximized', 'true');
+      sideRecalculatePopupFit(popup, true);
+    } catch (_) {}
+  }
+
+  function sideRestorePopupAsMovableWindow(popup) {
+    try {
+      popup.removeAttribute('data-tm-maximized');
+      popup.style.width = '420px';
+      popup.style.height = '520px';
+      popup.style.transform = 'none';
+      sideRecalculatePopupFit(popup, true);
+    } catch (_) {}
   }
 
   function sideOpenImagePopup(file) {

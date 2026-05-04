@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.6
+// @version      10.7
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.6';
+  const SCRIPT_VERSION = '10.7';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -4179,3 +4179,9 @@ function getTicketFavoriteKey(card) {
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
 })();
+
+
+    /* AJUSTE DE PADDING DO CONTAINER PRINCIPAL DO CHAT */
+    div.rounded-xl.bg-card.border.border-border.p-6 {
+      padding: 1px !important;
+    }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      9.9
+// @version      10.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '9.9';
+  const SCRIPT_VERSION = '10.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -714,6 +714,45 @@
     
     [data-tm-hide-notas-internas="true"] {
       display: none !important;
+    }
+
+
+    [data-tm-fallback-attendance-card="true"] {
+      margin: 16px !important;
+      padding: 24px !important;
+      min-height: 220px !important;
+      background: hsl(var(--card)) !important;
+      border: 1px solid hsl(var(--border)) !important;
+      border-radius: 12px !important;
+      color: hsl(var(--card-foreground)) !important;
+    }
+
+    [data-tm-fallback-attendance-card="true"] h3 {
+      font-size: 18px !important;
+      font-weight: 700 !important;
+      margin: 0 0 20px 0 !important;
+      color: hsl(var(--foreground)) !important;
+    }
+
+    [data-tm-fallback-attendance-card="true"] [data-tm-fallback-row="true"] {
+      display: grid !important;
+      grid-template-columns: 96px minmax(0, 1fr) !important;
+      gap: 12px !important;
+      align-items: start !important;
+      margin: 10px 0 !important;
+    }
+
+    [data-tm-fallback-attendance-card="true"] [data-tm-fallback-label="true"] {
+      color: hsl(var(--muted-foreground)) !important;
+      font-weight: 600 !important;
+      font-size: 14px !important;
+    }
+
+    [data-tm-fallback-attendance-card="true"] [data-tm-fallback-value="true"] {
+      color: hsl(var(--foreground)) !important;
+      font-weight: 700 !important;
+      font-size: 15px !important;
+      word-break: break-word !important;
     }
 
     /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -2917,15 +2956,146 @@
   }
 
 
+
+  function hasVisibleAttendanceDataCard() {
+    try {
+      return Array.from(document.querySelectorAll('h3')).some(title => {
+        if (normalizeText(title.textContent || '') !== 'Dados do Atendimento') return false;
+        const card = title.closest('div.rounded-xl');
+        if (!(card instanceof HTMLElement)) return false;
+        if (card.getAttribute(HIDDEN_ATTR) === 'true') return false;
+        if (card.getAttribute('data-tm-hide-notas-internas') === 'true') return false;
+        return getComputedStyle(card).display !== 'none';
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getActiveHeaderIdentityForFallback() {
+    try {
+      const header = document.querySelector('div.px-4.py-3.flex.items-center.justify-between.gap-4') ||
+        document.querySelector('h2.font-semibold')?.closest('div');
+
+      const root = header || document.body;
+      const text = normalizeText(root.textContent || '');
+
+      const nameEl = root.querySelector?.('h2.font-semibold, h2, [class*="font-semibold"]');
+      const name = normalizeText(nameEl?.textContent || '').replace(/\bCliente\b|\bDetalhes\b|\bTransferir\b|\bFinalizar\b/g, '').trim();
+
+      const phoneMatch = text.match(/55\d{10,11}|\(?\d{2}\)?\s?\d{4,5}-?\d{4}/);
+      const phone = phoneMatch ? formatBrazilPhoneDisplay(phoneMatch[0]) : '';
+
+      return { name, phone };
+    } catch (_) {
+      return { name: '', phone: '' };
+    }
+  }
+
+  function findRightPanelContentRoot() {
+    try {
+      const tabs = Array.from(document.querySelectorAll('button, [role="tab"], a'))
+        .find(el => normalizeText(el.textContent || '') === 'Geral');
+
+      let node = tabs?.parentElement || null;
+      for (let i = 0; node && i < 6; i += 1) {
+        const text = normalizeText(node.textContent || '');
+        if (text.includes('Geral') && text.includes('Timeline') && text.includes('Arquivos')) {
+          return node.parentElement || node;
+        }
+        node = node.parentElement;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function ensureFallbackAttendanceDataCard() {
+    try {
+      if (hasVisibleAttendanceDataCard()) {
+        for (const card of document.querySelectorAll('[data-tm-fallback-attendance-card="true"]')) {
+          if (card instanceof HTMLElement) card.setAttribute(HIDDEN_ATTR, 'true');
+        }
+        return;
+      }
+
+      const root = findRightPanelContentRoot();
+      if (!root) return;
+
+      const rootText = normalizeText(root.textContent || '');
+      if (!rootText.includes('Geral')) return;
+
+      let card = root.querySelector('[data-tm-fallback-attendance-card="true"]');
+      if (!card) {
+        card = document.createElement('div');
+        card.setAttribute('data-tm-fallback-attendance-card', 'true');
+        root.appendChild(card);
+      }
+
+      const { name, phone } = getActiveHeaderIdentityForFallback();
+
+      card.removeAttribute(HIDDEN_ATTR);
+      card.innerHTML = '';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Dados do Atendimento';
+      card.appendChild(title);
+
+      const section = document.createElement('div');
+      section.innerHTML = `
+        <div style="font-weight:700;color:hsl(var(--muted-foreground));margin-bottom:12px;">PACIENTE</div>
+        <div data-tm-fallback-row="true">
+          <div data-tm-fallback-label="true">Nome</div>
+          <div data-tm-fallback-value="true">${name || '-'}</div>
+        </div>
+        <div data-tm-fallback-row="true">
+          <div data-tm-fallback-label="true">Telefone</div>
+          <div data-tm-fallback-value="true">${phone || '-'}</div>
+        </div>
+      `;
+      card.appendChild(section);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao criar fallback de Dados do Atendimento`, error);
+    }
+  }
+
+  function isNotasInternasCard(card) {
+    try {
+      if (!(card instanceof HTMLElement)) return false;
+
+      const text = normalizeText(card.textContent || '');
+      const title = Array.from(card.querySelectorAll('h3')).find(el =>
+        normalizeText(el.textContent || '') === 'Notas Internas'
+      );
+
+      if (!title) return false;
+
+      const hasTextarea = !!card.querySelector('textarea[placeholder*="nota interna"], textarea[placeholder*="Nota interna"]');
+      const hasButton = Array.from(card.querySelectorAll('button')).some(btn =>
+        normalizeText(btn.textContent || '') === 'Adicionar Nota'
+      );
+
+      return hasTextarea && hasButton && text.includes('Registre informações importantes');
+    } catch (_) {
+      return false;
+    }
+  }
+
   function hideNotasInternasCard() {
     try {
+      for (const card of document.querySelectorAll('[data-tm-hide-notas-internas="true"]')) {
+        if (card instanceof HTMLElement && !isNotasInternasCard(card)) {
+          card.removeAttribute('data-tm-hide-notas-internas');
+        }
+      }
+
       for (const title of document.querySelectorAll('h3')) {
         if (normalizeText(title.textContent) !== 'Notas Internas') continue;
 
         const card = title.closest('div.rounded-xl.bg-card.border.border-border') ||
           title.closest('div.rounded-xl');
 
-        if (card instanceof HTMLElement) {
+        if (card instanceof HTMLElement && isNotasInternasCard(card)) {
           card.setAttribute('data-tm-hide-notas-internas', 'true');
         }
       }
@@ -3821,6 +3991,7 @@
    * ====================================================================== */
   function applySelectedFeatures() {
     hideNotasInternasCard();
+    ensureFallbackAttendanceDataCard();
     hideSelectedCards();
     applyDateToMessages();
     reorganizeAgentArea();
@@ -3838,6 +4009,7 @@
 
   function applyFastAntiFlickerPass() {
     hideNotasInternasCard();
+    ensureFallbackAttendanceDataCard();
     hideSelectedCards();
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();

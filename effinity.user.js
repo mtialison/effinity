@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.4';
+  const SCRIPT_VERSION = '10.5';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -73,6 +73,9 @@
 
   const MESSAGE_API_CACHE = new Map();
   const MESSAGE_API_CACHE_LIMIT = 1200;
+
+  const TICKET_SORT_CACHE = new Map();
+  let ticketSortApplyTimer = null;
 
   let PASTE_IMAGE_ACTIVE_TICKET_ID = '';
   let PASTE_IMAGE_ACTIVE_USER_NAME = 'Alison';
@@ -196,6 +199,7 @@
   function processApiPayload(payload, requestUrl = '') {
     try {
       updatePasteImageActiveTicketFromPayload(payload, requestUrl);
+      indexTicketsForSort(payload, requestUrl);
       extractApiMessages(payload);
       window.setTimeout(() => {
         try {
@@ -2419,7 +2423,7 @@ function getTicketFavoriteKey(card) {
       bottomRow.insertBefore(badge, mirror || null);
     }
 
-    const versionText = `V${SCRIPT_VERSION}`;
+    const versionText = `🧪 V${SCRIPT_VERSION}`;
     if (badge.textContent !== versionText) {
       badge.textContent = versionText;
     }
@@ -2551,6 +2555,148 @@ function getTicketFavoriteKey(card) {
         topRow.parentElement.setAttribute(TICKET_HEADER_ATTR, 'true');
       }
     }
+  }
+
+
+  function parseTicketSortTime(ticket) {
+    try {
+      const raw = ticket?.lastMessageAt || ticket?.updatedAt || ticket?.createdAt || '';
+      const time = Date.parse(raw);
+      return Number.isFinite(time) ? time : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function indexTicketsForSort(payload, requestUrl = '') {
+    try {
+      const url = String(requestUrl || '');
+      if (!/\/api\/whatsapp\/tickets\?/i.test(url)) return;
+
+      const list =
+        Array.isArray(payload?.content) ? payload.content :
+        Array.isArray(payload?.data?.content) ? payload.data.content :
+        Array.isArray(payload?.tickets) ? payload.tickets :
+        [];
+
+      if (!list.length) return;
+
+      for (const ticket of list) {
+        const name = normalizeText(ticket?.customerName || '').toUpperCase();
+        const phone = String(ticket?.customerPhone || '').replace(/\D/g, '');
+        const number = normalizeText(ticket?.ticketNumber || '').toUpperCase();
+        const id = String(ticket?.id || '').trim();
+        const sortTime = parseTicketSortTime(ticket);
+        const record = { id, number, name, phone, sortTime };
+
+        for (const key of [id, number, phone, `${name}:${phone}`, name].filter(Boolean)) {
+          TICKET_SORT_CACHE.set(key, record);
+        }
+      }
+
+      scheduleTicketSort(120);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao indexar tickets para ordenação`, error);
+    }
+  }
+
+  function getTicketCardSortRecord(card) {
+    try {
+      const text = normalizeText(card?.textContent || '');
+      const upperText = text.toUpperCase();
+
+      const protocolMatch = upperText.match(/\bCS\d+\b/);
+      if (protocolMatch && TICKET_SORT_CACHE.has(protocolMatch[0])) {
+        return TICKET_SORT_CACHE.get(protocolMatch[0]);
+      }
+
+      const phoneMatch = text.match(/55\d{10,11}|\(?\d{2}\)?\s?\d{4,5}-?\d{4}/);
+      const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
+      if (phone && TICKET_SORT_CACHE.has(phone)) {
+        return TICKET_SORT_CACHE.get(phone);
+      }
+
+      const nameEl = card.querySelector(
+        'h4.font-medium, span.font-medium.text-sm, div.font-medium.text-sm, div.text-sm.font-medium, span.text-sm.font-medium'
+      );
+
+      let name = normalizeText(nameEl?.textContent || '').toUpperCase();
+      if (!name) {
+        name = upperText
+          .replace(/CLÍNICA DO SONO|CLINICA DO SONO|SAMEC|CONFIRMAÇÃO|CONFIRMACAO|ÚLTIMA ATIVIDADE:.*$/i, '')
+          .trim();
+      }
+
+      if (name && phone && TICKET_SORT_CACHE.has(`${name}:${phone}`)) {
+        return TICKET_SORT_CACHE.get(`${name}:${phone}`);
+      }
+
+      if (name && TICKET_SORT_CACHE.has(name)) {
+        return TICKET_SORT_CACHE.get(name);
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function findTicketListGroupsForSort() {
+    try {
+      const cards = getAllTicketListCards();
+      const groups = new Map();
+
+      for (const card of cards) {
+        const parent = card.parentElement;
+        if (!parent) continue;
+        if (!groups.has(parent)) groups.set(parent, []);
+        groups.get(parent).push(card);
+      }
+
+      return Array.from(groups.entries()).filter(([, list]) => list.length > 1);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function sortTicketCardsByLastMessage() {
+    try {
+      const groups = findTicketListGroupsForSort();
+
+      for (const [parent, cards] of groups) {
+        const sortable = cards
+          .map((card, index) => ({ card, index, record: getTicketCardSortRecord(card) }))
+          .filter(item => item.record?.sortTime);
+
+        if (sortable.length < 2) continue;
+
+        const desired = [...sortable].sort((a, b) => {
+          if (b.record.sortTime !== a.record.sortTime) return b.record.sortTime - a.record.sortTime;
+          return a.index - b.index;
+        });
+
+        let changed = false;
+        for (let i = 0; i < desired.length; i += 1) {
+          if (desired[i].card !== sortable[i].card) {
+            changed = true;
+            break;
+          }
+        }
+
+        if (!changed) continue;
+
+        for (const item of desired) {
+          parent.appendChild(item.card);
+        }
+      }
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao ordenar cards de tickets`, error);
+    }
+  }
+
+  function scheduleTicketSort(delay = 180) {
+    try {
+      window.clearTimeout(ticketSortApplyTimer);
+      ticketSortApplyTimer = window.setTimeout(sortTicketCardsByLastMessage, delay);
+    } catch (_) {}
   }
 
   /* ========================================================================
@@ -3905,6 +4051,7 @@ function getTicketFavoriteKey(card) {
    * ====================================================================== */
   function applySelectedFeatures() {
     hideNotasInternasCard();
+    scheduleTicketSort(220);
     hideSelectedCards();
     applyDateToMessages();
     reorganizeAgentArea();
@@ -3922,6 +4069,7 @@ function getTicketFavoriteKey(card) {
 
   function applyFastAntiFlickerPass() {
     hideNotasInternasCard();
+    scheduleTicketSort(260);
     hideSelectedCards();
     moveCreatedDateToHeader();
     applyUppercaseToCustomerNames();

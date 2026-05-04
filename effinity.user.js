@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.5
+// @version      10.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.5';
+  const SCRIPT_VERSION = '10.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -720,7 +720,17 @@
       display: none !important;
     }
 
-    /* ── Sistema interno de ocultação ──────────────────────────────────── */
+    
+    /* OCULTAR NOME E TELEFONE DO HEADER DO CHAT */
+    h2[data-tm-uppercase-name="true"] {
+      display: none !important;
+    }
+
+    a[href^="tel:"] {
+      display: none !important;
+    }
+
+/* ── Sistema interno de ocultação ──────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
     }

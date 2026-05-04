@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.3
+// @version      10.4
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.3';
+  const SCRIPT_VERSION = '10.4';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1918,7 +1918,26 @@
     return '';
   }
 
-  function getTicketFavoriteKey(card) {
+  
+  function isAssignedQueueCard(card) {
+    try {
+      const text = normalizeText(card.textContent || '').toLowerCase();
+      if (text.includes('clique para assumir')) return true;
+
+      const parent = card.closest('div');
+      const columnText = normalizeText(parent?.textContent || '').toLowerCase();
+
+      if (columnText.includes('atribuído') || columnText.includes('atribuido')) {
+        if (!columnText.includes('atendimento')) return true;
+      }
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+function getTicketFavoriteKey(card) {
     try {
       const protocol = getTicketProtocol(card);
       if (protocol) return protocol;
@@ -1995,6 +2014,12 @@
   }
 
   function ensureFavoriteStar(card) {
+    if (isAssignedQueueCard(card)) {
+      const existing = card.querySelector('[data-tm-favorite-star="true"]');
+      if (existing) existing.remove();
+      return;
+    }
+
     const protocol = getTicketFavoriteKey(card);
     if (!protocol) return;
 

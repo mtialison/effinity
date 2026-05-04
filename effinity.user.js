@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.4
+// @version      10.5
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -2419,7 +2419,7 @@ function getTicketFavoriteKey(card) {
       bottomRow.insertBefore(badge, mirror || null);
     }
 
-    const versionText = `🧪 V${SCRIPT_VERSION}`;
+    const versionText = `V${SCRIPT_VERSION}`;
     if (badge.textContent !== versionText) {
       badge.textContent = versionText;
     }

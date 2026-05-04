@@ -730,6 +730,12 @@
       display: none !important;
     }
 
+
+    /* AJUSTE DE PADDING DO CONTAINER PRINCIPAL DO CHAT */
+    div.rounded-xl.bg-card.border.border-border.p-6.flex-1.flex.flex-col {
+      padding: 1px !important;
+    }
+
 /* ── Sistema interno de ocultação ──────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
@@ -4179,9 +4185,3 @@ function getTicketFavoriteKey(card) {
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
 })();
-
-
-    /* AJUSTE DE PADDING DO CONTAINER PRINCIPAL DO CHAT */
-    div.rounded-xl.bg-card.border.border-border.p-6 {
-      padding: 1px !important;
-    }

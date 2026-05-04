@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.2
+// @version      10.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.2';
+  const SCRIPT_VERSION = '10.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -1918,6 +1918,37 @@
     return '';
   }
 
+  function getTicketFavoriteKey(card) {
+    try {
+      const protocol = getTicketProtocol(card);
+      if (protocol) return protocol;
+
+      const text = normalizeText(card?.textContent || '');
+      if (!text) return '';
+
+      const phoneMatch = text.match(/55\d{10,11}|\(?\d{2}\)?\s?\d{4,5}-?\d{4}/);
+      const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
+
+      const nameEl = card.querySelector(
+        'h4.font-medium, span.font-medium.text-sm, div.font-medium.text-sm, div.text-sm.font-medium, span.text-sm.font-medium'
+      );
+
+      let name = normalizeText(nameEl?.textContent || '');
+      if (!name) {
+        name = text
+          .replace(/Clínica do Sono|Clinica do Sono|SAMEC|Confirmação|Confirmacao|Última atividade:.*$/i, '')
+          .trim();
+      }
+
+      name = name.replace(/\s+/g, ' ').trim();
+      if (!name) return '';
+
+      return `ticket:${name.toUpperCase()}:${phone || 'sem-telefone'}`;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function isFavoriteTicket(protocol) {
     if (!protocol) return false;
     const favorites = loadFavoriteTickets();
@@ -1964,7 +1995,7 @@
   }
 
   function ensureFavoriteStar(card) {
-    const protocol = getTicketProtocol(card);
+    const protocol = getTicketFavoriteKey(card);
     if (!protocol) return;
 
     let star = card.querySelector(`[${FAVORITE_STAR_ATTR}="true"]`);
@@ -1976,7 +2007,7 @@
         event.preventDefault();
         event.stopPropagation();
 
-        const currentProtocol = card.getAttribute(FAVORITE_ATTR) || getTicketProtocol(card);
+        const currentProtocol = card.getAttribute(FAVORITE_ATTR) || getTicketFavoriteKey(card);
         if (!currentProtocol) return;
 
         const nextState = !isFavoriteTicket(currentProtocol);

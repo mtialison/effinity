@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      10.7
+// @version      11.1
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '10.7';
+  const SCRIPT_VERSION = '11.1';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -734,6 +734,49 @@
     /* AJUSTE DE PADDING DO CONTAINER PRINCIPAL DO CHAT */
     div.rounded-xl.bg-card.border.border-border.p-6.flex-1.flex.flex-col {
       padding: 1px !important;
+    }
+
+
+    /* AJUSTE INPUT AREA (TOP/BOTTOM 9px) */
+    div.border-t.border-border.bg-card.shadow-lg > div.p-3.md\:p-4 {
+      padding-top: 9px !important;
+      padding-bottom: 9px !important;
+    }
+
+
+    /* CORREÇÃO DEFINITIVA PADDING INPUT AREA */
+    div.border-t.border-border.bg-card.shadow-lg.flex-shrink-0.z-10 > div {
+      padding-top: 9px !important;
+      padding-bottom: 9px !important;
+    }
+
+
+    /* CENTRALIZAR ÍCONES DOS BOTÕES (CLIP, MIC, DOC, RAIO) */
+    div.flex.items-center.gap-2 button {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+
+    /* CENTRALIZAR ÍCONES DOS 4 BOTÕES À ESQUERDA DO INPUT */
+    div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > button,
+    div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > div.relative > button {
+      width: 44px !important;
+      height: 44px !important;
+      min-width: 44px !important;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex: 0 0 44px !important;
+    }
+
+    div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > button svg,
+    div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > div.relative > button svg {
+      margin: 0 !important;
+      display: block !important;
+      flex-shrink: 0 !important;
     }
 
 /* ── Sistema interno de ocultação ──────────────────────────────────── */

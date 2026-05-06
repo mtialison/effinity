@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.1
+// @version      11.6
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.1';
+  const SCRIPT_VERSION = '11.6';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -700,7 +700,7 @@
       transform: scale(1) !important;
     }
 
-    
+
     /* ── Ajuste fino badge idade ─────────────────────────────────────── */
     [data-tm-birthdate] {
       display: flex !important;
@@ -715,12 +715,12 @@
       transform: translateY(-1px) !important;
     }
 
-    
+
     [data-tm-hide-notas-internas="true"] {
       display: none !important;
     }
 
-    
+
     /* OCULTAR NOME E TELEFONE DO HEADER DO CHAT */
     h2[data-tm-uppercase-name="true"] {
       display: none !important;
@@ -777,6 +777,106 @@
       margin: 0 !important;
       display: block !important;
       flex-shrink: 0 !important;
+    }
+
+
+    /* OCULTAR TÍTULO "Selecione um Atendimento" */
+    h3.font-semibold.tracking-tight.text-card-foreground.text-base.flex.items-center.gap-2 {
+      display: none !important;
+    }
+
+
+    /* CORRIGIR POSIÇÃO DA BOLINHA DOS TOGGLES DE FILAS */
+    button[role="switch"] {
+      position: relative !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      width: 38px !important;
+      height: 20px !important;
+      min-width: 38px !important;
+      padding: 2px !important;
+      overflow: hidden !important;
+      vertical-align: middle !important;
+    }
+
+    button[role="switch"] > span {
+      position: absolute !important;
+      top: 2px !important;
+      left: 2px !important;
+      width: 16px !important;
+      height: 16px !important;
+      transform: translateX(0) !important;
+      transition: transform 0.18s ease !important;
+    }
+
+    button[role="switch"][data-state="checked"] > span,
+    button[role="switch"][aria-checked="true"] > span {
+      transform: translateX(18px) !important;
+    }
+
+
+    /* CORRIGIR TOGGLES DAS FILAS (HTML SEM role=switch) */
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full {
+      width: 28px !important;
+      min-width: 28px !important;
+      max-width: 28px !important;
+      height: 16px !important;
+      min-height: 16px !important;
+      max-height: 16px !important;
+      padding: 0 !important;
+      position: relative !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      overflow: hidden !important;
+      flex: 0 0 28px !important;
+      vertical-align: middle !important;
+    }
+
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full > span.inline-block.h-3.w-3.rounded-full {
+      position: absolute !important;
+      top: 2px !important;
+      left: 2px !important;
+      width: 12px !important;
+      height: 12px !important;
+      min-width: 12px !important;
+      min-height: 12px !important;
+      margin: 0 !important;
+      transform: translateX(0) !important;
+      transition: transform 0.18s ease !important;
+    }
+
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full.bg-green-500 > span.inline-block.h-3.w-3.rounded-full,
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full.bg-green-600 > span.inline-block.h-3.w-3.rounded-full,
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full[class*="bg-green"] > span.inline-block.h-3.w-3.rounded-full {
+      transform: translateX(12px) !important;
+    }
+
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full.bg-gray-300 > span.inline-block.h-3.w-3.rounded-full,
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full.bg-gray-600 > span.inline-block.h-3.w-3.rounded-full,
+    [data-tm-agent-bottom-row="true"] button.relative.inline-flex.h-4.w-7.items-center.rounded-full[class*="bg-gray"] > span.inline-block.h-3.w-3.rounded-full {
+      transform: translateX(0) !important;
+    }
+
+
+    /* OCULTAR NOTIFICAÇÕES LOGIN/LOGOUT DAS FILAS */
+    div[role="alert"].bg-green-50.border-green-200 {
+      display: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+
+
+    /* CORRIGIR POSIÇÃO DO DROPDOWN ONLINE/OFFLINE */
+    [data-tm-agent-actions-mirror="true"] {
+      position: relative !important;
+    }
+
+    [data-radix-popper-content-wrapper] {
+      left: auto !important;
+      right: 24px !important;
+      transform: none !important;
     }
 
 /* ── Sistema interno de ocultação ──────────────────────────────────── */
@@ -1981,7 +2081,7 @@
     return '';
   }
 
-  
+
   function isAssignedQueueCard(card) {
     try {
       const text = normalizeText(card.textContent || '').toLowerCase();
@@ -2972,7 +3072,7 @@ function getTicketFavoriteKey(card) {
     return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
   }
 
-  
+
 
   function formatAttendanceDataEmails() {
     for (const card of findAttendanceDataCards()) {

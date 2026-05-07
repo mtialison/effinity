@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      11.6
+// @version      12.3
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/
 // @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
@@ -22,7 +22,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '11.6';
+  const SCRIPT_VERSION = '12.3';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -57,7 +57,7 @@
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
-  const COPY_ICON_URL = 'https://i.imgur.com/0SJagfY.png';
+  const COPY_ICON_URL = 'https://i.imgur.com/AUvKFQq.png';
   const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
   const UNREAD_CARD_ATTR = 'data-tm-unread-card';
   const UNREAD_ICON_ATTR = 'data-tm-unread-icon';
@@ -879,6 +879,47 @@
       transform: none !important;
     }
 
+
+    /* CORRIGIR DROPDOWN ONLINE/OFFLINE FIXO NA ESQUERDA */
+    div[data-dropdown-menu="true"].fixed {
+      left: auto !important;
+      right: 16px !important;
+      top: 64px !important;
+      transform: none !important;
+    }
+
+
+    /* BOTÃO COPIAR DADOS PESSOAIS */
+    [data-tm-copy-personal-data-btn="true"] {
+      position: absolute !important;
+      top: 6px !important;
+      right: 12px !important;
+      width: 40px !important;
+      height: 40px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      background: transparent !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      cursor: pointer !important;
+      z-index: 20 !important;
+      opacity: .88 !important;
+      transition: opacity .15s ease, transform .15s ease !important;
+    }
+
+    [data-tm-copy-personal-data-btn="true"]:hover {
+      opacity: 1 !important;
+      transform: scale(1.05) !important;
+    }
+
+    [data-tm-copy-personal-data-btn="true"] img {
+      width: 40px !important;
+      height: 40px !important;
+      object-fit: contain !important;
+      pointer-events: none !important;
+    }
+
 /* ── Sistema interno de ocultação ──────────────────────────────────── */
     [${HIDDEN_ATTR}="true"] {
       display: none !important;
@@ -1151,11 +1192,12 @@
     [${COPY_TOAST_ATTR}="true"] {
       position: absolute !important;
       top: 12px !important;
-      right: 12px !important;
+      left: 50% !important;
+      right: auto !important;
       width: 40px !important;
       height: 40px !important;
       opacity: 0 !important;
-      transform: scale(0.96) !important;
+      transform: translateX(-50%) scale(0.96) !important;
       transition: opacity 0.18s ease, transform 0.18s ease !important;
       pointer-events: none !important;
       z-index: 30 !important;
@@ -1163,7 +1205,7 @@
 
     [${COPY_TOAST_VISIBLE_ATTR}="true"] {
       opacity: 1 !important;
-      transform: scale(1) !important;
+      transform: translateX(-50%) scale(1) !important;
     }
 
     [${COPY_TOAST_ATTR}="true"] img {
@@ -2250,6 +2292,111 @@ function getTicketFavoriteKey(card) {
 
         scheduleFavoriteLayer(450);
       }, true);
+    }
+  }
+
+
+  function findAttendanceDataCardForCopy() {
+    try {
+      for (const title of document.querySelectorAll('h3')) {
+        if (normalizeText(title.textContent || '') !== 'Dados do Atendimento') continue;
+
+        const card = title.closest('div.rounded-xl.bg-card.border.border-border') ||
+          title.closest('div.rounded-xl');
+
+        if (card instanceof HTMLElement) return card;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function findAttendancePersonalValue(card, label) {
+    try {
+      const wanted = normalizeText(label).toLowerCase();
+
+      const labels = Array.from(card.querySelectorAll('div, span, p'))
+        .filter(el => normalizeText(el.textContent || '').toLowerCase() === wanted);
+
+      for (const labelEl of labels) {
+        const parent = labelEl.parentElement;
+        if (!parent) continue;
+
+        const siblings = Array.from(parent.children);
+        const index = siblings.indexOf(labelEl);
+
+        for (const candidate of siblings.slice(index + 1)) {
+          const text = normalizeText(candidate.textContent || '');
+          if (text && text.toLowerCase() !== wanted) return text;
+        }
+
+        const next = parent.nextElementSibling;
+        if (next) {
+          const text = normalizeText(next.textContent || '');
+          if (text && text.toLowerCase() !== wanted) return text;
+        }
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  function buildAttendancePersonalCopyText(card) {
+    const fields = ['Nome', 'Nascimento', 'CPF', 'E-mail', 'Telefone'];
+    const lines = [];
+
+    for (const field of fields) {
+      const value = findAttendancePersonalValue(card, field);
+      if (value) lines.push(`${field} ${value}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  function ensureCopyPersonalDataButton() {
+    try {
+      const card = findAttendanceDataCardForCopy();
+      if (!card) return;
+      if (card.querySelector('[data-tm-copy-personal-data-btn="true"]')) return;
+
+      const title = Array.from(card.querySelectorAll('h3')).find(el =>
+        normalizeText(el.textContent || '') === 'Dados do Atendimento'
+      );
+
+      if (!title || !title.parentElement) return;
+
+      const headerRow = title.parentElement;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('data-tm-copy-personal-data-btn', 'true');
+      button.innerHTML = '<img src="https://i.imgur.com/sz7EBCY.png" alt="Copiar">';
+      button.title = 'Copiar dados';
+
+      button.addEventListener('click', async (event) => {
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const text = buildAttendancePersonalCopyText(card);
+          if (!text) return;
+
+          const ok = await copyTextToClipboard(text);
+          if (ok) {
+            showCopyToast(card);
+          } else {
+            button.style.opacity = '.4';
+            window.setTimeout(() => {
+              try { button.style.opacity = '.88'; } catch (_) {}
+            }, 1200);
+          }
+        } catch (_) {}
+      }, true);
+
+      card.style.position = 'relative';
+      headerRow.appendChild(button);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao adicionar botão copiar dados`, error);
     }
   }
 
@@ -4209,6 +4356,7 @@ function getTicketFavoriteKey(card) {
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
   function applySelectedFeatures() {
+    ensureCopyPersonalDataButton();
     hideNotasInternasCard();
     scheduleTicketSort(220);
     hideSelectedCards();
@@ -4227,6 +4375,7 @@ function getTicketFavoriteKey(card) {
   }
 
   function applyFastAntiFlickerPass() {
+    ensureCopyPersonalDataButton();
     hideNotasInternasCard();
     scheduleTicketSort(260);
     hideSelectedCards();

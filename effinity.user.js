@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      12.3
+// @version      13.36
 // @author       alison
-// @match        https://pulse.sono.effinity.com.br/
-// @match        https://pulse.sono.effinity.com.br/whatsapp/agent*
+// @match        https://pulse.sono.effinity.com.br/*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @downloadURL  https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
 // @grant        none
@@ -14,15 +13,198 @@
 (function () {
   'use strict';
 
-  if (!location.pathname.startsWith('/whatsapp/agent')) {
-    return;
+  function installTicketDetailHeightStyle() {
+    const styleId = 'tm-effinity-ticket-detail-height';
+    if (document.getElementById(styleId)) return;
+
+    const host = document.head || document.documentElement;
+    if (!host) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = String.raw`
+      @media (min-width: 1024px) {
+        .page-transition > div.flex.flex-col.h-\[calc\(100vh-120px\)\] {
+          height: 100dvh !important;
+          min-height: 100dvh !important;
+        }
+      }
+      [data-tm-ticket-info-field-hidden="true"] {
+        display: none !important;
+      }
+      [data-tm-ticket-updated-age-hidden="true"] {
+        display: none !important;
+      }
+      [data-tm-ticket-closed-notice="true"] {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 8px 12px !important;
+      }
+      [data-tm-ticket-closed-notice="true"] > p {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+      }
+      [data-tm-ticket-reopen-proxy="true"] {
+        flex: 0 0 auto !important;
+      }
+      [data-tm-ticket-reopen-footer="true"] {
+        display: none !important;
+      }
+      [data-tm-ticket-history-chrome-hidden="true"] {
+        display: none !important;
+      }
+    `;
+    host.appendChild(style);
   }
 
+  function hideTicketInfoFields() {
+    if (!/^\/whatsapp\/tickets\/[^/]+\/?$/.test(location.pathname)) return;
+
+    const hiddenLabels = new Set(['Título', 'Status', 'Prioridade', 'SLA', 'Fila', 'Classificação']);
+    for (const title of document.querySelectorAll('h3')) {
+      if (title.textContent?.trim() !== 'Informações do Ticket') continue;
+
+      const card = title.closest('div.rounded-xl.bg-card.border.border-border');
+      const body = card?.querySelector('div.pb-6.space-y-4');
+      if (!body) continue;
+
+      for (const block of body.children) {
+        const label = block.querySelector('span');
+        const labelText = label?.textContent?.trim();
+        const isSlaBlock = /^SLA(?:\s|$)/.test(block.textContent?.trim() || '');
+        if (!hiddenLabels.has(labelText) && !isSlaBlock) continue;
+        block.hidden = true;
+        block.setAttribute('data-tm-ticket-info-field-hidden', 'true');
+      }
+    }
+  }
+
+  function hideTicketUpdatedAge() {
+    for (const header of document.querySelectorAll('.ticket-chat-header')) {
+      for (const span of header.querySelectorAll('span.flex.items-center.gap-0\\.5')) {
+        if (!/^Atualizado\s+há(?:\s|$)/i.test(span.textContent?.trim() || '')) continue;
+        span.hidden = true;
+        span.setAttribute('data-tm-ticket-updated-age-hidden', 'true');
+      }
+    }
+  }
+
+  function positionClosedTicketReopenButton() {
+    if (!/^\/whatsapp\/tickets\/[^/]+\/?$/.test(location.pathname)) return;
+
+    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border')) {
+      const footer = card.querySelector(':scope > div.flex.items-center.gap-2.p-3.border-t.border-border');
+      const original = Array.from(footer?.querySelectorAll(':scope > button') || [])
+        .find(button => button.textContent?.trim() === 'Reabrir');
+      if (!original) continue;
+
+      const noticeText = Array.from(card.querySelectorAll('p'))
+        .find(paragraph => paragraph.textContent?.includes('Este ticket está fechado'));
+      const notice = noticeText?.parentElement;
+      if (!notice || !card.contains(notice)) continue;
+
+      let proxy = notice.querySelector(':scope > button[data-tm-ticket-reopen-proxy="true"]');
+      if (!proxy) {
+        proxy = document.createElement('button');
+        proxy.type = 'button';
+        proxy.setAttribute('data-tm-ticket-reopen-proxy', 'true');
+        proxy.addEventListener('click', event => {
+          event.preventDefault();
+          const currentFooter = card.querySelector(':scope > div.flex.items-center.gap-2.p-3.border-t.border-border');
+          const currentOriginal = Array.from(currentFooter?.querySelectorAll(':scope > button') || [])
+            .find(button => button.textContent?.trim() === 'Reabrir');
+          currentOriginal?.click();
+        });
+        notice.appendChild(proxy);
+      }
+
+      if (proxy.className !== original.className) proxy.className = original.className;
+      if (proxy.innerHTML !== original.innerHTML) proxy.innerHTML = original.innerHTML;
+      proxy.disabled = original.disabled;
+      notice.setAttribute('data-tm-ticket-closed-notice', 'true');
+      footer.setAttribute('data-tm-ticket-reopen-footer', 'true');
+      footer.hidden = true;
+    }
+  }
+
+  function hideTicketHistoryChrome() {
+    const title = Array.from(document.querySelectorAll('h1, h2'))
+      .find(heading => heading.textContent?.trim() === 'Histórico de Tickets');
+    if (!title) return;
+
+    const page = title.closest('main') || title.closest('.page-transition') || document;
+    const hide = element => {
+      if (!element) return;
+      element.hidden = true;
+      element.setAttribute('data-tm-ticket-history-chrome-hidden', 'true');
+    };
+
+    const subtitle = Array.from(page.querySelectorAll('p'))
+      .find(paragraph => paragraph.textContent?.trim() === 'Visualize e gerencie tickets arquivados e fechados');
+    hide(subtitle);
+
+    const labels = ['Total', 'Resolvidos', 'Cancelados'];
+    const metricRow = Array.from(page.querySelectorAll('div')).find(row => {
+      const cards = Array.from(row.children);
+      return cards.length === labels.length && cards.every((card, index) =>
+        Array.from(card.querySelectorAll('div, p, span'))
+          .some(element => element.textContent?.trim() === labels[index])
+      );
+    });
+    hide(metricRow);
+
+    const topQueuesButton = Array.from(page.querySelectorAll('button, [role="button"]'))
+      .find(button => /^(?:Mostrar|Ocultar) Top Filas e Tags(?:\s|\()/i.test(button.textContent?.trim() || ''));
+    hide(topQueuesButton);
+  }
+
+  function startTicketDetailFieldObserver() {
+    if (!document.body) return;
+    hideTicketInfoFields();
+    hideTicketUpdatedAge();
+    positionClosedTicketReopenButton();
+    hideTicketHistoryChrome();
+    const observer = new MutationObserver(() => {
+      hideTicketInfoFields();
+      hideTicketUpdatedAge();
+      positionClosedTicketReopenButton();
+      hideTicketHistoryChrome();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (typeof document !== 'undefined') {
+    installTicketDetailHeightStyle();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', installTicketDetailHeightStyle, { once: true });
+      document.addEventListener('DOMContentLoaded', startTicketDetailFieldObserver, { once: true });
+    } else {
+      startTicketDetailFieldObserver();
+    }
+  }
+
+  function waitForAgentRoute(start) {
+    let started = false;
+    let intervalId = null;
+
+    const checkRoute = () => {
+      if (started || !location.pathname.startsWith('/whatsapp/agent')) return;
+      started = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      start();
+    };
+
+    checkRoute();
+    if (!started) intervalId = window.setInterval(checkRoute, 300);
+  }
+
+  waitForAgentRoute(() => {
   /* ========================================================================
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '12.3';
+  const SCRIPT_VERSION = '13.36';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -57,14 +239,28 @@
   const QUEUE_TAG_ATTR = 'data-tm-queue-tag';
   const QUEUE_TAG_TYPE_ATTR = 'data-tm-queue-type';
 
+  const TEMPLATE_MODAL_ATTR = 'data-tm-template-modal';
+  const TEMPLATE_MODAL_BACKDROP_ATTR = 'data-tm-template-modal-backdrop';
+  const TEMPLATE_MODE_HIDDEN_ATTR = 'data-tm-template-mode-hidden';
+  const TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR = 'data-tm-template-recipient-field-hidden';
+  const TEMPLATE_SELECTED_RECIPIENT_ATTR = 'data-tm-template-selected-recipient';
+  const TEMPLATE_RECIPIENT_COPY_HIDDEN_ATTR = 'data-tm-template-recipient-copy-hidden';
+  const TEMPLATE_SEND_NUMBER_CHOSEN_ATTR = 'data-tm-template-send-number-chosen';
+  const TEMPLATE_QUEUE_HIDDEN_ATTR = 'data-tm-template-queue-hidden';
+  const TEMPLATE_HSM_CHOSEN_ATTR = 'data-tm-template-hsm-chosen';
+  const TEMPLATE_HSM_OPTION_HIDDEN_ATTR = 'data-tm-template-hsm-option-hidden';
+  const TEMPLATE_HSM_DECORATION_HIDDEN_ATTR = 'data-tm-template-hsm-decoration-hidden';
+  const TEMPLATE_HSM_LABEL_HIDDEN_ATTR = 'data-tm-template-hsm-label-hidden';
+  const TEMPLATE_SECONDARY_MODAL_ATTR = 'data-tm-template-secondary-modal';
+  const TEMPLATE_PREVIEW_HIDDEN_ATTR = 'data-tm-template-preview-list-hidden';
+  const TEMPLATE_PREVIEW_CARD_ATTR = 'data-tm-template-preview-selected-card';
+  const TEMPLATE_PREVIEW_TITLE_ATTR = 'data-tm-template-preview-title';
+  const templateParameterManualValues = new WeakMap();
+
   const COPY_ICON_URL = 'https://i.imgur.com/AUvKFQq.png';
   const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
   const UNREAD_CARD_ATTR = 'data-tm-unread-card';
   const UNREAD_ICON_ATTR = 'data-tm-unread-icon';
-
-  const SIDEBAR_BOOT_STYLE_ID = 'tm-effinity-sidebar-boot-style';
-  const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-booting';
-  const SIDEBAR_COLLAPSED_READY_ATTR = 'data-tm-sidebar-collapsed-ready';
 
   const CARD_BOOT_STYLE_ID = 'tm-effinity-card-boot-style';
   const CARD_BOOT_ATTR = 'data-tm-card-booting';
@@ -516,6 +712,20 @@
     }
   }
 
+
+
+  function hideTemplateModalPreviewBlock(modal) {
+    if (!modal) return;
+    const label = Array.from(modal.querySelectorAll('p'))
+      .find(node => normalizeText(node.textContent).includes('Preview da mensagem:'));
+    const previewBlock = label?.closest('div.p-4') ||
+      Array.from(modal.querySelectorAll('div.p-4.bg-green-50'))
+        .find(node => normalizeText(node.textContent).includes('Preview da mensagem:'));
+    if (previewBlock && modal.contains(previewBlock)) {
+      previewBlock.setAttribute('data-tm-template-preview-hidden', 'true');
+    }
+  }
+
   function installPasteImageSender() {
     if (window.__tmEffinityPasteImageSenderInstalled) return;
     window.__tmEffinityPasteImageSenderInstalled = true;
@@ -530,11 +740,12 @@
    * ====================================================================== */
   const css = `
     /* ── 2. Layout geral ───────────────────────────────────────────────── */
-    .h-\\[calc\\(100vh-100px\\)\\] {
-      height: 100vh !important;
-      display: flex !important;
-      flex-direction: column !important;
-      overflow: hidden !important;
+    @media (min-width: 1280px) {
+      .page-transition > .flex.flex-col.xl\\:h-\\[calc\\(100vh-100px\\)\\] {
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        overflow: hidden !important;
+      }
     }
 
     .grid.grid-cols-1.lg\\:grid-cols-2.xl\\:grid-cols-4.gap-3.flex-1.min-h-0.overflow-hidden {
@@ -751,14 +962,6 @@
     }
 
 
-    /* CENTRALIZAR ÍCONES DOS BOTÕES (CLIP, MIC, DOC, RAIO) */
-    div.flex.items-center.gap-2 button {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    }
-
-
     /* CENTRALIZAR ÍCONES DOS 4 BOTÕES À ESQUERDA DO INPUT */
     div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > button,
     div.flex.items-end.gap-2.max-w-4xl.mx-auto.relative > div.relative > button {
@@ -865,27 +1068,6 @@
       opacity: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
-    }
-
-
-    /* CORRIGIR POSIÇÃO DO DROPDOWN ONLINE/OFFLINE */
-    [data-tm-agent-actions-mirror="true"] {
-      position: relative !important;
-    }
-
-    [data-radix-popper-content-wrapper] {
-      left: auto !important;
-      right: 24px !important;
-      transform: none !important;
-    }
-
-
-    /* CORRIGIR DROPDOWN ONLINE/OFFLINE FIXO NA ESQUERDA */
-    div[data-dropdown-menu="true"].fixed {
-      left: auto !important;
-      right: 16px !important;
-      top: 64px !important;
-      transform: none !important;
     }
 
 
@@ -1222,8 +1404,8 @@
       position: fixed !important;
       width: 420px !important;
       height: 520px !important;
-      max-width: calc(100vw - 40px) !important;
-      max-height: calc(100vh - 40px) !important;
+      max-width: calc(100vw - 16px) !important;
+      max-height: calc(100dvh - 16px) !important;
       background: #111827 !important;
       border: 1px solid rgba(148, 163, 184, 0.35) !important;
       border-radius: 12px !important;
@@ -1234,8 +1416,8 @@
     }
 
     [data-tm-image-popup="true"][data-tm-maximized="true"] {
-      width: min(920px, calc(100vw - 48px)) !important;
-      height: min(720px, calc(100vh - 48px)) !important;
+      width: min(920px, calc(100vw - 32px)) !important;
+      height: min(720px, calc(100dvh - 32px)) !important;
       transform: none !important;
     }
 
@@ -1774,6 +1956,224 @@
       color: #b91c1c !important;
       border-color: #fca5a5 !important;
     }
+
+
+    /* ── 23. Transformar painel "Enviar Template com Ticket" em modal central ──
+       Baseado no HTML enviado pelo DevTools:
+       <div class="fixed right-0 top-0 h-full w-full max-w-2xl ... pt-16">
+         ... <h2>Enviar Template com Ticket</h2> ...
+       Mantém o painel do React no DOM e apenas altera apresentação visual.
+    */
+    div.fixed.right-0.top-0.h-full.w-full.max-w-2xl.bg-background.z-\[60\].shadow-2xl.overflow-hidden.flex.flex-col.pt-16:has(h2):has(.lucide-send) {
+      left: 50% !important;
+      right: auto !important;
+      top: 50% !important;
+      bottom: auto !important;
+      width: min(580px, calc(100vw - 32px)) !important;
+      max-width: min(580px, calc(100vw - 32px)) !important;
+      height: auto !important;
+      max-height: min(760px, calc(100dvh - 32px)) !important;
+      padding-top: 0 !important;
+      transform: translate(-50%, -50%) !important;
+      border-radius: 18px !important;
+      border: 1px solid hsl(var(--border)) !important;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55) !important;
+      overflow: hidden !important;
+      z-index: 100000 !important;
+    }
+
+    div.fixed.right-0.top-0.h-full.w-full.max-w-2xl.bg-background.z-\[60\].shadow-2xl.overflow-hidden.flex.flex-col.pt-16:has(h2):has(.lucide-send)::before {
+      content: "" !important;
+      position: fixed !important;
+      inset: -100vh -100vw !important;
+      background: rgba(2, 6, 23, 0.62) !important;
+      backdrop-filter: none !important;
+      z-index: -1 !important;
+      pointer-events: none !important;
+    }
+
+    div.fixed.right-0.top-0.h-full.w-full.max-w-2xl.bg-background.z-\[60\].shadow-2xl.overflow-hidden.flex.flex-col.pt-16:has(h2):has(.lucide-send)
+      > div.flex-shrink-0.flex.items-center.justify-between.p-6.border-b {
+      padding: 18px 20px !important;
+    }
+
+    div.fixed.right-0.top-0.h-full.w-full.max-w-2xl.bg-background.z-\[60\].shadow-2xl.overflow-hidden.flex.flex-col.pt-16:has(h2):has(.lucide-send)
+      > div.flex-1.overflow-y-auto.p-6 {
+      padding: 18px 20px !important;
+    }
+
+    div.fixed.right-0.top-0.h-full.w-full.max-w-2xl.bg-background.z-\[60\].shadow-2xl.overflow-hidden.flex.flex-col.pt-16:has(h2):has(.lucide-send)
+      > div.border-t.p-6 {
+      padding: 16px 20px !important;
+    }
+
+    /* ── 24. Modal central do Enviar Template (robusto via atributo JS) ── */
+    [${TEMPLATE_MODAL_ATTR}="true"] {
+      position: fixed !important;
+      left: 50% !important;
+      right: auto !important;
+      top: 50% !important;
+      bottom: auto !important;
+      width: min(580px, calc(100vw - 32px)) !important;
+      max-width: min(580px, calc(100vw - 32px)) !important;
+      height: auto !important;
+      max-height: min(760px, calc(100dvh - 32px)) !important;
+      padding-top: 0 !important;
+      transform: translate(-50%, -50%) !important;
+      border-radius: 18px !important;
+      border: 1px solid hsl(var(--border)) !important;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58) !important;
+      overflow: hidden !important;
+      z-index: 100001 !important;
+      pointer-events: auto !important;
+      opacity: 1 !important;
+      filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.flex-shrink-0.flex.items-center.justify-between.p-6.border-b {
+      padding: 18px 20px !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.flex-1.overflow-y-auto.p-6,
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.flex-1.overflow-y-auto {
+      padding: 18px 20px !important;
+      min-height: 0 !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.border-t.p-6,
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.border-t {
+      padding: 16px 20px !important;
+    }
+
+    [${TEMPLATE_MODAL_BACKDROP_ATTR}="true"] {
+      display: none !important;
+      pointer-events: none !important;
+    }
+
+    /* ── 25. Ocultações internas do modal Enviar Template ───────────────
+       Implementado sobre o modal já marcado por TEMPLATE_MODAL_ATTR.
+       Não remove nós do React; apenas oculta visualmente elementos enviados via HTML.
+    */
+
+    /* Cabeçalho: "Enviar Template com Ticket" */
+    [${TEMPLATE_MODAL_ATTR}="true"] > div.flex-shrink-0.flex.items-center.justify-between.p-6.border-b.bg-gradient-to-r {
+      display: none !important;
+    }
+
+    /* Mantém o modo Manual ativo no React; oculta somente seu seletor. */
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_MODE_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_SELECTED_RECIPIENT_ATTR}]::after {
+      content: attr(${TEMPLATE_SELECTED_RECIPIENT_ATTR});
+      display: block;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid #22c55e;
+      border-radius: 6px;
+      color: #86efac;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_RECIPIENT_COPY_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_QUEUE_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] option[${TEMPLATE_HSM_OPTION_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_HSM_DECORATION_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_HSM_LABEL_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_SECONDARY_MODAL_ATTR}="true"] {
+      z-index: 100010 !important;
+    }
+
+    [${TEMPLATE_PREVIEW_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_PREVIEW_CARD_ATTR}="true"] {
+      cursor: default !important;
+      margin-top: 0 !important;
+    }
+
+    [${TEMPLATE_PREVIEW_TITLE_ATTR}="true"] {
+      font-size: 0 !important;
+    }
+
+    [${TEMPLATE_PREVIEW_TITLE_ATTR}="true"]::after {
+      content: "Visualização do Template HSM";
+      font-size: 18px;
+    }
+
+    /* Bloco: 4. Dados Personalizados (Opcional) */
+    [${TEMPLATE_MODAL_ATTR}="true"] button[type="button"]:has(> span):has(.lucide-chevron-down) {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] button[type="button"]:has(> span):has(.lucide-chevron-down) + p.text-xs.text-muted-foreground.mt-2 {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] div.rounded-xl.bg-card.border.border-border:has(> button[type="button"] > span):has(.lucide-chevron-down) {
+      display: none !important;
+    }
+
+    /* Bloco: Preview da mensagem */
+    [${TEMPLATE_MODAL_ATTR}="true"] div.p-4.bg-green-50.border.border-green-200.rounded-lg,
+    [${TEMPLATE_MODAL_ATTR}="true"] div.p-4.bg-green-50.dark\:bg-green-950\/30.border.border-green-200.dark\:border-green-800.rounded-lg,
+    [${TEMPLATE_MODAL_ATTR}="true"] div:has(> div > p.text-xs.font-medium.text-green-900):has(> p.whitespace-pre-wrap) {
+      display: none !important;
+    }
+
+    /* Bloco: Sincronização automática */
+    [${TEMPLATE_MODAL_ATTR}="true"] div.p-2.bg-purple-50.dark\:bg-purple-950\/30.border.border-purple-200.dark\:border-purple-800.rounded.text-xs,
+    [${TEMPLATE_MODAL_ATTR}="true"] div.p-2.bg-purple-50.border.border-purple-200.rounded.text-xs,
+    [${TEMPLATE_MODAL_ATTR}="true"] div:has(> p.text-purple-800):has(> p.text-purple-700.mt-1) {
+      display: none !important;
+    }
+
+
+    [${TEMPLATE_MODAL_BACKDROP_ATTR}="true"][data-tm-visible="false"] {
+      display: none !important;
+    }
+
+    [data-tm-template-preview-hidden="true"] {
+      display: none !important;
+    }
+
+
+
+
+
+
+
+
+
+    /* ── 26. Ocultar preview da mensagem ───────────────────────────── */
+    .p-4.bg-green-50.dark\:bg-green-950\/30.border.border-green-200.dark\:border-green-800.rounded-lg {
+      display: none !important;
+    }
+
+
   `;
 
 
@@ -1832,58 +2232,6 @@
     }
   `;
 
-
-  /* ========================================================================
-   * SEÇÃO: SIDEBAR INICIANDO RECOLHIDA
-   * Objetivo: a sidebar nasce visualmente recolhida sem remover o modo expandido.
-   * ====================================================================== */
-  const sidebarBootCSS = `
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) {
-      width: 4rem !important;
-      min-width: 4rem !important;
-      max-width: 4rem !important;
-      overflow: hidden !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child {
-      justify-content: center !important;
-      padding-left: 0.75rem !important;
-      padding-right: 0.75rem !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > div {
-      display: none !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) > div:first-child > button {
-      margin: 0 auto !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav h3,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav span,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .lucide-chevron-right,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button:not([aria-label]),
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a > span,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button > span {
-      display: none !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav a,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav button {
-      justify-content: center !important;
-      padding-left: 0.625rem !important;
-      padding-right: 0.625rem !important;
-      min-height: 2.5rem !important;
-    }
-
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-3,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .space-y-1,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mb-8,
-    html[${SIDEBAR_BOOT_ATTR}="true"] aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg:has(button[aria-label="Fechar menu"]) nav .mt-8 {
-      margin-top: 0 !important;
-      margin-bottom: 0 !important;
-    }
-  `;
 
   const agentBootCSS = `
     html[${AGENT_BOOT_ATTR}="true"] .bg-card.border.border-border.rounded-lg:has(> div):has(> div + div) > div:first-child:has(button):has(.lucide-users),
@@ -1949,17 +2297,6 @@
     document.getElementById(CARD_BOOT_STYLE_ID)?.remove();
   }
 
-  function startSidebarBootMask() {
-    document.documentElement.setAttribute(SIDEBAR_BOOT_ATTR, 'true');
-    ensureStyleTag(SIDEBAR_BOOT_STYLE_ID, sidebarBootCSS);
-  }
-
-  function stopSidebarBootMask() {
-    document.documentElement.removeAttribute(SIDEBAR_BOOT_ATTR);
-    document.documentElement.setAttribute(SIDEBAR_COLLAPSED_READY_ATTR, 'true');
-    document.getElementById(SIDEBAR_BOOT_STYLE_ID)?.remove();
-  }
-
   function startAgentBootMask() {
     document.documentElement.setAttribute(AGENT_BOOT_ATTR, 'true');
     ensureStyleTag(AGENT_BOOT_STYLE_ID, agentBootCSS);
@@ -1979,55 +2316,55 @@
     }, 4000);
   }
 
-  function getSidebarElement() {
-    return document.querySelector('aside.fixed.left-0.top-0.h-full.transition-all.duration-300.z-40.border-r.shadow-lg');
-  }
+  function startSidebarCollapsed() {
+    const root = document.body || document.documentElement;
+    if (!root) return;
 
-  function isSidebarCollapsed(sidebar) {
-    if (!sidebar) return false;
-    const openButton = sidebar.querySelector('button[aria-label="Abrir menu"]');
-    return sidebar.classList.contains('w-16') || !!openButton;
-  }
+    let active = true;
+    let scheduled = false;
+    let closePending = false;
+    let timeoutId;
 
-  function isSidebarExpanded(sidebar) {
-    if (!sidebar) return false;
-    const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
-    return sidebar.classList.contains('w-64') || !!closeButton;
-  }
+    const stop = () => {
+      active = false;
+      observer.disconnect();
+      document.removeEventListener('click', onUserClick, true);
+      window.clearTimeout(timeoutId);
+    };
 
-  let sidebarBootDone = false;
-  let sidebarBootFrame = 0;
-  function ensureSidebarStartsCollapsed() {
-    if (sidebarBootDone) return;
+    const onUserClick = (event) => {
+      if (event.isTrusted && event.target?.closest?.(
+        'aside.fixed.left-0.top-0.h-full button[aria-label="Abrir menu"], ' +
+        'aside.fixed.left-0.top-0.h-full button[aria-label="Fechar menu"]'
+      )) stop();
+    };
 
-    const sidebar = getSidebarElement();
-    if (!sidebar) {
-      sidebarBootFrame = window.requestAnimationFrame(ensureSidebarStartsCollapsed);
-      return;
-    }
+    const check = () => {
+      if (!active || closePending || !location.pathname.startsWith('/whatsapp/agent')) return;
+      const sidebar = document.querySelector('aside.fixed.left-0.top-0.h-full');
+      const closeButton = sidebar?.querySelector('button[aria-label="Fechar menu"]');
+      if (!closeButton) return;
+      closePending = true;
+      closeButton.click();
+      window.setTimeout(() => {
+        closePending = false;
+      }, 250);
+    };
 
-    if (isSidebarCollapsed(sidebar)) {
-      sidebarBootDone = true;
-      stopSidebarBootMask();
-      return;
-    }
+    const scheduleCheck = () => {
+      if (!active || scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        check();
+      });
+    };
 
-    if (isSidebarExpanded(sidebar)) {
-      const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
-      if (closeButton) {
-        closeButton.click();
-      }
-    }
-
-    sidebarBootFrame = window.requestAnimationFrame(() => {
-      const currentSidebar = getSidebarElement();
-      if (isSidebarCollapsed(currentSidebar)) {
-        sidebarBootDone = true;
-        stopSidebarBootMask();
-        return;
-      }
-      ensureSidebarStartsCollapsed();
-    });
+    const observer = new MutationObserver(scheduleCheck);
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'aria-label'], childList: true, subtree: true });
+    document.addEventListener('click', onUserClick, true);
+    timeoutId = window.setTimeout(stop, 8000);
+    scheduleCheck();
   }
 
   let debounceTimer = null;
@@ -2555,6 +2892,15 @@ function getTicketFavoriteKey(card) {
     return null;
   }
 
+  function hideAgentHeaderButtons() {
+    for (const button of document.querySelectorAll('button, a, [role="button"]')) {
+      const label = normalizeText(button.textContent).toLowerCase();
+      if (label === 'atender próximo' || label === 'versão mobile') {
+        button.setAttribute(HIDDEN_ATTR, 'true');
+      }
+    }
+  }
+
   function findTopRow(agentContainer) {
     if (!agentContainer) return null;
 
@@ -3069,9 +3415,27 @@ function getTicketFavoriteKey(card) {
     }
   }
 
+  function uppercasePatientContextNames() {
+    for (const card of document.querySelectorAll('div.rounded-xl.bg-card.border.border-border')) {
+      for (const section of card.querySelectorAll('div.space-y-1\\.5.pl-5')) {
+        const heading = section.previousElementSibling;
+        if (normalizeText(heading?.textContent).toUpperCase() !== 'PACIENTE') continue;
+
+        for (const row of section.children) {
+          const label = row.firstElementChild;
+          const value = label?.nextElementSibling;
+          if (normalizeText(label?.textContent) !== 'Nome') continue;
+          if (!value?.matches('span.text-sm.text-card-foreground.break-words.min-w-0')) continue;
+          markUppercase(value);
+        }
+      }
+    }
+  }
+
   function applyUppercaseToCustomerNames() {
     uppercaseTicketHeaderNames();
     uppercaseTicketListCardNames();
+    uppercasePatientContextNames();
   }
 
   function getQueueType(labelText) {
@@ -3482,6 +3846,33 @@ function getTicketFavoriteKey(card) {
   }
 
   let imagePopupZIndex = 99990;
+  const imagePopupControllers = new WeakMap();
+  const imagePopupRestoreRects = new WeakMap();
+
+  function sideBringPopupToFront(popup) {
+    imagePopupZIndex += 1;
+    popup.style.setProperty('z-index', String(imagePopupZIndex), 'important');
+    popup.dataset.tmPopupOrder = String(imagePopupZIndex);
+  }
+
+  function sideCloseImagePopup(popup) {
+    imagePopupControllers.get(popup)?.abort();
+    imagePopupControllers.delete(popup);
+    imagePopupRestoreRects.delete(popup);
+    popup.remove();
+  }
+
+  function sidePositionPopup(popup, width, height, center = false) {
+    const edge = 8;
+    const maxLeft = Math.max(edge, window.innerWidth - width - edge);
+    const maxTop = Math.max(edge, window.innerHeight - height - edge);
+    const offset = Number(popup.dataset.tmCascadeOffset || '0') || 0;
+    const rect = center ? null : popup.getBoundingClientRect();
+    const desiredLeft = center ? Math.round((window.innerWidth - width) / 2) + offset : rect.left;
+    const desiredTop = center ? Math.round((window.innerHeight - height) / 2) + offset : rect.top;
+    popup.style.setProperty('left', `${Math.max(edge, Math.min(maxLeft, desiredLeft))}px`, 'important');
+    popup.style.setProperty('top', `${Math.max(edge, Math.min(maxTop, desiredTop))}px`, 'important');
+  }
 
   function sideIsPreviewableImage(file) {
     const mimeType = String(file?.mimeType || '').toLowerCase();
@@ -3521,8 +3912,9 @@ function getTicketFavoriteKey(card) {
     const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || img.offsetHeight || 1);
     const bodyRect = body.getBoundingClientRect();
 
-    const scaledW = naturalW * zoom;
-    const scaledH = naturalH * zoom;
+    const quarterTurn = (Number(popup.dataset.tmImageRotation || '0') || 0) % 180 !== 0;
+    const scaledW = (quarterTurn ? naturalH : naturalW) * zoom;
+    const scaledH = (quarterTurn ? naturalW : naturalH) * zoom;
 
     const overflowX = Math.max(0, scaledW - bodyRect.width);
     const overflowY = Math.max(0, scaledH - bodyRect.height);
@@ -3568,13 +3960,6 @@ function getTicketFavoriteKey(card) {
       const { panX, panY } = sideClampPopupPan(popup);
 
       const rotation = Number(popup.dataset.tmImageRotation || '0') || 0;
-      const container = popup.querySelector('[data-tm-image-popup-body="true"]');
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
-
-      img.style.maxWidth = cw + 'px';
-      img.style.maxHeight = ch + 'px';
-
       img.style.transform = `translate3d(${panX}px, ${panY}px, 0) rotate(${rotation}deg) scale(${zoom})`;
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] falha ao aplicar transform da imagem`, error);
@@ -3590,33 +3975,28 @@ function getTicketFavoriteKey(card) {
       const naturalH = Number(popup.dataset.tmImageNaturalH || img.naturalHeight || 1);
       const headerH = 42;
 
-      const margin = maximized ? 32 : 48;
-      const maxBodyW = Math.max(180, window.innerWidth - margin);
-      const maxBodyH = Math.max(180, window.innerHeight - headerH - margin);
+      const maxBodyW = Math.max(1, window.innerWidth - 48);
+      const maxBodyH = Math.max(1, window.innerHeight - headerH - 48);
 
       let scale = Math.min(maxBodyW / naturalW, maxBodyH / naturalH);
-
-      if (!maximized) {
-        scale = Math.min(1, scale);
-      }
-
+      scale = Math.min(1, scale);
       scale = Math.max(0.08, scale);
 
-      const bodyW = Math.max(160, Math.round(naturalW * scale));
-      const bodyH = Math.max(120, Math.round(naturalH * scale));
-      const popupW = bodyW;
-      const popupH = bodyH + headerH;
+      const minW = Math.min(300, Math.max(1, window.innerWidth - 16));
+      const minH = Math.min(220, Math.max(1, window.innerHeight - 16));
+      const popupW = maximized
+        ? Math.min(920, Math.max(1, window.innerWidth - 32))
+        : Math.min(maxBodyW, Math.max(minW, Math.round(naturalW * scale)));
+      const popupH = maximized
+        ? Math.min(720, Math.max(1, window.innerHeight - 32))
+        : Math.min(Math.max(1, window.innerHeight - 16),
+          Math.max(minH, Math.round(naturalH * scale) + headerH));
 
       popup.style.setProperty('width', `${popupW}px`, 'important');
       popup.style.setProperty('height', `${popupH}px`, 'important');
       popup.style.setProperty('transform', 'none', 'important');
 
-      if (center) {
-        const left = Math.max(8, Math.round((window.innerWidth - popupW) / 2));
-        const top = Math.max(8, Math.round((window.innerHeight - popupH) / 2));
-        popup.style.setProperty('left', `${left}px`, 'important');
-        popup.style.setProperty('top', `${top}px`, 'important');
-      }
+      sidePositionPopup(popup, popupW, popupH, center);
 
       popup.dataset.tmImageUserZoom = '1';
       popup.dataset.tmImagePanX = '0';
@@ -3640,7 +4020,14 @@ function getTicketFavoriteKey(card) {
 
       const maxW = Math.max(1, bodyRect.width);
       const maxH = Math.max(1, bodyRect.height);
-      const fit = Math.max(0.05, Math.min(maxW / naturalW, maxH / naturalH));
+      const quarterTurn = (Number(popup.dataset.tmImageRotation || '0') || 0) % 180 !== 0;
+      const fitW = quarterTurn ? naturalH : naturalW;
+      const fitH = quarterTurn ? naturalW : naturalH;
+      const fit = Math.max(0.05, Math.min(
+        popup.getAttribute('data-tm-maximized') === 'true' ? Infinity : 1,
+        maxW / fitW,
+        maxH / fitH
+      ));
 
       const userZoom = Number(popup.dataset.tmImageUserZoom || '1') || 1;
 
@@ -3668,7 +4055,7 @@ function getTicketFavoriteKey(card) {
     }
   }
 
-  function sideInstallPopupDrag(popup, header) {
+  function sideInstallPopupDrag(popup, header, signal) {
     let dragging = false;
     let startX = 0;
     let startY = 0;
@@ -3692,15 +4079,10 @@ function getTicketFavoriteKey(card) {
         startLeft = rect.left;
         startTop = rect.top;
 
-        imagePopupZIndex += 1;
-        popup.style.zIndex = String(imagePopupZIndex);
-        popup.dataset.tmPopupOrder = String(imagePopupZIndex);
-      popup.dataset.tmPopupOrder = String(imagePopupZIndex);
-
         event.preventDefault();
         event.stopPropagation();
       } catch (_) {}
-    }, true);
+    }, { capture: true, signal });
 
     document.addEventListener('mousemove', (event) => {
       if (!dragging) return;
@@ -3717,15 +4099,15 @@ function getTicketFavoriteKey(card) {
 
         event.preventDefault();
       } catch (_) {}
-    }, true);
+    }, { capture: true, signal });
 
     document.addEventListener('mouseup', () => {
       dragging = false;
-    }, true);
+    }, { capture: true, signal });
   }
 
 
-  function sideInstallImagePan(popup, body) {
+  function sideInstallImagePan(popup, body, signal) {
     let panning = false;
     let startX = 0;
     let startY = 0;
@@ -3734,6 +4116,10 @@ function getTicketFavoriteKey(card) {
     let pendingX = 0;
     let pendingY = 0;
     let rafId = 0;
+
+    signal.addEventListener('abort', () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+    }, { once: true });
 
     const flushPan = () => {
       rafId = 0;
@@ -3760,14 +4146,10 @@ function getTicketFavoriteKey(card) {
         pendingX = startPanX;
         pendingY = startPanY;
 
-        imagePopupZIndex += 1;
-        popup.style.zIndex = String(imagePopupZIndex);
-        popup.dataset.tmPopupOrder = String(imagePopupZIndex);
-
         event.preventDefault();
         event.stopPropagation();
       } catch (_) {}
-    }, true);
+    }, { capture: true, signal });
 
     document.addEventListener('mousemove', (event) => {
       if (!panning) return;
@@ -3787,17 +4169,17 @@ function getTicketFavoriteKey(card) {
         event.preventDefault();
         event.stopPropagation();
       } catch (_) {}
-    }, true);
+    }, { capture: true, signal });
 
     document.addEventListener('mouseup', () => {
       if (!panning) return;
       panning = false;
       body.removeAttribute('data-tm-panning');
-    }, true);
+    }, { capture: true, signal });
   }
 
 
-  function sideInstallPopupResize(popup) {
+  function sideInstallPopupResize(popup, signal) {
     const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
     let resizing = false;
     let dir = '';
@@ -3807,9 +4189,6 @@ function getTicketFavoriteKey(card) {
     let startH = 0;
     let startLeft = 0;
     let startTop = 0;
-
-    const minW = 300;
-    const minH = 260;
 
     const beginResize = (event, direction) => {
       try {
@@ -3825,9 +4204,6 @@ function getTicketFavoriteKey(card) {
         startLeft = popup.offsetLeft;
         startTop = popup.offsetTop;
 
-        imagePopupZIndex += 1;
-        popup.style.zIndex = String(imagePopupZIndex);
-
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -3838,7 +4214,7 @@ function getTicketFavoriteKey(card) {
       const handle = document.createElement('div');
       handle.setAttribute('data-tm-image-popup-resize', 'true');
       handle.setAttribute('data-tm-image-popup-resize-dir', direction);
-      handle.addEventListener('mousedown', (event) => beginResize(event, direction), true);
+      handle.addEventListener('mousedown', (event) => beginResize(event, direction), { capture: true, signal });
       popup.appendChild(handle);
     }
 
@@ -3846,6 +4222,8 @@ function getTicketFavoriteKey(card) {
       if (!resizing) return;
 
       try {
+        const minW = Math.min(300, Math.max(1, window.innerWidth - 16));
+        const minH = Math.min(220, Math.max(1, window.innerHeight - 16));
         let nextLeft = startLeft;
         let nextTop = startTop;
         let nextW = startW;
@@ -3901,12 +4279,12 @@ function getTicketFavoriteKey(card) {
         event.preventDefault();
         event.stopPropagation();
       } catch (_) {}
-    }, true);
+    }, { capture: true, signal });
 
     document.addEventListener('mouseup', () => {
       resizing = false;
       dir = '';
-    }, true);
+    }, { capture: true, signal });
   }
 
   function sideCloseTopImagePopup() {
@@ -3922,7 +4300,7 @@ function getTicketFavoriteKey(card) {
         return zb - za;
       });
 
-      popups[0].remove();
+      sideCloseImagePopup(popups[0]);
       return true;
     } catch (_) {
       return false;
@@ -4010,34 +4388,8 @@ function getTicketFavoriteKey(card) {
   }
 
 
-  function sideMaximizePopupAsMovableWindow(popup) {
-    try {
-      const width = Math.min(920, window.innerWidth - 48);
-      const height = Math.min(720, window.innerHeight - 48);
-      const left = Math.max(16, Math.round((window.innerWidth - width) / 2));
-      const top = Math.max(16, Math.round((window.innerHeight - height) / 2));
-
-      popup.style.width = `${width}px`;
-      popup.style.height = `${height}px`;
-      popup.style.left = `${left}px`;
-      popup.style.top = `${top}px`;
-      popup.style.transform = 'none';
-      popup.setAttribute('data-tm-maximized', 'true');
-      sideRecalculatePopupFit(popup, true);
-    } catch (_) {}
-  }
-
-  function sideRestorePopupAsMovableWindow(popup) {
-    try {
-      popup.removeAttribute('data-tm-maximized');
-      popup.style.width = '420px';
-      popup.style.height = '520px';
-      popup.style.transform = 'none';
-      sideRecalculatePopupFit(popup, true);
-    } catch (_) {}
-  }
-
   function sideOpenImagePopup(file) {
+    let popup = null;
     try {
       if (!sideIsPreviewableImage(file)) {
         window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
@@ -4046,9 +4398,11 @@ function getTicketFavoriteKey(card) {
 
       sideResetPopupCascadeIfNeeded();
       imagePopupCounter += 1;
-      imagePopupZIndex += 1;
 
-      const popup = document.createElement('div');
+      popup = document.createElement('div');
+      const controller = new AbortController();
+      imagePopupControllers.set(popup, controller);
+      const { signal } = controller;
       popup.setAttribute('data-tm-image-popup', 'true');
       popup.dataset.tmImageZoom = '1';
       popup.dataset.tmImageBaseFit = '1';
@@ -4056,9 +4410,8 @@ function getTicketFavoriteKey(card) {
       popup.dataset.tmImagePanX = '0';
       popup.dataset.tmImagePanY = '0';
       popup.dataset.tmImageRotation = '0';
-      popup.style.setProperty('left', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
-      popup.style.setProperty('top', `${24 + ((imagePopupCounter - 1) % 8) * 28}px`, 'important');
-      popup.style.zIndex = String(imagePopupZIndex);
+      popup.dataset.tmCascadeOffset = String(((imagePopupCounter - 1) % 6) * 24);
+      sideBringPopupToFront(popup);
 
       const header = document.createElement('div');
       header.setAttribute('data-tm-image-popup-header', 'true');
@@ -4081,7 +4434,7 @@ function getTicketFavoriteKey(card) {
         event.preventDefault();
         event.stopPropagation();
         sideDownloadFile(file.downloadUrl, file.fileName);
-      }, true);
+      }, { capture: true, signal });
 
       center.appendChild(download);
 
@@ -4115,8 +4468,8 @@ function getTicketFavoriteKey(card) {
 
         const currentRotation = Number(popup.dataset.tmImageRotation || '0') || 0;
         popup.dataset.tmImageRotation = String((currentRotation + 90) % 360);
-        sideApplyPopupImageTransform(popup);
-      }, true);
+        sideRecalculatePopupFit(popup, true);
+      }, { capture: true, signal });
 
       const maximize = document.createElement('button');
       maximize.type = 'button';
@@ -4135,19 +4488,32 @@ function getTicketFavoriteKey(card) {
           popup.removeAttribute('data-tm-maximized');
           maximize.title = 'Maximizar';
           maximize.setAttribute('aria-label', 'Maximizar');
-          sideSetPopupSizeToImageFit(popup, false, true);
+          const previous = imagePopupRestoreRects.get(popup);
+          if (previous) {
+            const width = Math.min(previous.width, Math.max(1, window.innerWidth - 16));
+            const height = Math.min(previous.height, Math.max(1, window.innerHeight - 16));
+            popup.style.setProperty('width', `${width}px`, 'important');
+            popup.style.setProperty('height', `${height}px`, 'important');
+            popup.style.setProperty('left', `${previous.left}px`, 'important');
+            popup.style.setProperty('top', `${previous.top}px`, 'important');
+            sidePositionPopup(popup, width, height);
+            sideRecalculatePopupFit(popup, true);
+            imagePopupRestoreRects.delete(popup);
+          } else {
+            sideSetPopupSizeToImageFit(popup, false, true);
+          }
         } else {
+          const rect = popup.getBoundingClientRect();
+          imagePopupRestoreRects.set(popup, {
+            left: rect.left, top: rect.top, width: rect.width, height: rect.height
+          });
           popup.setAttribute('data-tm-maximized', 'true');
 
-          const width = Math.min(920, window.innerWidth - 48);
-          const height = Math.min(720, window.innerHeight - 48);
-          const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
-          const top = Math.max(8, Math.round((window.innerHeight - height) / 2));
-
+          const width = Math.min(920, Math.max(1, window.innerWidth - 32));
+          const height = Math.min(720, Math.max(1, window.innerHeight - 32));
           popup.style.setProperty('width', `${width}px`, 'important');
           popup.style.setProperty('height', `${height}px`, 'important');
-          popup.style.setProperty('left', `${left}px`, 'important');
-          popup.style.setProperty('top', `${top}px`, 'important');
+          sidePositionPopup(popup, width, height, true);
           popup.style.setProperty('transform', 'none', 'important');
 
           popup.dataset.tmImageUserZoom = '1';
@@ -4157,9 +4523,11 @@ function getTicketFavoriteKey(card) {
           maximize.title = 'Restaurar';
           maximize.setAttribute('aria-label', 'Restaurar');
 
-          window.setTimeout(() => sideRecalculatePopupFit(popup, true), 0);
+          window.setTimeout(() => {
+            if (!signal.aborted) sideRecalculatePopupFit(popup, true);
+          }, 0);
         }
-      }, true);
+      }, { capture: true, signal });
 
       const close = document.createElement('button');
       close.type = 'button';
@@ -4171,8 +4539,8 @@ function getTicketFavoriteKey(card) {
       close.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        popup.remove();
-      }, true);
+        sideCloseImagePopup(popup);
+      }, { capture: true, signal });
 
       right.appendChild(rotate);
       right.appendChild(maximize);
@@ -4186,7 +4554,6 @@ function getTicketFavoriteKey(card) {
       body.setAttribute('data-tm-image-popup-body', 'true');
 
       const img = document.createElement('img');
-      img.src = file.downloadUrl;
       img.alt = file.fileName || 'Imagem';
       img.draggable = false;
 
@@ -4202,11 +4569,24 @@ function getTicketFavoriteKey(card) {
           img.style.height = `${naturalH}px`;
           popup.dataset.tmImagePanX = '0';
           popup.dataset.tmImagePanY = '0';
-          sideSetPopupSizeToImageFit(popup, popup.getAttribute('data-tm-maximized') === 'true', false);
+          sideSetPopupSizeToImageFit(popup, popup.getAttribute('data-tm-maximized') === 'true', true);
         } catch (_) {
           sideSetPopupImageZoom(popup, 1);
         }
-      }, { once: true });
+      }, { once: true, signal });
+
+      img.addEventListener('error', () => {
+        if (file.thumbnailUrl && file.thumbnailUrl !== file.downloadUrl &&
+            popup.dataset.tmImageFallback !== 'true') {
+          popup.dataset.tmImageFallback = 'true';
+          img.src = file.thumbnailUrl;
+          return;
+        }
+        body.textContent = 'Não foi possível carregar esta imagem. Você ainda pode tentar baixá-la.';
+        body.style.setProperty('padding', '20px', 'important');
+        body.style.setProperty('text-align', 'center', 'important');
+      }, { signal });
+      img.src = file.downloadUrl;
 
       body.addEventListener('wheel', (event) => {
         try {
@@ -4219,30 +4599,43 @@ function getTicketFavoriteKey(card) {
         } catch (error) {
           console.error(`[${SCRIPT_NAME}] falha no zoom por scroll`, error);
         }
-      }, { passive: false, capture: true });
+      }, { passive: false, capture: true, signal });
 
-      sideInstallImagePan(popup, body);
+      sideInstallImagePan(popup, body, signal);
 
       body.appendChild(img);
       popup.appendChild(header);
       popup.appendChild(body);
 
       popup.addEventListener('mousedown', () => {
-        imagePopupZIndex += 1;
-        popup.style.zIndex = String(imagePopupZIndex);
-      }, true);
+        sideBringPopupToFront(popup);
+      }, { capture: true, signal });
 
-      sideInstallPopupDrag(popup, header);
-      sideInstallPopupResize(popup);
+      sideInstallPopupDrag(popup, header, signal);
+      sideInstallPopupResize(popup, signal);
       sideInstallPopupEscClose();
       document.body.appendChild(popup);
+      sidePositionPopup(popup, popup.offsetWidth, popup.offsetHeight, true);
 
       window.addEventListener('resize', () => {
         try {
-          if (document.body.contains(popup)) sideRecalculatePopupFit(popup, false);
+          if (!document.body.contains(popup)) return;
+          if (popup.getAttribute('data-tm-maximized') === 'true') {
+            const width = Math.min(920, Math.max(1, window.innerWidth - 32));
+            const height = Math.min(720, Math.max(1, window.innerHeight - 32));
+            popup.style.setProperty('width', `${width}px`, 'important');
+            popup.style.setProperty('height', `${height}px`, 'important');
+            sidePositionPopup(popup, width, height, true);
+          } else {
+            popup.style.setProperty('width', `${Math.min(popup.offsetWidth, Math.max(1, window.innerWidth - 16))}px`, 'important');
+            popup.style.setProperty('height', `${Math.min(popup.offsetHeight, Math.max(1, window.innerHeight - 16))}px`, 'important');
+            sidePositionPopup(popup, popup.offsetWidth, popup.offsetHeight);
+          }
+          sideRecalculatePopupFit(popup, false);
         } catch (_) {}
-      });
+      }, { signal });
     } catch (error) {
+      if (popup) sideCloseImagePopup(popup);
       console.error(`[${SCRIPT_NAME}] falha ao abrir visualizador de imagem`, error);
       window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
     }
@@ -4289,12 +4682,17 @@ function getTicketFavoriteKey(card) {
   function tmGetNativeFileInfoFromCard(card) {
     try {
       const img = card.querySelector('img[src]');
-      const imgSrc = img?.getAttribute?.('src') || '';
+      const imgSrc = img?.currentSrc || img?.getAttribute?.('src') || '';
+      const originalSrc = img?.getAttribute?.('data-original-src') ||
+        img?.getAttribute?.('data-full-src') ||
+        card.querySelector('a[download][href]')?.getAttribute('href') || '';
+      const downloadUrl = originalSrc ? new URL(originalSrc, location.href).href : imgSrc;
+      if (!downloadUrl) return null;
 
       let fileName = '';
 
       try {
-        const url = new URL(imgSrc, location.href);
+        const url = new URL(downloadUrl, location.href);
         fileName = url.searchParams.get('filename') || '';
       } catch (_) {}
 
@@ -4308,13 +4706,15 @@ function getTicketFavoriteKey(card) {
 
       if (!fileName) fileName = 'imagem';
 
+      const extension = fileName.match(/\.(png|jpe?g|webp|gif|bmp|avif)$/i)?.[1]?.toLowerCase();
+
       return {
         id: `native-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         fileName,
-        mimeType: 'image/jpeg',
+        mimeType: extension ? `image/${extension === 'jpg' ? 'jpeg' : extension}` : 'image/*',
         icon: 'image',
         thumbnailUrl: imgSrc,
-        downloadUrl: imgSrc
+        downloadUrl
       };
     } catch (_) {
       return null;
@@ -4353,9 +4753,475 @@ function getTicketFavoriteKey(card) {
 
 
   /* ========================================================================
+   * SEÇÃO: MODAL CENTRAL DO ENVIAR TEMPLATE
+   * Usa o HTML real enviado pelo DevTools e não remove nós do React.
+   * ====================================================================== */
+  function findTemplateTicketPanel() {
+    try {
+      const candidates = Array.from(document.querySelectorAll('div.fixed'));
+      return candidates.find(panel => {
+        const title = panel.querySelector('h2');
+        const titleText = normalizeText(title?.textContent || '');
+        return titleText.includes('Enviar Template com Ticket');
+      }) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function ensureTemplateModalBackdrop() {
+    try {
+      let backdrop = document.querySelector(`[${TEMPLATE_MODAL_BACKDROP_ATTR}="true"]`);
+      if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.setAttribute(TEMPLATE_MODAL_BACKDROP_ATTR, 'true');
+        backdrop.setAttribute('data-tm-visible', 'false');
+        backdrop.addEventListener('click', () => {
+          try {
+            const panel = findTemplateTicketPanel();
+            const closeButton = panel?.querySelector('button:has(.lucide-x)');
+            closeButton?.click?.();
+          } catch (_) {}
+        });
+        document.body.appendChild(backdrop);
+      }
+      return backdrop;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function ensureManualTemplateMode(panel) {
+    const directRadio = panel.querySelector('input[type="radio"][name="dispatch-mode"][value="DIRECT"]');
+    const modeCard = directRadio?.closest('div.rounded-xl');
+    const title = modeCard?.querySelector(':scope > h3');
+    if (normalizeText(title?.textContent) !== 'Modo de Atendimento') return;
+
+    if (!directRadio.checked) {
+      modeCard.removeAttribute(TEMPLATE_MODE_HIDDEN_ATTR);
+      directRadio.click();
+      return;
+    }
+
+    modeCard.setAttribute(TEMPLATE_MODE_HIDDEN_ATTR, 'true');
+  }
+
+  function updateTemplateRecipientFields(panel) {
+    const searchInput = panel.querySelector('input[placeholder*="Digite nome ou telefone"]');
+    const fieldsGroup = searchInput?.closest('div.space-y-3');
+    const searchBox = searchInput?.closest('div.p-3.bg-blue-50.rounded-lg');
+    if (!fieldsGroup || !searchBox) return;
+
+    const digits = searchInput.value.replace(/\D/g, '');
+    const isPhoneSearch = digits.length >= 3 && /^[+\d\s().-]+$/.test(searchInput.value.trim());
+    const noContactFound = Array.from(searchBox.querySelectorAll('p'))
+      .some(message => normalizeText(message.textContent).startsWith('Nenhum contato encontrado'));
+    const showManualFields = isPhoneSearch && noContactFound;
+
+    const findRow = label => Array.from(fieldsGroup.children).find(child => {
+      const ownLabel = child.querySelector(':scope > label');
+      return normalizeText(ownLabel?.textContent || child.textContent).startsWith(label);
+    });
+    const phoneRow = findRow('Telefone do Destinatário');
+    const nameRow = findRow('Nome do Destinatário');
+    for (const row of [phoneRow, nameRow]) {
+      if (!row) continue;
+      row.hidden = !showManualFields;
+      if (showManualFields) row.removeAttribute(TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR);
+      else row.setAttribute(TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR, 'true');
+    }
+
+    const phone = phoneRow?.querySelector('input')?.value.trim() || '';
+    const name = nameRow?.querySelector('input')?.value.trim() || '';
+    if (!showManualFields && !searchInput.value.trim() && phone && name) {
+      searchBox.setAttribute(TEMPLATE_SELECTED_RECIPIENT_ATTR, `✓ Destinatário selecionado: ${name} — ${phone}`);
+    } else {
+      searchBox.removeAttribute(TEMPLATE_SELECTED_RECIPIENT_ATTR);
+    }
+  }
+
+  function polishTemplateRecipientCopy(panel) {
+    const recipientTitle = Array.from(panel.querySelectorAll('h3'))
+      .find(title => normalizeText(title.textContent) === '1. Destinatário');
+    const recipientCard = recipientTitle?.closest('div.rounded-xl');
+    if (!recipientCard) return;
+
+    recipientTitle.querySelector(':scope > svg')
+      ?.setAttribute(TEMPLATE_RECIPIENT_COPY_HIDDEN_ATTR, 'true');
+
+    for (const label of recipientCard.querySelectorAll('label')) {
+      const text = normalizeText(label.textContent);
+      if (text === 'Número WhatsApp de Envio *') label.textContent = 'Número de Envio';
+      if (text === '🔍 Buscar Contato Existente') label.textContent = 'Buscar Contato Existente';
+    }
+
+    for (const paragraph of recipientCard.querySelectorAll('p')) {
+      if (normalizeText(paragraph.textContent) === 'Digite o nome ou número e pressione Enter para buscar') {
+        paragraph.setAttribute(TEMPLATE_RECIPIENT_COPY_HIDDEN_ATTR, 'true');
+      }
+    }
+  }
+
+  function updateTemplateUnavailableNotice(panel) {
+    const hsmTitle = Array.from(panel.querySelectorAll('h3'))
+      .find(title => normalizeText(title.textContent).startsWith('3. Template HSM'));
+    const card = hsmTitle?.closest('div.rounded-xl');
+    if (!card) return;
+
+    const needsNumber = panel.querySelector('select#whatsappNumber')?.value === '0';
+    const original = 'Nenhum template disponível para este número';
+    const prompt = 'Selecione um número de envio';
+    for (const element of card.querySelectorAll('*')) {
+      for (const node of element.childNodes) {
+        if (node.nodeType !== 3) continue;
+        const text = normalizeText(node.nodeValue);
+        if (needsNumber && text === original) node.nodeValue = prompt;
+        else if (!needsNumber && text === prompt) node.nodeValue = original;
+      }
+    }
+  }
+
+  function ensureTemplateSendNumberChoice(panel) {
+    const select = panel.querySelector('select#whatsappNumber');
+    if (!select) return;
+
+    const optionNames = new Map([
+      ['2', 'CLÍNICA DO SONO (21 97186-7334)'],
+      ['3', 'SAMEC (21 97191-1685)']
+    ]);
+    for (const option of select.options) {
+      const name = optionNames.get(option.value);
+      if (name && option.textContent !== name) option.textContent = name;
+    }
+
+    select.required = true;
+    const chosenByUser = panel.getAttribute(TEMPLATE_SEND_NUMBER_CHOSEN_ATTR) === 'true';
+    if (!chosenByUser && select.value !== '0') {
+      select.value = '0';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    select.setCustomValidity(chosenByUser && select.value !== '0'
+      ? ''
+      : 'Selecione o número WhatsApp de envio.');
+  }
+
+  function ensureTemplateQueueMatchesNumber(panel) {
+    const sendNumber = panel.querySelector('select#whatsappNumber');
+    const queueTitle = Array.from(panel.querySelectorAll('h3'))
+      .find(title => normalizeText(title.textContent).startsWith('2. Fila de Atendimento'));
+    const queueCard = queueTitle?.closest('div.rounded-xl');
+    const queueSelect = queueCard?.querySelector('select');
+    if (!sendNumber || !queueSelect) return false;
+
+    const queueByNumber = { '2': '3', '3': '4' };
+    const chosenByUser = panel.getAttribute(TEMPLATE_SEND_NUMBER_CHOSEN_ATTR) === 'true';
+    const targetQueue = chosenByUser ? queueByNumber[sendNumber.value] || '0' : '0';
+    if (!Array.from(queueSelect.options).some(option => option.value === targetQueue)) return false;
+
+    if (queueSelect.value !== targetQueue) {
+      queueSelect.value = targetQueue;
+      queueSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    queueCard.setAttribute(TEMPLATE_QUEUE_HIDDEN_ATTR, 'true');
+    return targetQueue !== '0' && queueSelect.value === targetQueue;
+  }
+
+  function getTemplateHsmSelect(panel) {
+    const title = Array.from(panel.querySelectorAll('h3'))
+      .find(item => normalizeText(item.textContent).startsWith('3. Template HSM'));
+    return title?.closest('div.rounded-xl')?.querySelector('select') || null;
+  }
+
+  function allowedTemplateNames(numberValue) {
+    const names = {
+      '2': ['cs_faltosos', 'cs_solicitar_contato', 'cs_solicitar_documentos', 'cs_reengajamento'],
+      '3': ['samec_solicitar_contato', 'samec_solicitar_documentos', 'samec_reengajamento']
+    };
+    return new Set(names[numberValue] || []);
+  }
+
+  function ensureTemplateHsmChoice(panel) {
+    const sendNumber = panel.querySelector('select#whatsappNumber');
+    const select = getTemplateHsmSelect(panel);
+    if (!sendNumber || !select) return false;
+
+    const allowed = allowedTemplateNames(sendNumber.value);
+    for (const option of select.options) {
+      if (!option.value) continue;
+      const cleanLabel = option.textContent.replace(/\s+\((?:UTILITY|MARKETING)\)\s*$/i, '');
+      if (option.textContent !== cleanLabel) option.textContent = cleanLabel;
+      const visible = allowed.has(option.value);
+      option.hidden = !visible;
+      option.disabled = !visible;
+      if (visible) option.removeAttribute(TEMPLATE_HSM_OPTION_HIDDEN_ATTR);
+      else option.setAttribute(TEMPLATE_HSM_OPTION_HIDDEN_ATTR, 'true');
+    }
+
+    const rememberedChoice = panel.getAttribute(TEMPLATE_HSM_CHOSEN_ATTR) || '';
+    const [chosenNumber, chosenTemplate] = rememberedChoice.split(':');
+    const validManualChoice = chosenNumber === sendNumber.value && allowed.has(chosenTemplate);
+    if (!validManualChoice && rememberedChoice) panel.removeAttribute(TEMPLATE_HSM_CHOSEN_ATTR);
+    const targetTemplate = validManualChoice ? chosenTemplate : '';
+    if (select.value !== targetTemplate) {
+      select.value = targetTemplate;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    select.required = true;
+    return validManualChoice && select.value === targetTemplate;
+  }
+
+  function hideTemplateHsmDecorations(panel) {
+    const card = getTemplateHsmSelect(panel)?.closest('div.rounded-xl');
+    if (!card) return;
+    for (const label of card.querySelectorAll('label')) {
+      if (normalizeText(label.textContent) === 'Template *') {
+        label.setAttribute(TEMPLATE_HSM_LABEL_HIDDEN_ATTR, 'true');
+      }
+    }
+    for (const paragraph of card.querySelectorAll('p')) {
+      const message = normalizeText(paragraph.textContent);
+      const target = message.includes('Sincronização automática')
+        ? paragraph.parentElement
+        : message.includes('Template memorizado para próximas vezes') ? paragraph : null;
+      if (target) target.setAttribute(TEMPLATE_HSM_DECORATION_HIDDEN_ATTR, 'true');
+    }
+  }
+
+  function setTemplateParameterValue(input, value) {
+    const prototype = input.tagName === 'TEXTAREA'
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (nativeSetter) nativeSetter.call(input, value);
+    else input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function ensureTemplateParametersManual(panel) {
+    const select = getTemplateHsmSelect(panel);
+    const card = select?.closest('div.rounded-xl');
+    if (!card) return;
+
+    const numberValue = panel.querySelector('select#whatsappNumber')?.value || '';
+    const key = `${numberValue}:${select.value}`;
+    let state = templateParameterManualValues.get(panel);
+    if (!state || state.key !== key) {
+      state = { key, values: new Map() };
+      templateParameterManualValues.set(panel, state);
+    }
+
+    const isContactRequestTemplate =
+      select.value === 'cs_solicitar_contato' || select.value === 'samec_solicitar_contato';
+    const agentName = isContactRequestTemplate
+      ? getStoredJsonValue('user', 'name')
+      : '';
+    for (const input of card.querySelectorAll('input[placeholder^="Parâmetro "], textarea[placeholder^="Parâmetro "], input[placeholder="Nome do atendente"], textarea[placeholder="Nome do atendente"]')) {
+      const originalPlaceholder = input.placeholder.trim();
+      const isAgentParameter = originalPlaceholder === 'Parâmetro 1' || originalPlaceholder === 'Nome do atendente';
+      const placeholder = isAgentParameter ? 'Parâmetro 1' : originalPlaceholder;
+      if (isAgentParameter) {
+        const visiblePlaceholder = isContactRequestTemplate
+          ? 'Nome do atendente'
+          : 'Parâmetro 1';
+        if (input.placeholder !== visiblePlaceholder) input.placeholder = visiblePlaceholder;
+      }
+      const defaultValue = placeholder === 'Parâmetro 1' ? agentName : '';
+      const value = state.values.has(placeholder) ? state.values.get(placeholder) : defaultValue;
+      if (input.value !== value) setTemplateParameterValue(input, value);
+    }
+  }
+
+  function raiseTemplateSecondaryModals(panel) {
+    for (const sibling of panel.parentElement?.children || []) {
+      if (sibling === panel || !sibling.matches('div.fixed.inset-0.z-50.flex.items-center.justify-center')) continue;
+      sibling.setAttribute(TEMPLATE_SECONDARY_MODAL_ATTR, 'true');
+    }
+  }
+
+  function showSelectedTemplatePreview(panel) {
+    const selectedTemplate = getTemplateHsmSelect(panel)?.value;
+    if (!selectedTemplate) return;
+
+    for (const overlay of panel.parentElement?.children || []) {
+      if (overlay === panel || !overlay.matches('div.fixed.inset-0.z-50.flex.items-center.justify-center')) continue;
+      if (!normalizeText(overlay.textContent).includes('Selecionar Template HSM')) continue;
+
+      const cards = Array.from(overlay.querySelectorAll('div.p-4.border.rounded-lg.cursor-pointer'));
+      const selectedCard = cards.find(card =>
+        normalizeText(card.querySelector('div.flex.items-center.gap-2')?.textContent) === selectedTemplate
+      );
+      if (!selectedCard) continue;
+
+      const title = Array.from(overlay.querySelectorAll('h2,h3'))
+        .find(heading => normalizeText(heading.textContent) === 'Selecionar Template HSM');
+      title?.setAttribute(TEMPLATE_PREVIEW_TITLE_ATTR, 'true');
+
+      for (const card of cards) {
+        if (card === selectedCard) card.setAttribute(TEMPLATE_PREVIEW_CARD_ATTR, 'true');
+        else card.setAttribute(TEMPLATE_PREVIEW_HIDDEN_ATTR, 'true');
+      }
+
+      const searchInput = overlay.querySelector('input[placeholder^="Buscar por nome"]');
+      const searchRow = searchInput?.parentElement;
+      if (searchRow && searchRow.children.length <= 2) {
+        searchRow.setAttribute(TEMPLATE_PREVIEW_HIDDEN_ATTR, 'true');
+      }
+      for (const item of overlay.querySelectorAll('p,span')) {
+        const text = normalizeText(item.textContent);
+        if (text.includes('Clique em um template para aplicá-lo no formulário') ||
+            /^\d+ templates? disponíveis?$/.test(text)) {
+          item.setAttribute(TEMPLATE_PREVIEW_HIDDEN_ATTR, 'true');
+        }
+      }
+    }
+  }
+
+  function applyTemplatePanelAsModal() {
+    try {
+      const panel = findTemplateTicketPanel();
+      const backdrop = ensureTemplateModalBackdrop();
+
+      if (!panel) {
+        if (backdrop) backdrop.setAttribute('data-tm-visible', 'false');
+        return;
+      }
+
+      panel.setAttribute(TEMPLATE_MODAL_ATTR, 'true');
+      ensureManualTemplateMode(panel);
+      updateTemplateRecipientFields(panel);
+      polishTemplateRecipientCopy(panel);
+      ensureTemplateSendNumberChoice(panel);
+      ensureTemplateQueueMatchesNumber(panel);
+      ensureTemplateHsmChoice(panel);
+      updateTemplateUnavailableNotice(panel);
+      hideTemplateHsmDecorations(panel);
+      ensureTemplateParametersManual(panel);
+      hideTemplateModalPreviewBlock(panel);
+      raiseTemplateSecondaryModals(panel);
+      showSelectedTemplatePreview(panel);
+      if (backdrop) backdrop.setAttribute('data-tm-visible', 'false');
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] falha ao centralizar modal de template`, error);
+    }
+  }
+
+  function scheduleTemplateModalPasses() {
+    try {
+      for (const delay of [0, 60, 140, 260, 420, 700, 1200]) {
+        window.setTimeout(applyTemplatePanelAsModal, delay);
+      }
+    } catch (_) {}
+  }
+
+  function installTemplateModalWatcher() {
+    if (window.__tmEffinityTemplateModalWatcherInstalled) return;
+    window.__tmEffinityTemplateModalWatcherInstalled = true;
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest(`[${TEMPLATE_PREVIEW_CARD_ATTR}="true"]`)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+
+    document.addEventListener('change', (event) => {
+      const select = event.target;
+      if (!event.isTrusted) return;
+      const panel = findTemplateTicketPanel();
+      if (!panel?.contains(select)) return;
+      if (select.id === 'whatsappNumber') {
+        panel.setAttribute(TEMPLATE_SEND_NUMBER_CHOSEN_ATTR, 'true');
+        panel.removeAttribute(TEMPLATE_HSM_CHOSEN_ATTR);
+        templateParameterManualValues.delete(panel);
+        select.setCustomValidity(select.value === '0'
+          ? 'Selecione o número WhatsApp de envio.'
+          : '');
+        scheduleTemplateModalPasses();
+      } else if (select === getTemplateHsmSelect(panel)) {
+        templateParameterManualValues.delete(panel);
+        const numberValue = panel.querySelector('select#whatsappNumber')?.value;
+        if (allowedTemplateNames(numberValue).has(select.value)) {
+          panel.setAttribute(TEMPLATE_HSM_CHOSEN_ATTR, `${numberValue}:${select.value}`);
+        } else {
+          panel.removeAttribute(TEMPLATE_HSM_CHOSEN_ATTR);
+        }
+        scheduleTemplateModalPasses();
+      }
+    }, true);
+
+    document.addEventListener('input', (event) => {
+      const input = event.target;
+      if (event.isTrusted && input?.matches?.('input[placeholder*="Digite nome ou telefone"]')) {
+        window.setTimeout(applyTemplatePanelAsModal, 0);
+        return;
+      }
+      if (!event.isTrusted || !/^(?:Parâmetro \d+|Nome do atendente)$/.test(input?.placeholder || '')) return;
+      const panel = findTemplateTicketPanel();
+      if (!panel) return;
+      const select = getTemplateHsmSelect(panel);
+      if (!panel.contains(input) || !select?.closest('div.rounded-xl')?.contains(input)) return;
+
+      const numberValue = panel.querySelector('select#whatsappNumber')?.value || '';
+      const key = `${numberValue}:${select.value}`;
+      let state = templateParameterManualValues.get(panel);
+      if (!state || state.key !== key) {
+        state = { key, values: new Map() };
+        templateParameterManualValues.set(panel, state);
+      }
+      const placeholder = input.placeholder.trim() === 'Nome do atendente'
+        ? 'Parâmetro 1'
+        : input.placeholder.trim();
+      state.values.set(placeholder, input.value);
+      window.setTimeout(applyTemplatePanelAsModal, 0);
+    }, true);
+
+    document.addEventListener('click', (event) => {
+      try {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const trigger = target.closest('button');
+        if (!trigger) return;
+
+        const text = normalizeText(trigger.textContent || '');
+        const panel = findTemplateTicketPanel();
+        if (panel?.contains(trigger) && text.includes('Enviar Template')) {
+          const select = panel.querySelector('select#whatsappNumber');
+          const chosenByUser = panel.getAttribute(TEMPLATE_SEND_NUMBER_CHOSEN_ATTR) === 'true';
+          const queueReady = ensureTemplateQueueMatchesNumber(panel);
+          if (!select || !chosenByUser || select.value === '0' || !queueReady) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (select && chosenByUser && select.value !== '0' && !queueReady) {
+              select.setCustomValidity('A fila correspondente ainda não está disponível. Tente novamente.');
+            }
+            select?.reportValidity();
+            select?.focus();
+            return;
+          }
+          if (!ensureTemplateHsmChoice(panel)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const templateSelect = getTemplateHsmSelect(panel);
+            templateSelect?.reportValidity();
+            templateSelect?.focus();
+            return;
+          }
+        }
+        if (text.includes('Enviar Template')) {
+          scheduleTemplateModalPasses();
+        }
+      } catch (_) {}
+    }, true);
+  }
+
+
+  /* ========================================================================
    * SEÇÃO: APLICAÇÃO CENTRAL DAS FUNCIONALIDADES SELECIONADAS
    * ====================================================================== */
   function applySelectedFeatures() {
+    hideAgentHeaderButtons();
     ensureCopyPersonalDataButton();
     hideNotasInternasCard();
     scheduleTicketSort(220);
@@ -4367,14 +5233,15 @@ function getTicketFavoriteKey(card) {
     formatAttendanceDataPhones();
     formatAttendanceDataEmails();
     formatAttendanceDataCpfs();
-    formatAttendanceDataEmails();
     formatAttendanceDataBirthDates();
     enableCopyOnAttendanceData();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
+    applyTemplatePanelAsModal();
   }
 
   function applyFastAntiFlickerPass() {
+    hideAgentHeaderButtons();
     ensureCopyPersonalDataButton();
     hideNotasInternasCard();
     scheduleTicketSort(260);
@@ -4384,10 +5251,10 @@ function getTicketFavoriteKey(card) {
     formatAttendanceDataPhones();
     formatAttendanceDataEmails();
     formatAttendanceDataCpfs();
-    formatAttendanceDataEmails();
     formatAttendanceDataBirthDates();
     styleQueueTagsInTicketCards();
     applyUnreadMessageIndicators();
+    applyTemplatePanelAsModal();
   }
 
   function reapplyAll() {
@@ -4446,7 +5313,6 @@ function getTicketFavoriteKey(card) {
     applyFastAntiFlickerPass();
     reapplyAll();
     stopCardBootMask();
-    ensureSidebarStartsCollapsed();
     finalizeAgentBootMask();
     scheduleFavoriteLayer(900);
     log(`iniciado v${SCRIPT_VERSION}`);
@@ -4454,16 +5320,17 @@ function getTicketFavoriteKey(card) {
 
   function boot() {
     init();
+    startSidebarCollapsed();
     startObserver();
     startFavoriteLayer();
     installNativeArquivoImagePopup();
     installPasteImageSender();
+    installTemplateModalWatcher();
   }
 
   installMessageApiInterceptors();
 
   startCardBootMask();
-  startSidebarBootMask();
   startAgentBootMask();
   scheduleAgentBootFailsafe();
   applyCSS();
@@ -4476,4 +5343,5 @@ function getTicketFavoriteKey(card) {
 
   window.addEventListener('load', init);
   window.addEventListener('pageshow', init);
+  });
 })();

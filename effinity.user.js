@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.36
+// @version      13.40
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -204,7 +204,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.36';
+  const SCRIPT_VERSION = '13.40';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -243,6 +243,7 @@
   const TEMPLATE_MODAL_BACKDROP_ATTR = 'data-tm-template-modal-backdrop';
   const TEMPLATE_MODE_HIDDEN_ATTR = 'data-tm-template-mode-hidden';
   const TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR = 'data-tm-template-recipient-field-hidden';
+  const TEMPLATE_NO_CONTACT_NOTICE_HIDDEN_ATTR = 'data-tm-template-no-contact-notice-hidden';
   const TEMPLATE_SELECTED_RECIPIENT_ATTR = 'data-tm-template-selected-recipient';
   const TEMPLATE_RECIPIENT_COPY_HIDDEN_ATTR = 'data-tm-template-recipient-copy-hidden';
   const TEMPLATE_SEND_NUMBER_CHOSEN_ATTR = 'data-tm-template-send-number-chosen';
@@ -251,11 +252,13 @@
   const TEMPLATE_HSM_OPTION_HIDDEN_ATTR = 'data-tm-template-hsm-option-hidden';
   const TEMPLATE_HSM_DECORATION_HIDDEN_ATTR = 'data-tm-template-hsm-decoration-hidden';
   const TEMPLATE_HSM_LABEL_HIDDEN_ATTR = 'data-tm-template-hsm-label-hidden';
+  const TEMPLATE_HSM_AGENT_PARAM_HIDDEN_ATTR = 'data-tm-template-hsm-agent-param-hidden';
   const TEMPLATE_SECONDARY_MODAL_ATTR = 'data-tm-template-secondary-modal';
   const TEMPLATE_PREVIEW_HIDDEN_ATTR = 'data-tm-template-preview-list-hidden';
   const TEMPLATE_PREVIEW_CARD_ATTR = 'data-tm-template-preview-selected-card';
   const TEMPLATE_PREVIEW_TITLE_ATTR = 'data-tm-template-preview-title';
   const templateParameterManualValues = new WeakMap();
+  const templateRecipientAutoFillNumbers = new WeakMap();
 
   const COPY_ICON_URL = 'https://i.imgur.com/AUvKFQq.png';
   const UNREAD_ICON_URL = 'https://i.imgur.com/ZmW0yoP.png';
@@ -924,11 +927,6 @@
       align-items: center !important;
       line-height: 1 !important;
       transform: translateY(-1px) !important;
-    }
-
-
-    [data-tm-hide-notas-internas="true"] {
-      display: none !important;
     }
 
 
@@ -2070,6 +2068,10 @@
       display: none !important;
     }
 
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_NO_CONTACT_NOTICE_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
     [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_SELECTED_RECIPIENT_ATTR}]::after {
       content: attr(${TEMPLATE_SELECTED_RECIPIENT_ATTR});
       display: block;
@@ -2099,6 +2101,10 @@
     }
 
     [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_HSM_LABEL_HIDDEN_ATTR}="true"] {
+      display: none !important;
+    }
+
+    [${TEMPLATE_MODAL_ATTR}="true"] [${TEMPLATE_HSM_AGENT_PARAM_HIDDEN_ATTR}="true"] {
       display: none !important;
     }
 
@@ -3789,51 +3795,6 @@ function getTicketFavoriteKey(card) {
   }
 
 
-  function isNotasInternasCard(card) {
-    try {
-      if (!(card instanceof HTMLElement)) return false;
-
-      const text = normalizeText(card.textContent || '');
-      const title = Array.from(card.querySelectorAll('h3')).find(el =>
-        normalizeText(el.textContent || '') === 'Notas Internas'
-      );
-
-      if (!title) return false;
-
-      const hasTextarea = !!card.querySelector('textarea[placeholder*="nota interna"], textarea[placeholder*="Nota interna"]');
-      const hasButton = Array.from(card.querySelectorAll('button')).some(btn =>
-        normalizeText(btn.textContent || '') === 'Adicionar Nota'
-      );
-
-      return hasTextarea && hasButton && text.includes('Registre informações importantes');
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function hideNotasInternasCard() {
-    try {
-      for (const card of document.querySelectorAll('[data-tm-hide-notas-internas="true"]')) {
-        if (card instanceof HTMLElement && !isNotasInternasCard(card)) {
-          card.removeAttribute('data-tm-hide-notas-internas');
-        }
-      }
-
-      for (const title of document.querySelectorAll('h3')) {
-        if (normalizeText(title.textContent) !== 'Notas Internas') continue;
-
-        const card = title.closest('div.rounded-xl.bg-card.border.border-border') ||
-          title.closest('div.rounded-xl');
-
-        if (card instanceof HTMLElement && isNotasInternasCard(card)) {
-          card.setAttribute('data-tm-hide-notas-internas', 'true');
-        }
-      }
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] falha ao ocultar Notas Internas`, error);
-    }
-  }
-
   let imagePopupCounter = 0;
 
   function sideResetPopupCascadeIfNeeded() {
@@ -4813,10 +4774,27 @@ function getTicketFavoriteKey(card) {
     if (!fieldsGroup || !searchBox) return;
 
     const digits = searchInput.value.replace(/\D/g, '');
-    const isPhoneSearch = digits.length >= 3 && /^[+\d\s().-]+$/.test(searchInput.value.trim());
-    const noContactFound = Array.from(searchBox.querySelectorAll('p'))
-      .some(message => normalizeText(message.textContent).startsWith('Nenhum contato encontrado'));
+    const isPhoneSearch = digits.length >= 11 && /^[+\d\s().-]+$/.test(searchInput.value.trim());
+    const noContactMessages = Array.from(searchBox.querySelectorAll('p'))
+      .filter(message => normalizeText(message.textContent).startsWith('Nenhum contato encontrado'));
+    const noContactFound = noContactMessages.length > 0;
     const showManualFields = isPhoneSearch && noContactFound;
+
+    const noContactText = 'Nenhum contato encontrado. Digite abaixo o nome do destinatário para criar um novo contato.';
+    const updateNoContactText = node => {
+      if (node.nodeType === 3) {
+        const cleanText = node.textContent.replace(/Nenhum contato encontrado.*$/i, noContactText);
+        if (node.textContent !== cleanText) node.textContent = cleanText;
+        return;
+      }
+      for (const child of node.childNodes || []) updateNoContactText(child);
+    };
+    for (const message of noContactMessages) {
+      if (message.childNodes?.length) updateNoContactText(message);
+      else message.textContent = message.textContent.replace(/Nenhum contato encontrado.*$/i, noContactText);
+      if (isPhoneSearch) message.removeAttribute(TEMPLATE_NO_CONTACT_NOTICE_HIDDEN_ATTR);
+      else message.setAttribute(TEMPLATE_NO_CONTACT_NOTICE_HIDDEN_ATTR, 'true');
+    }
 
     const findRow = label => Array.from(fieldsGroup.children).find(child => {
       const ownLabel = child.querySelector(':scope > label');
@@ -4824,14 +4802,26 @@ function getTicketFavoriteKey(card) {
     });
     const phoneRow = findRow('Telefone do Destinatário');
     const nameRow = findRow('Nome do Destinatário');
-    for (const row of [phoneRow, nameRow]) {
+    const phoneInput = phoneRow?.querySelector('input');
+    if (phoneInput) {
+      if (showManualFields) {
+        const lastAutoFilledNumber = templateRecipientAutoFillNumbers.get(phoneInput);
+        if (lastAutoFilledNumber !== digits || !phoneInput.value.trim()) {
+          if (phoneInput.value.replace(/\D/g, '') !== digits) setTemplateParameterValue(phoneInput, digits);
+          templateRecipientAutoFillNumbers.set(phoneInput, digits);
+        }
+      } else {
+        templateRecipientAutoFillNumbers.delete(phoneInput);
+      }
+    }
+    for (const [row, visible] of [[phoneRow, false], [nameRow, showManualFields]]) {
       if (!row) continue;
-      row.hidden = !showManualFields;
-      if (showManualFields) row.removeAttribute(TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR);
+      row.hidden = !visible;
+      if (visible) row.removeAttribute(TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR);
       else row.setAttribute(TEMPLATE_RECIPIENT_FIELD_HIDDEN_ATTR, 'true');
     }
 
-    const phone = phoneRow?.querySelector('input')?.value.trim() || '';
+    const phone = phoneInput?.value.trim() || '';
     const name = nameRow?.querySelector('input')?.value.trim() || '';
     if (!showManualFields && !searchInput.value.trim() && phone && name) {
       searchBox.setAttribute(TEMPLATE_SELECTED_RECIPIENT_ATTR, `✓ Destinatário selecionado: ${name} — ${phone}`);
@@ -4853,6 +4843,7 @@ function getTicketFavoriteKey(card) {
       const text = normalizeText(label.textContent);
       if (text === 'Número WhatsApp de Envio *') label.textContent = 'Número de Envio';
       if (text === '🔍 Buscar Contato Existente') label.textContent = 'Buscar Contato Existente';
+      if (text === 'Nome do Destinatário *') label.textContent = 'Nome do Destinatário';
     }
 
     for (const paragraph of recipientCard.querySelectorAll('p')) {
@@ -4982,7 +4973,8 @@ function getTicketFavoriteKey(card) {
       const message = normalizeText(paragraph.textContent);
       const target = message.includes('Sincronização automática')
         ? paragraph.parentElement
-        : message.includes('Template memorizado para próximas vezes') ? paragraph : null;
+        : message.includes('Template memorizado para próximas vezes') ||
+          message === 'Preencha os parâmetros do template:' ? paragraph : null;
       if (target) target.setAttribute(TEMPLATE_HSM_DECORATION_HIDDEN_ATTR, 'true');
     }
   }
@@ -5026,9 +5018,14 @@ function getTicketFavoriteKey(card) {
           : 'Parâmetro 1';
         if (input.placeholder !== visiblePlaceholder) input.placeholder = visiblePlaceholder;
       }
+      const hiddenAgentParameter = isContactRequestTemplate && isAgentParameter && !!agentName;
       const defaultValue = placeholder === 'Parâmetro 1' ? agentName : '';
-      const value = state.values.has(placeholder) ? state.values.get(placeholder) : defaultValue;
+      const value = hiddenAgentParameter
+        ? agentName
+        : state.values.has(placeholder) ? state.values.get(placeholder) : defaultValue;
       if (input.value !== value) setTemplateParameterValue(input, value);
+      if (hiddenAgentParameter) input.setAttribute(TEMPLATE_HSM_AGENT_PARAM_HIDDEN_ATTR, 'true');
+      else input.removeAttribute(TEMPLATE_HSM_AGENT_PARAM_HIDDEN_ATTR);
     }
   }
 
@@ -5223,7 +5220,6 @@ function getTicketFavoriteKey(card) {
   function applySelectedFeatures() {
     hideAgentHeaderButtons();
     ensureCopyPersonalDataButton();
-    hideNotasInternasCard();
     scheduleTicketSort(220);
     hideSelectedCards();
     applyDateToMessages();
@@ -5243,7 +5239,6 @@ function getTicketFavoriteKey(card) {
   function applyFastAntiFlickerPass() {
     hideAgentHeaderButtons();
     ensureCopyPersonalDataButton();
-    hideNotasInternasCard();
     scheduleTicketSort(260);
     hideSelectedCards();
     moveCreatedDateToHeader();

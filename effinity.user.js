@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.40
+// @version      13.91
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -13,6 +13,926 @@
 (function () {
   'use strict';
 
+  const SIDEBAR_BOOT_ATTR = 'data-tm-sidebar-boot';
+  if (typeof document !== 'undefined') {
+    document.documentElement?.setAttribute?.(SIDEBAR_BOOT_ATTR, 'true');
+  }
+
+  const TRANSIENT_TICKET_FILTER_KEYS = [
+    'tickets_open_filters_v2',
+    'tickets_open_active_tab',
+    'tickets_open_sort_order',
+    'tickets_history_filters_v2',
+    'tickets_history_sort_order',
+    'kanban_last_selected_queue'
+  ];
+
+  function clearTransientTicketFilters() {
+    for (const storage of [
+      typeof localStorage !== 'undefined' ? localStorage : null,
+      typeof sessionStorage !== 'undefined' ? sessionStorage : null
+    ]) {
+      if (!storage) continue;
+      for (const key of TRANSIENT_TICKET_FILTER_KEYS) {
+        try {
+          storage.removeItem(key);
+        } catch (_) {
+          // Armazenamento indisponível não deve interromper o restante do script.
+        }
+      }
+    }
+  }
+
+  function installTransientTicketFilterReset() {
+    clearTransientTicketFilters();
+    if (typeof window === 'undefined' || typeof location === 'undefined') return;
+
+    let previousPath = location.pathname;
+    const clearOnPageChange = () => {
+      if (location.pathname === previousPath) return;
+      previousPath = location.pathname;
+      clearTransientTicketFilters();
+    };
+
+    if (typeof history !== 'undefined') {
+      for (const method of ['pushState', 'replaceState']) {
+        const original = history[method];
+        if (typeof original !== 'function') continue;
+        history[method] = function (...args) {
+          const result = original.apply(this, args);
+          clearOnPageChange();
+          return result;
+        };
+      }
+    }
+
+    window.addEventListener?.('popstate', clearOnPageChange);
+    window.addEventListener?.('pagehide', clearTransientTicketFilters);
+  }
+
+  installTransientTicketFilterReset();
+
+  function installAgentWaitingTabRemoval() {
+    if (typeof document === 'undefined' || typeof location === 'undefined') return;
+    const hiddenAttr = 'data-tm-agent-waiting-ui-hidden';
+    const style = document.createElement('style');
+    style.textContent = `
+      [role="tab"][aria-label="Tickets em espera"],
+      [role="tabpanel"][id$="-panel-waiting"],
+      [${hiddenAttr}="true"] { display: none !important; }
+      [role="tablist"]:has(> [role="tab"][aria-label="Tickets em espera"]) {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+
+    const hiddenWaitingTabs = new WeakSet();
+    function apply() {
+      if (location.pathname !== '/whatsapp/agent') return;
+
+      const waitingGroup = Array.from(document.querySelectorAll('div.flex.items-center.whitespace-nowrap'))
+        .find(group => group.lastElementChild?.textContent?.trim() === 'Aguardando');
+      if (waitingGroup) {
+        waitingGroup.setAttribute(hiddenAttr, 'true');
+        const separator = waitingGroup.nextElementSibling;
+        if (separator?.classList.contains('w-px')) separator.setAttribute(hiddenAttr, 'true');
+      }
+
+      for (const button of document.querySelectorAll('button')) {
+        if (/^(Não respondidas|SLA risco)\s*\(/.test(button.textContent?.trim() || '')) {
+          button.setAttribute(hiddenAttr, 'true');
+        }
+      }
+
+      const waitingTab = document.querySelector('[role="tab"][aria-label="Tickets em espera"]');
+      if (waitingTab?.getAttribute('aria-selected') === 'true' && !hiddenWaitingTabs.has(waitingTab)) {
+        const distributed = document.querySelector('[role="tab"][aria-label="Tickets atribuídos"]');
+        const attending = document.querySelector('[role="tab"][aria-label="Tickets em atendimento"]');
+        const replacement = distributed || attending;
+        if (replacement) {
+          hiddenWaitingTabs.add(waitingTab);
+          replacement.click();
+        }
+      }
+    }
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      new MutationObserver(records => {
+        if (location.pathname !== '/whatsapp/agent') return;
+        if (records.some(record => Array.from(record.addedNodes || []).some(node =>
+          node.nodeType === 1 && (
+            node.matches?.('[role="tablist"]') || node.querySelector?.('[role="tablist"]') ||
+            /(?:Aguardando|Não respondidas|SLA risco)/.test(node.textContent || '')
+          )))) apply();
+      }).observe(root, { childList: true, subtree: true });
+      apply();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  }
+
+  installAgentWaitingTabRemoval();
+
+  function installUnrestrictedOpenTicketSearch() {
+    if (typeof XMLHttpRequest === 'undefined' || typeof location === 'undefined') return;
+
+    const nativeOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function tmUnrestrictedOpenTicketSearch(...args) {
+      const endpoint = location.pathname === '/whatsapp/tickets' ? '/api/whatsapp/tickets/open' :
+        location.pathname === '/whatsapp/history' ? '/api/whatsapp/tickets/history' : '';
+      if (endpoint && String(args[0]).toUpperCase() === 'GET') {
+        try {
+          const url = new URL(String(args[1]), location.href);
+          if (url.pathname === endpoint &&
+              url.searchParams.get('search')?.trim() && url.searchParams.has('dateRange')) {
+            url.searchParams.delete('dateRange');
+            args[1] = url.href;
+          }
+        } catch (_) {
+          // Uma URL inesperada segue para o Effinity sem alterações.
+        }
+      }
+      return nativeOpen.apply(this, args);
+    };
+  }
+
+  installUnrestrictedOpenTicketSearch();
+
+  function installOpenTicketAssigneeLabels() {
+    if (typeof window === 'undefined' || typeof document === 'undefined' ||
+        typeof XMLHttpRequest === 'undefined') return;
+
+    const agents = new Map();
+    const ticketIds = new Map();
+    const natyResolvedTickets = new Set();
+    const labelAttribute = 'data-tm-open-ticket-assignee';
+    const separatorAttribute = 'data-tm-open-ticket-assignee-separator';
+    const statusAttribute = 'data-tm-open-ticket-status';
+    const inlineAttribute = 'data-tm-open-ticket-inline';
+    const nameRowAttribute = 'data-tm-open-ticket-name-row';
+    const protocolRowAttribute = 'data-tm-open-ticket-protocol-row';
+    const protocolAttribute = 'data-tm-open-ticket-protocol';
+    const cardLinkAttribute = 'data-tm-open-ticket-card-link';
+    let cardObserver = null;
+    let observedRoot = null;
+    let applyingCards = false;
+    const cardObservation = { childList: true, characterData: true, subtree: true };
+
+    function installStatusStyle() {
+      if (document.getElementById('tm-open-ticket-status-style')) return;
+      const style = document.createElement('style');
+      style.id = 'tm-open-ticket-status-style';
+      style.textContent = `
+        [${inlineAttribute}] {
+          display: flex !important;
+          align-items: center !important;
+          flex-wrap: nowrap !important;
+          column-gap: 8px !important;
+          min-width: 0 !important;
+        }
+        [${nameRowAttribute}] {
+          display: flex !important;
+          align-items: center !important;
+          flex: 0 1 auto !important;
+          min-width: 0 !important;
+          margin-bottom: 0 !important;
+        }
+        [${nameRowAttribute}]::after,
+        [${protocolAttribute}]::after {
+          content: '•';
+          color: #9ca3af;
+          font-size: 12px;
+          font-family: inherit;
+          flex-shrink: 0;
+          margin-left: 8px;
+        }
+        [${nameRowAttribute}] p {
+          font-family: inherit !important;
+          font-size: 12px !important;
+          text-transform: uppercase !important;
+          min-width: 0 !important;
+        }
+        [${protocolRowAttribute}] {
+          flex: 0 0 auto !important;
+          flex-wrap: nowrap !important;
+          margin-top: 0 !important;
+        }
+        [${protocolAttribute}] {
+          font-family: inherit !important;
+          font-size: 12px !important;
+        }
+        [${statusAttribute}] {
+          border: 0 !important;
+          border-radius: 9999px !important;
+          box-shadow: none !important;
+          padding: 2px 8px !important;
+          color: #fff !important;
+          font-size: 12px !important;
+          font-weight: 600 !important;
+        }
+        [${statusAttribute}="triagem"] { background: #9333ea !important; }
+        .dark [${statusAttribute}="triagem"] { background: #c084fc !important; }
+        [${statusAttribute}="atribuido"] { background: #2563eb !important; }
+        .dark [${statusAttribute}="atribuido"] { background: #60a5fa !important; }
+        [${statusAttribute}="atendimento"] { background: #16a34a !important; }
+        .dark [${statusAttribute}="atendimento"] { background: #4ade80 !important; }
+        .dark [${statusAttribute}] { color: #111827 !important; }
+        [${cardLinkAttribute}="card"] { position: relative; }
+        [${cardLinkAttribute}="link"] {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          border-radius: inherit;
+        }
+        [${cardLinkAttribute}="card"] button,
+        [${cardLinkAttribute}="card"] a:not([${cardLinkAttribute}="link"]) {
+          position: relative;
+          z-index: 2;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    function ensureCardLink(card, number) {
+      const id = ticketIds.get(number);
+      if (!id) return;
+      const href = new URL(`/whatsapp/tickets/${id}`, location.href).href;
+      let link = card.querySelector(`[${cardLinkAttribute}="link"]`);
+      if (!link) {
+        link = document.createElement('a');
+        link.setAttribute(cardLinkAttribute, 'link');
+        link.setAttribute('aria-label', `Abrir ticket ${number} em nova aba`);
+        link.tabIndex = -1;
+        link.addEventListener('click', event => {
+          if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+            event.preventDefault();
+          }
+        });
+        card.prepend(link);
+      }
+      if (link.href !== href) link.href = href;
+      if (card.getAttribute(cardLinkAttribute) !== 'card') card.setAttribute(cardLinkAttribute, 'card');
+    }
+
+    function wasResolvedByNaty(ticket) {
+      if (String(ticket?.currentStatusSlug || '').toLowerCase() !== 'resolvido' ||
+          ticket?.assignedAgentId != null || String(ticket?.assignedAgentName || '').trim() ||
+          (ticket?.botOutcome && ticket.botOutcome !== 'full')) return false;
+      let tags = ticket.tags;
+      if (typeof tags === 'string') {
+        try { tags = JSON.parse(tags); } catch (_) { return false; }
+      }
+      if (!Array.isArray(tags)) return false;
+      const names = new Set(tags.map(tag => {
+        const value = typeof tag === 'string' ? tag : tag?.name || tag?.slug || tag?.label || '';
+        return String(value).trim().replace(/^#+\s*/, '').toUpperCase();
+      }));
+      return names.has('NATY') && names.has('TICKET_ENCERRADO');
+    }
+
+    function apply() {
+      if (location.pathname !== '/whatsapp/tickets' && location.pathname !== '/whatsapp/history') return;
+      for (const protocol of document.querySelectorAll('[role="tabpanel"] span.font-mono')) {
+        const row = protocol.parentElement;
+        if (!row?.classList?.contains('flex-wrap')) continue;
+        const number = String(protocol.textContent || '').trim();
+        if (!/^[A-Z]+\d{10,}$/.test(number)) continue;
+
+        const card = protocol.closest('div.rounded-xl.bg-card.border.border-border');
+        const footer = card?.querySelector('div.flex.items-center.justify-between.mt-2');
+        const meta = footer?.firstElementChild;
+        if (!meta) continue;
+        ensureCardLink(card, number);
+        const nameRow = row.previousElementSibling;
+        const patientName = nameRow?.querySelector('p');
+        const status = row.children[1];
+        if (patientName) {
+          row.parentElement?.setAttribute(inlineAttribute, 'true');
+          nameRow.setAttribute(nameRowAttribute, 'true');
+          row.setAttribute(protocolRowAttribute, 'true');
+          protocol.setAttribute(protocolAttribute, 'true');
+          patientName.style.textTransform = 'uppercase';
+          patientName.style.fontSize = '12px';
+        }
+        const statusText = String(status?.textContent || '').trim();
+        const statusConfig = /^(?:novo|em triagem)$/i.test(statusText)
+          ? ['triagem', 'Em Triagem']
+          : /^(?:distribu[ií]do|atribu[ií]do)$/i.test(statusText)
+            ? ['atribuido', 'Atribuído']
+            : /^em atendimento$/i.test(statusText)
+              ? ['atendimento', 'Em Atendimento']
+              : null;
+        if (statusConfig) {
+          status.setAttribute(statusAttribute, statusConfig[0]);
+          if (status.textContent !== statusConfig[1]) status.textContent = statusConfig[1];
+        }
+        const title = [...row.children].find(element => element.matches?.('span.truncate.min-w-0'));
+        if (title) {
+          title.style.display = 'none';
+          const bullet = title.previousElementSibling;
+          if (bullet?.textContent?.trim() === '•') bullet.style.display = 'none';
+        }
+        const priority = footer.lastElementChild?.firstElementChild;
+        if (priority?.classList?.contains('font-medium') &&
+            priority.classList.contains('border-0')) priority.style.display = 'none';
+        for (const icon of card.querySelectorAll('svg.lucide-bot')) {
+          if (!icon.closest('button')) icon.style.display = 'none';
+        }
+        const agent = agents.get(number);
+        const natyBadge = card.querySelector('[title^="Naty"]');
+        const naty = !agent && (natyResolvedTickets.has(number) ||
+          !!natyBadge?.querySelector('svg.lucide-bot'));
+        const name = agent || (naty ? 'Naty' : '');
+        let label = card.querySelector(`[${labelAttribute}]`);
+        let separator = card.querySelector(`[${separatorAttribute}]`);
+        if (!name) {
+          label?.remove();
+          separator?.remove();
+          continue;
+        }
+        if (!separator) {
+          separator = document.createElement('span');
+          separator.setAttribute(separatorAttribute, 'true');
+          separator.className = 'flex-shrink-0';
+          separator.textContent = '•';
+        }
+        if (separator.parentElement !== meta) meta.appendChild(separator);
+        if (!label) {
+          label = document.createElement('span');
+          label.setAttribute(labelAttribute, 'true');
+        }
+        if (label.parentElement !== meta) meta.appendChild(label);
+        label.className = naty
+          ? 'min-w-0 truncate font-medium text-purple-600 dark:text-purple-400'
+          : 'min-w-0 truncate font-medium text-blue-600 dark:text-blue-400';
+        if (label.textContent !== name) label.textContent = name;
+      }
+    }
+
+    function scheduleApply() {
+      if (!['/whatsapp/tickets', '/whatsapp/history'].includes(location.pathname) || applyingCards) return;
+      // MutationObserver runs before paint. A timer here exposes the native
+      // cards for one frame whenever React replaces the tab's list.
+      applyingCards = true;
+      cardObserver?.disconnect();
+      try {
+        apply();
+      } finally {
+        applyingCards = false;
+        if (cardObserver && observedRoot) cardObserver.observe(observedRoot, cardObservation);
+      }
+    }
+
+    const nativeOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function tmOpenTicketAssigneeRequest(...args) {
+      try {
+        const url = new URL(String(args[1]), location.href);
+        const expectedPath = location.pathname === '/whatsapp/history'
+          ? '/api/whatsapp/tickets/history' : '/api/whatsapp/tickets/open';
+        if (!this.__tmOpenTicketCountRequest && String(args[0]).toUpperCase() === 'GET' &&
+            url.pathname === expectedPath) {
+          this.addEventListener('load', () => {
+            try {
+              const payload = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
+              if (!Array.isArray(payload?.content)) return;
+              for (const ticket of payload.content) {
+                const number = String(ticket?.ticketNumber || '').trim();
+                if (!number) continue;
+                agents.delete(number);
+                agents.set(number, String(ticket?.assignedAgentName || '').trim());
+                natyResolvedTickets.delete(number);
+                if (url.pathname === '/api/whatsapp/tickets/history' && wasResolvedByNaty(ticket)) {
+                  natyResolvedTickets.add(number);
+                }
+                const id = Number(ticket?.id);
+                ticketIds.delete(number);
+                if (Number.isSafeInteger(id) && id > 0) ticketIds.set(number, id);
+              }
+              while (agents.size > 500) agents.delete(agents.keys().next().value);
+              while (ticketIds.size > 500) ticketIds.delete(ticketIds.keys().next().value);
+              while (natyResolvedTickets.size > 500) natyResolvedTickets.delete(natyResolvedTickets.values().next().value);
+              scheduleApply();
+            } catch (_) {
+              // A lista original continua funcionando se a resposta não for JSON.
+            }
+          }, { once: true });
+        }
+      } catch (_) {
+        // URLs inesperadas seguem sem alterações.
+      }
+      return nativeOpen.apply(this, args);
+    };
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      installStatusStyle();
+      observedRoot = root;
+      cardObserver = new MutationObserver(scheduleApply);
+      cardObserver.observe(root, cardObservation);
+      scheduleApply();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  }
+
+  installOpenTicketAssigneeLabels();
+
+  let initialPeriodReadyPath = '';
+
+  function installQueueAwareOpenTicketCounts(mode = 'open') {
+    if (typeof window === 'undefined' || typeof document === 'undefined' ||
+        typeof XMLHttpRequest === 'undefined') return;
+
+    const isHistory = mode === 'history';
+    const pagePath = isHistory ? '/whatsapp/history' : '/whatsapp/tickets';
+    const apiPath = isHistory ? '/api/whatsapp/tickets/history' : '/api/whatsapp/tickets/open';
+    const filterStorageKey = isHistory ? 'tickets_history_filters_v2' : 'tickets_open_filters_v2';
+    const statuses = isHistory ? ['todos', 'resolvido', 'cancelado'] :
+      ['todos', 'em_triagem', 'aguardando', 'distribuido', 'em_atendimento'];
+    const cacheLifetimeMs = 10000;
+    const requestTimeoutMs = 15000;
+    const maxCachedFilters = 32;
+    const labels = new Map(isHistory ? [
+      ['Todos', 'todos'], ['Total', 'todos'], ['Resolvidos', 'resolvido'],
+      ['Cancelados', 'cancelado']
+    ] : [
+      ['Todos', 'todos'], ['Total', 'todos'], ['Em Triagem', 'em_triagem'],
+      ['Aguardando', 'aguardando'], ['Atribuídos', 'distribuido'],
+      ['Em Atendimento', 'em_atendimento']
+    ]);
+    const contexts = new WeakMap();
+    const nativeOpen = XMLHttpRequest.prototype.open;
+    const nativeSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+    const nativeSend = XMLHttpRequest.prototype.send;
+    let latestOpenSequence = 0;
+    let activeKey = '';
+    const snapshots = new Map();
+    let countObserver = null;
+    let countRoot = null;
+    let renderingCounts = false;
+    const countObservation = { childList: true, characterData: true, subtree: true };
+    let requestTemplate = null;
+    const storedFilterNames = new Set(['queueId', 'dateRange', 'status', 'page', 'size']);
+
+    const emptyCounts = () => Object.fromEntries(statuses.map(status => [status, null]));
+    const pendingCounts = emptyCounts();
+
+    function pruneSnapshots() {
+      for (const [key, snapshot] of snapshots) {
+        if (snapshots.size <= maxCachedFilters) break;
+        if (key !== activeKey && !snapshot.batch) snapshots.delete(key);
+      }
+    }
+
+    function filterKey(url) {
+      const filter = new URLSearchParams(url.search);
+      for (const name of ['status', 'page', 'size', 'sortBy', 'sortOrder']) filter.delete(name);
+      filter.sort();
+      return filter.toString() || '__all__';
+    }
+
+    function storedContext() {
+      if (!requestTemplate || typeof localStorage === 'undefined') return null;
+      try {
+        const filters = JSON.parse(localStorage.getItem(filterStorageKey));
+        if (!filters || typeof filters !== 'object' || Array.isArray(filters)) return null;
+        const url = new URL(requestTemplate.url.href);
+        for (const name of storedFilterNames) url.searchParams.delete(name);
+        for (const [name, value] of Object.entries(filters)) {
+          storedFilterNames.add(name);
+          if (value !== null && value !== undefined && value !== '' && typeof value !== 'object') {
+            url.searchParams.set(name, String(value));
+          }
+        }
+        if (url.searchParams.get('search')?.trim()) url.searchParams.delete('dateRange');
+        return { url, key: filterKey(url), headers: requestTemplate.headers, independent: true };
+      } catch (_) { return null; }
+    }
+
+    function syncStoredFilters(nativeContext, context = storedContext()) {
+      if (location.pathname !== pagePath) return;
+      if (!context) return;
+      activate(context.key);
+      startCounts(nativeContext?.key === context.key ? nativeContext : context);
+    }
+
+    if (typeof Storage !== 'undefined') {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function tmTicketCountsFilterChange(key, value) {
+        const result = originalSetItem.call(this, key, value);
+        if (key === filterStorageKey) syncStoredFilters();
+        return result;
+      };
+    }
+
+    function activate(key) {
+      if (key === activeKey) return;
+      activeKey = key;
+      if (key && !snapshots.has(key)) {
+        snapshots.set(key, { counts: null, fetchedAt: 0, batch: null });
+      }
+      // Keep recently visited filters without growing for every search term.
+      if (snapshots.has(key)) {
+        const snapshot = snapshots.get(key);
+        snapshots.delete(key);
+        snapshots.set(key, snapshot);
+      }
+      pruneSnapshots();
+      scheduleRender();
+    }
+
+    function render() {
+      if (location.pathname !== pagePath) {
+        activate('');
+        return;
+      }
+      const topButton = Array.from(document.querySelectorAll('button'))
+        .find(button => button.textContent?.includes('Top Filas e Tags'));
+      if (topButton?.parentElement && topButton.parentElement.style.display !== 'none') {
+        topButton.parentElement.style.display = 'none';
+      }
+
+      const queueButton = document.querySelector('button[data-tm-queue-filter-button]');
+      const chipGroup = queueButton?.closest('div.flex.items-center.gap-2')
+        ?.querySelector('div.flex.items-center.gap-1.flex-wrap');
+      if (chipGroup && chipGroup.style.display !== 'none') chipGroup.style.display = 'none';
+
+      const snapshot = snapshots.get(activeKey);
+      const current = activeKey ? (snapshot?.counts || pendingCounts) : null;
+      if (!current) return;
+      const value = key => Number.isFinite(current[key]) ? String(current[key]) : '–';
+      for (const tab of document.querySelectorAll('[role="tab"]')) {
+        const key = labels.get(tab.querySelector('span')?.textContent?.trim());
+        const badge = tab.lastElementChild;
+        if (key && badge?.tagName === 'DIV' && badge.textContent !== value(key)) {
+          badge.textContent = value(key);
+        }
+      }
+      const total = current.todos;
+      for (const label of document.querySelectorAll('p.text-xs.font-medium.text-muted-foreground.mb-1')) {
+        const key = labels.get(label.textContent?.trim());
+        if (!key) continue;
+        const number = label.nextElementSibling;
+        if (number?.tagName === 'P' && number.textContent !== value(key)) {
+          number.textContent = value(key);
+        }
+        const percentage = number?.nextElementSibling;
+        if (key !== 'todos' && percentage?.tagName === 'P') {
+          const next = Number.isFinite(current[key]) && Number.isFinite(total)
+            ? `${total ? Math.round(current[key] / total * 100) : 0}%` : '–';
+          if (percentage.textContent !== next) percentage.textContent = next;
+        }
+      }
+    }
+
+    function scheduleRender() {
+      if (renderingCounts) return;
+      // React may write native stats into existing text nodes. Reapply our
+      // current snapshot during the mutation checkpoint, before browser paint.
+      renderingCounts = true;
+      countObserver?.disconnect();
+      try {
+        render();
+      } finally {
+        renderingCounts = false;
+        if (countObserver && countRoot) countObserver.observe(countRoot, countObservation);
+      }
+    }
+
+    function readPayload(request) {
+      try {
+        return request.responseType === 'json' ? request.response : JSON.parse(request.responseText);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function settleCount(batch, status, total) {
+      if (!batch.pending.has(status)) return;
+      if (!Number.isFinite(total) || total < 0) batch.failed = true;
+      else batch.counts[status] = total;
+      batch.pending.delete(status);
+      if (batch.pending.size) return;
+      const snapshot = snapshots.get(batch.key);
+      if (snapshot?.batch !== batch) return;
+      snapshot.batch = null;
+      if (!batch.failed) {
+        snapshot.counts = batch.counts;
+        snapshot.fetchedAt = Date.now();
+      }
+      pruneSnapshots();
+      if (activeKey === batch.key) scheduleRender();
+    }
+
+    function requestTotal(baseUrl, headers, status, batch) {
+      if (!batch.pending.has(status) || batch.requested.has(status)) return;
+      batch.requested.add(status);
+      const url = new URL(baseUrl.href);
+      url.searchParams.set('status', status);
+      url.searchParams.set('page', '0');
+      url.searchParams.set('size', '1');
+      try {
+        const request = new XMLHttpRequest();
+        request.__tmOpenTicketCountRequest = true;
+        request.open('GET', url.href);
+        request.timeout = requestTimeoutMs;
+        for (const [name, value] of headers) request.setRequestHeader(name, value);
+        request.addEventListener('load', () => {
+          if (request.status !== 200) return;
+          const total = readPayload(request)?.totalElements;
+          if (Number.isFinite(total) && total >= 0) settleCount(batch, status, total);
+        }, { once: true });
+        request.addEventListener('loadend', () => {
+          if (batch.pending.has(status)) settleCount(batch, status, null);
+        }, { once: true });
+        request.send();
+      } catch (_) {
+        settleCount(batch, status, null);
+      }
+    }
+
+    function startCounts(context) {
+      const key = context.key;
+      if (!key || key !== activeKey) return;
+      const snapshot = snapshots.get(key);
+      if (!snapshot || (snapshot.counts && Date.now() - snapshot.fetchedAt < cacheLifetimeMs)) return;
+      if (snapshot.batch) {
+        context.batch = snapshot.batch;
+        return;
+      }
+      const batch = {
+        key, counts: emptyCounts(), pending: new Set(statuses), requested: new Set(),
+        failed: false, baseUrl: context.url, headers: context.headers
+      };
+      snapshot.batch = batch;
+      context.batch = batch;
+      const selectedStatus = context.url.searchParams.get('status') || 'todos';
+      for (const status of statuses) {
+        if (context.independent || status !== selectedStatus) requestTotal(context.url, context.headers, status, batch);
+      }
+    }
+
+    function handleResponse(request, context) {
+      if (request.status !== 200) return;
+      const payload = readPayload(request);
+      if (!context.key) return;
+      const status = context.url.searchParams.get('status') || 'todos';
+      const total = payload?.totalElements;
+      if (statuses.includes(status) && Number.isFinite(total) && total >= 0) {
+        if (context.batch) settleCount(context.batch, status, total);
+        const snapshot = snapshots.get(context.key);
+        if (context.key === activeKey && context.sequence === latestOpenSequence &&
+            snapshot?.counts && !snapshot.batch) {
+          snapshot.counts = { ...snapshot.counts, [status]: total };
+          scheduleRender();
+        }
+      }
+    }
+
+    XMLHttpRequest.prototype.open = function tmQueueAwareTicketCountOpen(...args) {
+      const result = nativeOpen.apply(this, args);
+      contexts.delete(this);
+      if (this.__tmOpenTicketCountRequest || String(args[0]).toUpperCase() !== 'GET') return result;
+      try {
+        const url = new URL(String(args[1]), location.href);
+        // Stats disagree with the lists: do not intercept or parse them.
+        if (url.pathname !== apiPath) return result;
+        if (url.searchParams.get('search')?.trim()) url.searchParams.delete('dateRange');
+        const key = filterKey(url);
+        const context = { url, key, headers: [], sequence: ++latestOpenSequence };
+        contexts.set(this, context);
+        if (!storedContext()) activate(key);
+        this.addEventListener('load', () => handleResponse(this, context), { once: true });
+        this.addEventListener('loadend', () => {
+          const batch = context.batch;
+          const status = context.url.searchParams.get('status') || 'todos';
+          if (batch?.pending.has(status)) {
+            requestTotal(batch.baseUrl, batch.headers, status, batch);
+          }
+        }, { once: true });
+      } catch (_) {
+        // Requisições desconhecidas não interferem no Effinity.
+      }
+      return result;
+    };
+
+    XMLHttpRequest.prototype.setRequestHeader = function tmQueueAwareTicketCountHeader(name, value) {
+      const context = contexts.get(this);
+      if (context) context.headers.push([name, value]);
+      return nativeSetRequestHeader.call(this, name, value);
+    };
+
+    XMLHttpRequest.prototype.send = function tmQueueAwareTicketCountSend(...args) {
+      const context = contexts.get(this);
+      const result = nativeSend.apply(this, args);
+      if (context && context.sequence === latestOpenSequence) {
+        requestTemplate = { url: context.url, headers: context.headers };
+        const stored = storedContext();
+        if (stored) syncStoredFilters(context, stored);
+        else startCounts(context);
+      }
+      return result;
+    };
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      countRoot = root;
+      countObserver = new MutationObserver(scheduleRender);
+      countObserver.observe(root, countObservation);
+      scheduleRender();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  }
+
+  installQueueAwareOpenTicketCounts();
+  installQueueAwareOpenTicketCounts('history');
+
+  function installCurrentMonthDefault() {
+    if (typeof document === 'undefined' || typeof location === 'undefined') return;
+
+    const pageTitles = new Set(['Tickets Abertos', 'Kanban de Tickets', 'Histórico de Tickets']);
+    const currentMonth = /^(?:Mês atual|Este mês)(?:\s|$)/i;
+    const periodLabel = /^(?:Mês atual|Este mês|Mês anterior|Últimos? \d+ dias?|Hoje|Ontem)(?:\s|$)/i;
+    const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
+    let visitedPath = '';
+    let completed = false;
+    let menuOpened = false;
+
+    const pageTitle = () => Array.from(document.querySelectorAll('h1, h2'))
+      .find(heading => pageTitles.has(normalize(heading.textContent)));
+
+    const apply = () => {
+      if (location.pathname !== visitedPath) {
+        visitedPath = location.pathname;
+        completed = false;
+        menuOpened = false;
+      }
+      if (!pageTitle()) return;
+
+      const periodButton = Array.from(document.querySelectorAll('button'))
+        .find(button => periodLabel.test(normalize(button.textContent)) &&
+          (!button.getClientRects || button.getClientRects().length > 0));
+      if (!periodButton) return;
+      if (completed) {
+        if (currentMonth.test(normalize(periodButton.textContent))) initialPeriodReadyPath = location.pathname;
+        return;
+      }
+      if (currentMonth.test(normalize(periodButton.textContent))) {
+        completed = true;
+        initialPeriodReadyPath = location.pathname;
+        return;
+      }
+
+      if (!menuOpened) {
+        menuOpened = true;
+        periodButton.click();
+        return;
+      }
+
+      const monthOption = Array.from(document.querySelectorAll('button, [role="option"], [role="menuitem"]'))
+        .find(option => option !== periodButton && currentMonth.test(normalize(option.textContent)) &&
+          (!option.getClientRects || option.getClientRects().length > 0));
+      if (!monthOption) return;
+      completed = true;
+      monthOption.click();
+    };
+
+    document.addEventListener?.('click', event => {
+      if (!event.isTrusted || !pageTitle()) return;
+      const control = event.target?.closest?.('button, [role="option"], [role="menuitem"]');
+      if (control && periodLabel.test(normalize(control.textContent))) {
+        completed = true;
+        initialPeriodReadyPath = location.pathname;
+      }
+    }, true);
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      new MutationObserver(apply).observe(root, {
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'aria-expanded'],
+        subtree: true
+      });
+      apply();
+    };
+
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', start, { once: true });
+    else start();
+  }
+
+  installCurrentMonthDefault();
+
+  function installNewestCreatedFirstDefault() {
+    if (typeof document === 'undefined' || typeof location === 'undefined') return;
+
+    const pageTitles = new Set(['Tickets Abertos', 'Kanban de Tickets', 'Histórico de Tickets']);
+    const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const periodLabel = /^(?:Mês atual|Este mês|Mês anterior|Últimos? \d+ dias?|Hoje|Ontem)(?:\s|$)/i;
+    const newestFirst = /^Mais novos primeiro(?:\s|$)/i;
+    let visitedPath = '';
+    let completed = false;
+    let menuOpened = false;
+
+    const pageTitle = () => Array.from(document.querySelectorAll('h1, h2'))
+      .find(heading => pageTitles.has(normalize(heading.textContent)));
+    const visible = element => !element.getClientRects || element.getClientRects().length > 0;
+
+    const findSortButton = periodButton => {
+      const buttons = Array.from(document.querySelectorAll('button')).filter(visible);
+      const labelled = buttons.find(button => /ordenar tickets|ordena[cç][aã]o/i.test(
+        `${button.getAttribute?.('aria-label') || ''} ${button.getAttribute?.('title') || ''}`));
+      if (labelled) return labelled;
+
+      const periodRect = periodButton.getBoundingClientRect?.();
+      if (!periodRect) return null;
+      return buttons
+        .filter(button => {
+          const iconClass = button.querySelector?.('svg')?.getAttribute?.('class') || '';
+          return /lucide-arrow-(?:down|up)/.test(iconClass) && button.getBoundingClientRect;
+        })
+        .map(button => {
+          const rect = button.getBoundingClientRect();
+          const distance = Math.abs((rect.left + rect.right) / 2 -
+            (periodRect.left + periodRect.right) / 2);
+          return { button, distance };
+        })
+        .filter(item => item.distance < 160)
+        .sort((a, b) => a.distance - b.distance)[0]?.button || null;
+    };
+
+    const apply = () => {
+      if (location.pathname !== visitedPath) {
+        visitedPath = location.pathname;
+        completed = false;
+        menuOpened = false;
+      }
+      if (completed || !pageTitle()) return;
+
+      // Espera a seleção inicial de período terminar para não fechar seu menu.
+      if (initialPeriodReadyPath !== location.pathname) return;
+      const periodButton = Array.from(document.querySelectorAll('button'))
+        .find(button => periodLabel.test(normalize(button.textContent)) && visible(button));
+      if (!periodButton) return;
+
+      const sortButton = findSortButton(periodButton);
+      if (!sortButton) return;
+      const currentSort = `${sortButton.getAttribute?.('aria-label') || ''} ${sortButton.getAttribute?.('title') || ''}`;
+      if (/Mais novos primeiro/i.test(currentSort)) {
+        completed = true;
+        return;
+      }
+      // Não abre a ordenação enquanto o usuário está escolhendo um período.
+      if (Array.from(document.querySelectorAll('[data-dropdown-menu="true"]')).some(menu =>
+        Array.from(menu.children || []).some(child => normalize(child.textContent) === 'Período'))) return;
+      if (!menuOpened) {
+        menuOpened = true;
+        sortButton.click();
+        return;
+      }
+
+      const matches = Array.from(document.querySelectorAll('button, [role="menuitem"], [role="option"], div'))
+        .filter(element => newestFirst.test(normalize(element.textContent)) && visible(element));
+      const option = matches.find(element => !Array.from(element.children || [])
+        .some(child => newestFirst.test(normalize(child.textContent)))) || matches[0];
+      if (!option) return;
+      completed = true;
+      option.click();
+    };
+
+    document.addEventListener?.('click', event => {
+      if (!event.isTrusted || !pageTitle()) return;
+      const control = event.target?.closest?.('button, [role="menuitem"], [role="option"]');
+      if (!control) return;
+      const label = `${control.getAttribute?.('aria-label') || ''} ${control.getAttribute?.('title') || ''}`;
+      if (/ordenar tickets|ordena[cç][aã]o/i.test(label) ||
+          newestFirst.test(normalize(control.textContent))) completed = true;
+    }, true);
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      new MutationObserver(apply).observe(root, {
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'aria-expanded'],
+        subtree: true
+      });
+      apply();
+    };
+
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', start, { once: true });
+    else start();
+  }
+
+  installNewestCreatedFirstDefault();
+
   function installTicketDetailHeightStyle() {
     const styleId = 'tm-effinity-ticket-detail-height';
     if (document.getElementById(styleId)) return;
@@ -23,6 +943,23 @@
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = String.raw`
+      html[data-tm-sidebar-boot="true"] aside.fixed.left-0.top-0.h-full:not(:has(button[aria-label="Abrir menu"])) {
+        visibility: hidden !important;
+      }
+      html[data-tm-sidebar-boot="true"] aside.fixed.left-0.top-0.h-full {
+        transition: none !important;
+        animation: none !important;
+      }
+      html[data-tm-sidebar-boot="true"] div.flex-1.flex.flex-col.min-w-0.ml-64 {
+        margin-left: 4rem !important;
+      }
+      html[data-tm-sidebar-boot="true"] div.flex-1.flex.flex-col.min-w-0.ml-64,
+      html[data-tm-sidebar-boot="true"] div.flex-1.flex.flex-col.min-w-0.ml-16 {
+        transition: none !important;
+      }
+      header.glass.sticky.top-0.z-50 {
+        display: none !important;
+      }
       @media (min-width: 1024px) {
         .page-transition > div.flex.flex-col.h-\[calc\(100vh-120px\)\] {
           height: 100dvh !important;
@@ -53,6 +990,26 @@
       }
       [data-tm-ticket-history-chrome-hidden="true"] {
         display: none !important;
+      }
+      [data-tm-queue-filter-hidden="true"] {
+        display: none !important;
+      }
+      button[data-tm-queue-filter-button="true"] > svg.lucide-filter {
+        display: none !important;
+      }
+      [data-tm-filter-button-count="true"] {
+        display: none !important;
+      }
+      button[data-tm-queue-filter-button="true"]::before {
+        content: '';
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        flex: none;
+        background: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M8%206h13M8%2012h13M8%2018h13M3%206h.01M3%2012h.01M3%2018h.01'%2F%3E%3C%2Fsvg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M8%206h13M8%2012h13M8%2018h13M3%206h.01M3%2012h.01M3%2018h.01'%2F%3E%3C%2Fsvg%3E") center / contain no-repeat;
       }
     `;
     host.appendChild(style);
@@ -159,19 +1116,151 @@
     hide(topQueuesButton);
   }
 
+  let selectedQueueLabel = 'Fila';
+  let selectedQueuePage = '';
+
+  function simplifyTicketQueueFilter() {
+    if (selectedQueuePage && selectedQueuePage !== location.pathname) {
+      selectedQueuePage = '';
+      selectedQueueLabel = 'Fila';
+    }
+    const page = Array.from(document.querySelectorAll('h1, h2'))
+      .some(heading => ['Tickets Abertos', 'Histórico de Tickets']
+        .includes(heading.textContent?.trim()));
+    if (!page) return;
+
+    if (selectedQueuePage !== location.pathname) {
+      selectedQueuePage = location.pathname;
+      selectedQueueLabel = 'Fila';
+    }
+
+    const buttons = document.querySelectorAll('button');
+    const hideCount = button => {
+      for (const child of button?.children || []) {
+        if (/^\d+$/.test(child.textContent?.trim() || '') &&
+            child.getAttribute('data-tm-filter-button-count') !== 'true') {
+          child.setAttribute('data-tm-filter-button-count', 'true');
+        }
+      }
+    };
+    const updateButton = () => {
+      for (const button of buttons) {
+        const label = button.textContent?.replace(/\s+/g, ' ').trim() || '';
+        if (!/^Filtros(?:\s*\d+)?$/.test(label) &&
+            button.getAttribute('data-tm-queue-filter-button') !== 'true') continue;
+        const replaceLabel = node => {
+          if (node.nodeType === 3 && /\bFiltros\b/.test(node.nodeValue || '')) {
+            node.nodeValue = node.nodeValue.replace(/\bFiltros\b/, selectedQueueLabel);
+            return true;
+          }
+          if (node.nodeType === 3 && button.getAttribute('data-tm-queue-filter-button') === 'true' &&
+              node.nodeValue?.trim() === button.getAttribute('data-tm-queue-label')) {
+            if (node.nodeValue !== selectedQueueLabel) node.nodeValue = selectedQueueLabel;
+            return true;
+          }
+          for (const child of node.childNodes || []) {
+            if (replaceLabel(child)) return true;
+          }
+          return false;
+        };
+        if (replaceLabel(button)) {
+          if (button.getAttribute('data-tm-queue-filter-button') !== 'true') button.setAttribute('data-tm-queue-filter-button', 'true');
+          if (button.getAttribute('data-tm-queue-label') !== selectedQueueLabel) button.setAttribute('data-tm-queue-label', selectedQueueLabel);
+          hideCount(button);
+        }
+      }
+    };
+    updateButton();
+    const toolbarButtons = Array.from(buttons);
+    const periodPattern = /^(?:Hoje|Ontem|Últimos? \d+ dias?|Mês atual|Mês anterior|\d+ meses? atrás|Mais antigos)(?:\s*\d+)?$/i;
+    for (const button of toolbarButtons) {
+      if (periodPattern.test(button.textContent?.replace(/\s+/g, ' ').trim() || '')) hideCount(button);
+    }
+    const myTicketsIndex = toolbarButtons.findIndex(button =>
+      button.textContent?.replace(/\s+/g, ' ').trim() === 'Meus Tickets');
+    if (myTicketsIndex !== -1) hideCount(toolbarButtons[myTicketsIndex + 1]);
+
+    const normalize = element => element.textContent?.replace(/\s+/g, ' ').trim() || '';
+    const sectionNames = new Set(['STATUS', 'FILA', 'PRIORIDADE', 'ORIGEM', 'BOT']);
+    const textElements = Array.from(document.querySelectorAll('div, span, p, h3, h4'));
+    const headings = textElements.filter(element => {
+      const text = normalize(element);
+      return sectionNames.has(text.toUpperCase()) &&
+        !Array.from(element.children).some(child => normalize(child) === text);
+    });
+    let popup = null;
+    for (const queueHeading of headings.filter(element => normalize(element).toUpperCase() === 'FILA')) {
+      for (const statusHeading of headings.filter(element => normalize(element).toUpperCase() === 'STATUS')) {
+        let candidate = queueHeading.parentElement;
+        while (candidate && !candidate.contains(statusHeading)) candidate = candidate.parentElement;
+        if (candidate && candidate !== document.body &&
+            candidate.getBoundingClientRect?.().width <= 500) {
+          popup = candidate;
+          break;
+        }
+      }
+      if (popup) break;
+    }
+    if (!popup) return;
+
+    if (popup.getAttribute('data-tm-queue-options-wired') !== 'true') {
+      popup.setAttribute('data-tm-queue-options-wired', 'true');
+      popup.addEventListener('click', event => {
+        const option = event.target?.closest?.('button');
+        if (!option || !popup.contains(option) ||
+            option.closest('[data-tm-queue-filter-hidden="true"]')) return;
+        const choice = (option.textContent || '').replace(/\s+/g, ' ').trim().replace(/\s*\d+$/, '').trim();
+        if (!choice || choice === 'Filtros') return;
+        selectedQueueLabel = choice === 'Todas as Filas' ? 'Fila' : choice;
+        updateButton();
+      }, true);
+    }
+
+    const popupHeadings = headings.filter(heading => popup.contains(heading));
+    for (const heading of popupHeadings) {
+      if (!['STATUS', 'PRIORIDADE', 'ORIGEM', 'BOT'].includes(normalize(heading).toUpperCase())) continue;
+      let section = heading;
+      while (section.parentElement && section.parentElement !== popup &&
+        !popupHeadings.some(other => other !== heading && section.parentElement.contains(other))) {
+        section = section.parentElement;
+      }
+
+      const markHidden = element => {
+        if (element.getAttribute('data-tm-queue-filter-hidden') === 'true') return;
+        element.setAttribute('data-tm-queue-filter-hidden', 'true');
+      };
+      markHidden(section);
+
+      // Alguns menus renderizam título e opções como irmãos, sem um bloco de seção.
+      if (normalize(section) !== normalize(heading)) continue;
+      let sibling = section.nextElementSibling;
+      while (sibling && !popupHeadings.some(other => sibling.contains(other))) {
+        const next = sibling.nextElementSibling;
+        markHidden(sibling);
+        sibling = next;
+      }
+    }
+  }
+
   function startTicketDetailFieldObserver() {
     if (!document.body) return;
     hideTicketInfoFields();
     hideTicketUpdatedAge();
     positionClosedTicketReopenButton();
     hideTicketHistoryChrome();
+    simplifyTicketQueueFilter();
     const observer = new MutationObserver(() => {
       hideTicketInfoFields();
       hideTicketUpdatedAge();
       positionClosedTicketReopenButton();
       hideTicketHistoryChrome();
+      simplifyTicketQueueFilter();
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('click', event => {
+      if (!event.target?.closest?.('[data-tm-queue-filter-button="true"]')) return;
+      window.requestAnimationFrame(simplifyTicketQueueFilter);
+    }, true);
   }
 
   if (typeof document !== 'undefined') {
@@ -183,6 +1272,157 @@
       startTicketDetailFieldObserver();
     }
   }
+
+  function startSidebarCollapsed() {
+    const root = document.body || document.documentElement;
+    if (!root) return;
+
+    let active = true;
+    let scheduled = false;
+    let closePending = false;
+    let timeoutId;
+
+    const stop = () => {
+      active = false;
+      observer.disconnect();
+      document.removeEventListener('click', onUserClick, true);
+      window.clearTimeout(timeoutId);
+      document.documentElement?.removeAttribute?.(SIDEBAR_BOOT_ATTR);
+    };
+
+    const onUserClick = (event) => {
+      if (event.isTrusted && event.target?.closest?.(
+        'aside.fixed.left-0.top-0.h-full button[aria-label="Abrir menu"], ' +
+        'aside.fixed.left-0.top-0.h-full button[aria-label="Fechar menu"]'
+      )) stop();
+    };
+
+    const check = () => {
+      if (!active || closePending) return;
+      const sidebar = document.querySelector('aside.fixed.left-0.top-0.h-full');
+      const closeButton = sidebar?.querySelector('button[aria-label="Fechar menu"]');
+      if (!closeButton) return;
+      closePending = true;
+      closeButton.click();
+      window.setTimeout(() => {
+        closePending = false;
+      }, 250);
+    };
+
+    const scheduleCheck = () => {
+      if (!active || scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        check();
+      });
+    };
+
+    const observer = new MutationObserver(scheduleCheck);
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'aria-label'], childList: true, subtree: true });
+    document.addEventListener('click', onUserClick, true);
+    timeoutId = window.setTimeout(stop, 8000);
+    scheduleCheck();
+  }
+
+  if (typeof document !== 'undefined') {
+    if (document.documentElement) {
+      startSidebarCollapsed();
+    } else {
+      document.addEventListener?.('DOMContentLoaded', startSidebarCollapsed, { once: true });
+    }
+  }
+
+  function installSidebarVisibility() {
+    const sidebarSelector = 'aside.fixed.left-0.top-0.h-full';
+    const hiddenAttribute = 'data-tm-sidebar-hidden';
+    const hiddenGroupAttribute = 'data-tm-sidebar-hidden-group';
+    const unlockedAttribute = 'data-tm-sidebar-unlocked';
+    const hiddenRoutes = new Set([
+      '/dashboard', '/files', '/users', '/whatsapp/supervisor',
+      '/whatsapp/reports', '/whatsapp/config'
+    ]);
+    const hiddenPrefixes = ['/ai/', '/creditos/', '/analytics/', '/security/', '/settings/'];
+    const hiddenSections = new Set(['Inteligência Artificial', 'Administração', 'Configurações']);
+    const style = document.createElement('style');
+    style.textContent = `html:not([${unlockedAttribute}="true"]) ${sidebarSelector} [${hiddenAttribute}="true"],
+      html:not([${unlockedAttribute}="true"]) ${sidebarSelector} [${hiddenGroupAttribute}="true"] { display: none !important; }
+      ${sidebarSelector} [data-tm-sidebar-logo-toggle="true"] { cursor: pointer; }`;
+    (document.head || document.documentElement).appendChild(style);
+
+    let sidebar = null;
+    const labelOf = element => (element.textContent?.trim() || element.getAttribute('aria-label') ||
+      element.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+    const isHiddenRoute = pathname => hiddenRoutes.has(pathname) ||
+      hiddenPrefixes.some(prefix => pathname.startsWith(prefix));
+
+    function apply() {
+      sidebar = document.querySelector(sidebarSelector);
+      if (!sidebar) return;
+      for (const item of sidebar.querySelectorAll('a[href], button, [role="button"]')) {
+        let pathname = '';
+        const href = item.getAttribute('href');
+        if (href) {
+          try { pathname = new URL(href, location.href).pathname; } catch (_) { /* href não navegável */ }
+        }
+        if (isHiddenRoute(pathname) || hiddenSections.has(labelOf(item))) {
+          if (item.getAttribute(hiddenAttribute) !== 'true') item.setAttribute(hiddenAttribute, 'true');
+        }
+      }
+
+      // O menu recolhido recria as seções como grupos de ícones. Ocultar o grupo
+      // também remove seus separadores e impede que subseções abertas apareçam.
+      const nav = sidebar.querySelector('nav');
+      const groups = nav?.firstElementChild?.children || [];
+      for (const group of groups) {
+        const links = Array.from(group.querySelectorAll('a[href]'));
+        const button = group.querySelector('button');
+        const hideGroup = (button && hiddenSections.has(labelOf(button))) ||
+          (links.length > 0 && links.every(link => link.getAttribute(hiddenAttribute) === 'true'));
+        if (hideGroup) group.setAttribute(hiddenGroupAttribute, 'true');
+        else group.removeAttribute(hiddenGroupAttribute);
+      }
+
+      const brand = Array.from(sidebar.querySelectorAll('span, strong, h1, h2, div'))
+        .find(element => element.textContent?.trim() === 'Effinity Pulse' &&
+          !Array.from(element.children).some(child => child.textContent?.trim() === 'Effinity Pulse'));
+      if (!brand) return;
+      const closeButton = sidebar.querySelector('button[aria-label="Fechar menu"]');
+      let toggle = brand.parentElement || brand;
+      if (closeButton && toggle.contains(closeButton)) toggle = brand;
+      if (toggle.getAttribute('data-tm-sidebar-logo-toggle') === 'true') return;
+      toggle.setAttribute('data-tm-sidebar-logo-toggle', 'true');
+      toggle.setAttribute('role', 'button');
+      toggle.tabIndex = 0;
+      const reveal = event => {
+        if (!sidebar.querySelector('button[aria-label="Fechar menu"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const unlocked = document.documentElement.getAttribute(unlockedAttribute) === 'true';
+        if (unlocked) document.documentElement.removeAttribute(unlockedAttribute);
+        else document.documentElement.setAttribute(unlockedAttribute, 'true');
+      };
+      toggle.addEventListener('click', reveal);
+      toggle.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') reveal(event);
+      });
+    }
+
+    const start = () => {
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      const observer = new MutationObserver(records => {
+        if (!sidebar?.isConnected || records.some(record => sidebar.contains(record.target))) {
+          apply();
+        }
+      });
+      observer.observe(root, { childList: true, subtree: true });
+      apply();
+    };
+    start();
+  }
+
+  if (typeof document !== 'undefined') installSidebarVisibility();
 
   function waitForAgentRoute(start) {
     let started = false;
@@ -204,7 +1444,7 @@
    * CONFIGURAÇÕES GERAIS
    * ====================================================================== */
   const SCRIPT_NAME = 'TM effinity';
-  const SCRIPT_VERSION = '13.40';
+  const SCRIPT_VERSION = '13.91';
 
   const STYLE_ID = 'tm-effinity-style';
   const HIDDEN_ATTR = 'data-tm-effinity-hidden';
@@ -755,11 +1995,6 @@
       flex: 1 !important;
       min-height: 0 !important;
       overflow: hidden !important;
-    }
-
-    /* ── 3. Ocultar header principal ───────────────────────────────────── */
-    header.glass.sticky.top-0.z-50 {
-      display: none !important;
     }
 
     /* ── 4. Ocultar bloco Gestão de Tickets / Tempo Real ───────────────── */
@@ -2320,57 +3555,6 @@
         stopAgentBootMask();
       }
     }, 4000);
-  }
-
-  function startSidebarCollapsed() {
-    const root = document.body || document.documentElement;
-    if (!root) return;
-
-    let active = true;
-    let scheduled = false;
-    let closePending = false;
-    let timeoutId;
-
-    const stop = () => {
-      active = false;
-      observer.disconnect();
-      document.removeEventListener('click', onUserClick, true);
-      window.clearTimeout(timeoutId);
-    };
-
-    const onUserClick = (event) => {
-      if (event.isTrusted && event.target?.closest?.(
-        'aside.fixed.left-0.top-0.h-full button[aria-label="Abrir menu"], ' +
-        'aside.fixed.left-0.top-0.h-full button[aria-label="Fechar menu"]'
-      )) stop();
-    };
-
-    const check = () => {
-      if (!active || closePending || !location.pathname.startsWith('/whatsapp/agent')) return;
-      const sidebar = document.querySelector('aside.fixed.left-0.top-0.h-full');
-      const closeButton = sidebar?.querySelector('button[aria-label="Fechar menu"]');
-      if (!closeButton) return;
-      closePending = true;
-      closeButton.click();
-      window.setTimeout(() => {
-        closePending = false;
-      }, 250);
-    };
-
-    const scheduleCheck = () => {
-      if (!active || scheduled) return;
-      scheduled = true;
-      window.requestAnimationFrame(() => {
-        scheduled = false;
-        check();
-      });
-    };
-
-    const observer = new MutationObserver(scheduleCheck);
-    observer.observe(root, { attributes: true, attributeFilter: ['class', 'aria-label'], childList: true, subtree: true });
-    document.addEventListener('click', onUserClick, true);
-    timeoutId = window.setTimeout(stop, 8000);
-    scheduleCheck();
   }
 
   let debounceTimer = null;
@@ -5315,7 +6499,6 @@ function getTicketFavoriteKey(card) {
 
   function boot() {
     init();
-    startSidebarCollapsed();
     startObserver();
     startFavoriteLayer();
     installNativeArquivoImagePopup();

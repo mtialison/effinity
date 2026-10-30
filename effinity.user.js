@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         effinity
 // @namespace    http://tampermonkey.net/
-// @version      13.91
+// @version      13.92
 // @author       alison
 // @match        https://pulse.sono.effinity.com.br/*
 // @updateURL    https://raw.githubusercontent.com/mtialison/effinity/main/effinity.user.js
@@ -145,8 +145,12 @@
       if (endpoint && String(args[0]).toUpperCase() === 'GET') {
         try {
           const url = new URL(String(args[1]), location.href);
-          if (url.pathname === endpoint &&
-              url.searchParams.get('search')?.trim() && url.searchParams.has('dateRange')) {
+          const search = url.searchParams.get('search')?.trim();
+          if (url.pathname === endpoint && search) {
+            // Normalize somente buscas numéricas; nomes, títulos e protocolos permanecem intactos.
+            if (/^\+?[\d\s().-]+$/.test(search) && /\d/.test(search)) {
+              url.searchParams.set('search', search.replace(/\D/g, ''));
+            }
             url.searchParams.delete('dateRange');
             args[1] = url.href;
           }
